@@ -18,7 +18,7 @@ const RAIL = [
 
 const MENU = [
   ['Feed', '/feed'], ['Explore', '/explore'], ['Post', '/post'], ['Activity', '/activity'], ['Tickets', '/tickets'],
-  ['Rides', '/rides'], ['Tutoring', '/tutoring'], ['Profile', '/profile'], ['Demo panel', '/admin/demo'],
+  ['Rides', '/rides'], ['Tutoring', '/tutoring'], ['Profile', '/profile'], ['History', '/history'], ['Demo panel', '/admin/demo'],
 ];
 
 const isActive = (path: string, href: string) => path === href || (href !== '/' && path.startsWith(href + '/'));
