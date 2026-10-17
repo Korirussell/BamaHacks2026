@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { checkoutError, endOptionValue, gridColumnKey, libcalPlaywrightBooker } from "./libcal-booker.js";
+import { checkoutError, endOptionValue, gridColumnKey, libcalPlaywrightBooker, pickEndOption } from "./libcal-booker.js";
 import { manualRoomBooker } from "./stubs.js";
 
 describe("libcal playwright booker", () => {
@@ -8,6 +8,14 @@ describe("libcal playwright booker", () => {
     const threePmCdt = Date.parse("2026-10-18T20:00:00Z");
     assert.equal(gridColumnKey(threePmCdt), "2026-10-18T15:00:00");
     assert.equal(endOptionValue(threePmCdt + 3_600_000), "2026-10-18 16:00:00");
+  });
+
+  it("ends the room at the first allowed time covering the session", () => {
+    const options = ["2026-10-19 12:30:00", "2026-10-19 13:30:00", "2026-10-19 14:30:00"];
+    assert.equal(pickEndOption(options, "2026-10-19 12:55:00"), "2026-10-19 13:30:00");
+    assert.equal(pickEndOption(options, "2026-10-19 12:30:00"), "2026-10-19 12:30:00");
+    assert.equal(pickEndOption(options, "2026-10-19 15:00:00"), null);
+    assert.equal(gridColumnKey(Date.parse("2026-10-19T16:55:00Z")), "2026-10-19T11:00:00");
   });
 
   it("reads LibCal's checkout refusal", () => {

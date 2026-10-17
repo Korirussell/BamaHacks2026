@@ -1,4 +1,4 @@
-import { chromium, type Page } from "playwright-core";
+import { chromium, type Locator, type Page, type Response } from "playwright-core";
 import { localDate, localTime } from "../services/time.js";
 import type { RoomBooker } from "./ports.js";
 
@@ -31,7 +31,12 @@ export interface LibcalBrowserOptions {
 
 /** The grid's column key for an instant: the hour header's data-date, e.g. "2026-10-18T15:00:00" (Chicago wall clock). */
 export function gridColumnKey(utcMs: number): string {
-  return `${localDate(utcMs, TZ)}T${localTime(utcMs, TZ)}:00`;
+  return `${localDate(utcMs, TZ)}T${localTime(utcMs, TZ).slice(0, 2)}:00:00`;
+}
+
+/** The first allowed end time at or after `want` (values sort as text), so the room covers the whole session. */
+export function pickEndOption(options: string[], want: string): string | null {
+  return options.filter((o) => o >= want).sort()[0] ?? null;
 }
 
 /** The end-time option LibCal puts in `bookingend_1`, e.g. "2026-10-18 16:00:00". */
@@ -69,6 +74,18 @@ async function withPage<T>(opts: LibcalBrowserOptions & { visible?: boolean }, f
   }
 }
 
+/**
+ * Clicks and waits for the response ending in `path`. Both are awaited together: a lone waitForResponse that
+ * times out while the click is still pending is an unhandled rejection, and that kills the whole API process.
+ */
+async function clickAndWait(page: Page, target: Locator, path: string): Promise<Response> {
+  const [res] = await Promise.all([
+    page.waitForResponse((r) => r.url().endsWith(path), { timeout: STEP_TIMEOUT_MS }),
+    target.click({ timeout: STEP_TIMEOUT_MS }),
+  ]);
+  return res;
+}
+
 const onLibcal = (page: Page) => new URL(page.url()).host === new URL(BASE).host;
 
 /**
@@ -82,9 +99,7 @@ export async function openLibcalLogin(opts: LibcalBrowserOptions & { timeoutMs?:
     await page.bringToFront();
     await page.goto(GRID_URL);
     await page.waitForSelector("a.s-lc-eq-avail", { timeout: STEP_TIMEOUT_MS });
-    const added = page.waitForResponse((r) => r.url().endsWith("/spaces/availability/booking/add"), { timeout: STEP_TIMEOUT_MS });
-    await page.locator("a.s-lc-eq-avail").first().click();
-    await added;
+    await clickAndWait(page, page.locator("a.s-lc-eq-avail").first(), "/spaces/availability/booking/add");
     await page.click("#submit_times");
     await page.waitForURL((url) => url.pathname === "/spaces/auth" || url.host !== new URL(BASE).host, { timeout: STEP_TIMEOUT_MS });
     const already = onLibcal(page);
@@ -99,33 +114,36 @@ export async function openLibcalLogin(opts: LibcalBrowserOptions & { timeoutMs?:
   });
 }
 
-/** Marks the free grid cell for `roomId` at `column` with data-bh-target. False when that cell isn't free. */
-async function markCell(page: Page, roomId: string, column: string): Promise<boolean> {
+/** Marks the free cell for `roomId` that spans `offset` (0-1) into the hour `column`, with data-bh-target. False when that time isn't free. */
+async function markCell(page: Page, roomId: string, column: string, offset: number): Promise<boolean> {
   const header = page.locator(`th[data-date="${column}"]`);
   if (!(await header.count())) return false;
   // The header and the lanes scroll together but animate, so measure only after the scroll has settled.
   await header.evaluate((th) => th.scrollIntoView({ inline: "center", block: "nearest" }));
   await page.waitForTimeout(500);
-  return page.evaluate(({ roomId, column }) => {
+  return page.evaluate(({ roomId, column, offset }) => {
     document.querySelectorAll("[data-bh-target]").forEach((e) => e.removeAttribute("data-bh-target"));
     const th = document.querySelector<HTMLElement>(`th[data-date="${column}"]`);
     const lane = document.querySelector<HTMLElement>(`td.fc-timeline-lane[data-resource-id="eid_${roomId}"]`);
     if (!th || !lane) return false;
-    const left = th.getBoundingClientRect().left;
-    const cell = [...lane.querySelectorAll<HTMLElement>("a.s-lc-eq-avail")].find((a) => Math.abs(a.getBoundingClientRect().left - left) < 6);
+    const box = th.getBoundingClientRect();
+    const left = box.left + box.width * offset;
+    // Cells needn't line up with the hour headers (some rooms run 11:30-12:30), so take the one spanning the start.
+    const cell = [...lane.querySelectorAll<HTMLElement>("a.s-lc-eq-avail")].find((a) => {
+      const r = a.getBoundingClientRect();
+      return r.left - 2 <= left && left < r.right - 2;
+    });
     if (!cell) return false;
     cell.setAttribute("data-bh-target", "1");
     return true;
-  }, { roomId, column });
+  }, { roomId, column, offset });
 }
 
-/** Pages the grid forward until the column for `column`'s day is on screen. */
-async function showDay(page: Page, column: string): Promise<boolean> {
+/** Pages the grid forward until `day` (YYYY-MM-DD) is on screen. */
+async function showDay(page: Page, day: string): Promise<boolean> {
   for (let i = 0; i <= MAX_NEXT_CLICKS; i++) {
-    if (await page.locator(`th[data-date="${column}"]`).count()) return true;
-    const grid = page.waitForResponse((r) => r.url().endsWith("/spaces/availability/grid"), { timeout: STEP_TIMEOUT_MS });
-    await page.click("button.fc-next-button");
-    await grid;
+    if (await page.locator(`th[data-date^="${day}T"]`).count()) return true;
+    await clickAndWait(page, page.locator("button.fc-next-button"), "/spaces/availability/grid");
   }
   return false;
 }
@@ -134,26 +152,26 @@ async function bookOnPage(page: Page, input: { roomId: string; start: string; en
   const startMs = Date.parse(input.start);
   const endMs = Date.parse(input.end);
   const column = gridColumnKey(startMs);
+  const offset = (startMs % 3_600_000) / 3_600_000; // how far into the hour column the session starts
 
   log(`1. open the Team Workrooms grid`);
   await page.goto(GRID_URL);
   await page.waitForSelector("a.s-lc-eq-avail", { timeout: STEP_TIMEOUT_MS });
-  if (!(await showDay(page, column))) return { ok: false, reason: `LibCal doesn't show ${column.slice(0, 10)} yet` };
+  if (!(await showDay(page, column.slice(0, 10)))) return { ok: false, reason: `LibCal doesn't show ${column.slice(0, 10)} yet` };
 
-  log(`2. pick room ${input.roomId} at ${column}`);
-  if (!(await markCell(page, input.roomId, column))) return { ok: false, reason: "That room isn't free then anymore" };
-  const added = page.waitForResponse((r) => r.url().endsWith("/spaces/availability/booking/add"), { timeout: STEP_TIMEOUT_MS });
-  await page.click("[data-bh-target]");
-  if (!(await added).ok()) return { ok: false, reason: "LibCal wouldn't hold that slot" };
+  log(`2. pick room ${input.roomId} at ${localTime(startMs, TZ)} (${column.slice(0, 10)})`);
+  if (!(await markCell(page, input.roomId, column, offset))) return { ok: false, reason: "That room isn't free then anymore" };
+  if (!(await clickAndWait(page, page.locator("[data-bh-target]"), "/spaces/availability/booking/add")).ok()) return { ok: false, reason: "LibCal wouldn't hold that slot" };
 
   const endSelect = page.locator('#s-lc-eq-form-times select[name^="bookingend_"]').first(); // bookingend_<cart id>
   await endSelect.waitFor({ timeout: STEP_TIMEOUT_MS });
   const want = endOptionValue(endMs);
-  if (await endSelect.locator(`option[value="${want}"]`).count()) {
-    log(`2b. end time ${want}`);
-    await endSelect.selectOption(want);
+  const end = pickEndOption(await endSelect.locator("option").evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value)), want);
+  if (end) {
+    log(`2b. end time ${end}`);
+    await endSelect.selectOption(end);
   } else {
-    log(`2b. ${want} isn't an allowed end time; keeping LibCal's default`);
+    log(`2b. no end time reaches ${want}; keeping LibCal's default`);
   }
 
   log(`3. Submit Times`);
@@ -170,9 +188,7 @@ async function bookOnPage(page: Page, input: { roomId: string; start: string; en
   if (input.nick) await page.fill('#s-lc-eq-bform input[name="nick"]', input.nick);
 
   log(`6. Submit my Booking`);
-  const checkout = page.waitForResponse((r) => r.url().endsWith("/ajax/equipment/checkout"), { timeout: STEP_TIMEOUT_MS });
-  await page.click("#btn-form-submit");
-  const res = await checkout;
+  const res = await clickAndWait(page, page.locator("#btn-form-submit"), "/ajax/equipment/checkout");
   if (!res.ok()) {
     const reason = checkoutError(await res.text());
     log(`6. refused: ${reason}; releasing the held slot`);
