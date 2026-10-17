@@ -6,7 +6,7 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    DEVELOPMENT_TEAM: ""
+    DEVELOPMENT_TEAM: "DQ7X69L6BT"
     CODE_SIGN_STYLE: Automatic
 targets:
   Handoff:
