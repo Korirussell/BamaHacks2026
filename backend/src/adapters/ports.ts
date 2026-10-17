@@ -55,6 +55,26 @@ export interface RoomBooker {
   book(input: { schoolId: string; start: string; end: string; partySize: number }): Promise<RoomBookingResult>;
 }
 
+/** A bookable library study room. `room_id` is the booking system's id (LibCal "eid"). */
+export interface LibraryRoom {
+  room_id: string;
+  name: string;
+  capacity: number;
+  book_url: string;
+}
+
+/** One free stretch of one room, as the booking system reports it. start/end are UTC ISO strings. */
+export interface FreeRoomSlot extends LibraryRoom {
+  start: string;
+  end: string;
+}
+
+/** Library study-room availability (read-only). Never throws: returns [] when the source is down. */
+export interface RoomAvailability {
+  /** Free room slots on a local calendar day ("YYYY-MM-DD" in the library's time zone). */
+  freeRooms(day: string): Promise<FreeRoomSlot[]>;
+}
+
 /** Label PDF rendering. */
 export interface LabelRenderer {
   render(label: import("../services/shipping.js").LabelData): Promise<{ pdfUrl: string }>;

@@ -1,8 +1,10 @@
 import type {
   CampusDirectory,
   CourseMaterialsLookup,
+  FreeRoomSlot,
   LabelRenderer,
   PostSource,
+  RoomAvailability,
   RoomBooker,
   SellerOutreach,
   TextbookIdentifier,
@@ -44,6 +46,14 @@ export const noDirectory: CampusDirectory = { mailStopFor: async () => null };
 /** No booking API yet; send people to the library's booking page. */
 export function manualRoomBooker(bookingUrl: string): RoomBooker {
   return { book: async () => ({ status: "manual_required", room: null, bookingUrl }) };
+}
+
+/** No live availability (tests, LIBCAL=off): sessions fall back to the plain booking link. */
+export const noRoomAvailability: RoomAvailability = { freeRooms: async () => [] };
+
+/** Fixed free-room list, for tests. */
+export function staticRoomAvailability(slots: FreeRoomSlot[]): RoomAvailability {
+  return { freeRooms: async () => slots };
 }
 
 /** Label PDFs aren't rendered yet; the frontend can draw the label from the Shipment fields. */
