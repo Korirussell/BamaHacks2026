@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { USE_MOCKS, demoLogin, demoLogout, demoSession } from '@/lib/api';
 
@@ -10,7 +10,9 @@ const PERSONAS = [
 ] as const;
 
 export function DemoLoginPicker() {
-  const [active, setActive] = useState(() => demoSession()?.email ?? '');
+  // Read the stored session after mount: the server has none, so reading it while rendering breaks hydration.
+  const [active, setActive] = useState('');
+  useEffect(() => setActive(demoSession()?.email ?? ''), []);
   const [pending, setPending] = useState(false);
   if (USE_MOCKS) return null;
   const login = async (email: string) => {
