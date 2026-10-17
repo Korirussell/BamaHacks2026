@@ -7,6 +7,7 @@ import { copy } from '@/lib/copy';
 import { money } from '@/lib/money';
 import { claim } from '@/lib/data';
 import { useDemo, useMockLoad } from '@/lib/store';
+import { USE_MOCKS, acceptOffer, claimDemo, getLiveClaim, type LiveClaim } from '@/lib/api';
 import { BidBubbles } from '@/components/BidBubbles';
 import { EmptyState, ErrorState, Pill, PillLink, Skeleton, Sticker } from '@/components/ui';
 
@@ -82,6 +83,70 @@ function Otp({ onVerified }: { onVerified: () => void }) {
 
 export default function ClaimPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = use(params);
+  if (!USE_MOCKS) return <LiveClaimPage token={token} />;
+  return <MockClaimPage token={token} />;
+}
+
+/** Real API: the link from the Instagram DM. One tap claims it (no sign-in, DEMO_AUTH), then accept an offer. */
+function LiveClaimPage({ token }: { token: string }) {
+  const router = useRouter();
+  const [data, setData] = useState<LiveClaim | null>(null);
+  const [err, setErr] = useState('');
+  const [claimed, setClaimed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { getLiveClaim(token).then(setData).catch((e: Error) => setErr(e.message)); }, [token]);
+
+  const claimIt = async () => {
+    setBusy(true); setErr('');
+    try { await claimDemo(token); setClaimed(true); } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+  };
+  const accept = async (offerId: string) => {
+    setBusy(true); setErr('');
+    try { const order = await acceptOffer(offerId); router.push(`/orders/${order.id}`); } catch (e) { setErr((e as Error).message); setBusy(false); }
+  };
+
+  return (
+    <div className="min-h-screen bg-bg">
+      <Band />
+      <main className="mx-auto max-w-[480px] px-4 pb-16 pt-6">
+        {!data && !err ? (
+          <div className="space-y-4"><Skeleton className="h-24" /><Skeleton className="h-52" /></div>
+        ) : !data ? (
+          <EmptyState emoji="🤔" line={err || "This claim link doesn't look right, or it already expired."} action={<PillLink href="/feed" size="sm">Browse Handoff</PillLink>} />
+        ) : (
+          <>
+            <h1 className="font-display text-[34px] font-bold">{copy.claim.headline}</h1>
+            <p className="mt-3 text-[15.5px] font-semibold text-soft">Hey @{data.external_seller.handle}, people on Handoff want what you posted.</p>
+            {data.listings.map((l) => (
+              <div key={l.id} className="stk mt-5 rounded-[22px] bg-card p-4">
+                <h2 className="font-display text-[20px] font-bold">{l.title}</h2>
+                <p className="font-display mt-1 text-[22px] font-bold">{money(l.price_cents)}</p>
+              </div>
+            ))}
+            <h2 className="font-display mt-7 text-[21px] font-bold">Who wants it</h2>
+            <div className="mt-3 space-y-3">
+              {data.pending_offers.length === 0 && <p className="text-[14px] font-semibold text-soft">No offers yet.</p>}
+              {data.pending_offers.map((o) => (
+                <div key={o.id} className="stk flex items-center justify-between gap-3 rounded-[18px] bg-card p-4">
+                  <div>
+                    <p className="text-[15px] font-extrabold">{o.buyer.display_name} · {money(o.amount_cents)}</p>
+                    {o.message && <p className="text-[13px] font-semibold text-soft">&ldquo;{o.message}&rdquo;</p>}
+                  </div>
+                  {claimed && <Pill size="sm" disabled={busy} onClick={() => void accept(o.id)}>Accept</Pill>}
+                </div>
+              ))}
+            </div>
+            {err && <p className="mt-4 text-[13px] font-bold text-accent-text">{err}</p>}
+            {!claimed && <Pill size="lg" className="mt-6 w-full" disabled={busy} onClick={() => void claimIt()}>{busy ? 'Claiming…' : copy.claim.cta}</Pill>}
+            {claimed && <p className="mt-6 text-center text-[14px] font-bold">It&apos;s yours. Accept an offer to start the handoff.</p>}
+          </>
+        )}
+      </main>
+    </div>
+  );
+}
+
+function MockClaimPage({ token }: { token: string }) {
   const router = useRouter();
   const { listings, bids, bumpDm, claimGhost, celebrate } = useDemo();
   const { status, retry } = useMockLoad([token]);

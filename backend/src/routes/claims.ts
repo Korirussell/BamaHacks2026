@@ -115,7 +115,7 @@ export const claimsRoutes = (verify: TokenVerifier, demoAuth = false) => new Hon
     const invite = await inviteFor(c.req.param("token"));
     const account = await accountForHandle(invite.school_id, invite.channel, invite.handle);
     const claimed = await claimInvite(invite, account.id, invite.school_id);
-    return c.json(one({ session: await demoSession(account.email), ...claimed }));
+    return c.json(one({ session: { ...(await demoSession(account.email)), email: account.email }, ...claimed }));
   })
 
   .post("/:token", requireUser(verify), async (c) => {
