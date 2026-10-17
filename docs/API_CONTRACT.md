@@ -323,11 +323,11 @@ How UA Campus Mail works (campusmail.ua.edu and the myBama Student Mail Portal),
   "POST /tutoring/sessions/{id}/counter":  { "note": "either side proposes a different time; flips waiting_on", "req": { "start": "ts", "end": "ts", "message": "string?" }, "res": "TutoringSession" },
   "POST /tutoring/sessions/{id}/accept":   { "note": "only the party in waiting_on; library_room triggers room booking (picks the first LibCal room free for the whole session)", "res": "TutoringSession" },
   "POST /tutoring/sessions/{id}/decline":  { "res": "TutoringSession" },
-  "POST /tutoring/sessions/{id}/pay":      { "res": { "client_secret": "string" } },
+  "POST /tutoring/sessions/{id}/pay":      { "headers": ["Idempotency-Key"], "note": "student only; session must be accepted (else INVALID_STATE; free sessions too). Same flow as POST /orders/{id}/pay: PAYMENTS=demo → paid at once, client_secret null, demo true. PAYMENTS=stripe → demo false, open PaymentSheet/Elements with client_secret; the session stays accepted until the payment_intent.succeeded webhook moves it to paid (watch tutoring.updated). Calling pay again returns the same PaymentIntent. Money is held until the session is confirmed (see Tutoring escrow).", "res": { "client_secret": "string? (null when demo is true)", "payment_intent_id": "string?", "demo": "bool", "session": "TutoringSession" } },
   "POST /tutoring/sessions/{id}/book-room":{ "note": "retries booking; returns the session's room_booking", "res": "RoomBooking" },
   "GET /library/rooms":         { "note": "free Gorgas study rooms on a library-local day, for a 'rooms free now' card; [] when LibCal is off or unreachable", "query": { "date": "date" }, "res": ["FreeRoomSlot"] },
-  "POST /tutoring/sessions/{id}/complete": { "res": "TutoringSession" },
-  "POST /tutoring/sessions/{id}/cancel":   { "req": { "reason": "string" }, "res": "TutoringSession" },
+  "POST /tutoring/sessions/{id}/complete": { "note": "after the start time. A paid session can only be completed by the student (else FORBIDDEN); it pays the tutor", "res": "TutoringSession" },
+  "POST /tutoring/sessions/{id}/cancel":   { "note": "a paid session is refunded to the student in full", "req": { "reason": "string" }, "res": "TutoringSession" },
 
   "PUT /me/driver":             { "req": { "vehicle": { "make": "string", "model": "string", "color": "string", "plate": "string" }, "accepts_terms": "bool" }, "res": { "status": "pending|verified|rejected" } },
   "POST /rides":                { "note": "driver posts a trip", "req": { "origin": "Place", "destination": "Place", "depart_at": "ts", "seats": "int", "price_per_seat_cents": "cents" }, "res": "Ride" },
@@ -367,7 +367,9 @@ How UA Campus Mail works (campusmail.ua.edu and the myBama Student Mail Portal),
     "room_booking": "RoomBooking",
     "status": "requested|accepted|paid|completed|cancelled|no_show",
     "waiting_on": "tutor|student?", "history": [{ "by": "tutor|student", "action": "propose|counter|accept|decline", "start": "ts", "end": "ts", "at": "ts" }],
-    "handoff_id": "uuid?"
+    "handoff_id": "uuid?",
+    "payment": { "status": "none|requires_payment|succeeded|failed|refunded", "paid_at": "ts?" },
+    "payout": { "status": "held|awaiting_onboarding|released|reversed?", "released_at": "ts?", "tutor_payout_cents": "cents? (price minus the platform fee, fixed at pay)" }
   },
   "RoomBooking":     { "status": "not_needed|pending|booked|manual_required", "room": "{ id: string, name: string }?", "booking_url": "string? (manual_required: the room's LibCal page, or the library site when no room was free)" },
   "Ride":            { "id": "uuid", "driver": "UserPublic", "origin": "Place", "destination": "Place", "depart_at": "ts", "seats_total": "int", "seats_left": "int", "price_per_seat_cents": "cents", "riders": ["UserPublic"], "status": "open|full|en_route|completed|cancelled", "driver_location": "LatLng?" },
@@ -376,6 +378,8 @@ How UA Campus Mail works (campusmail.ua.edu and the myBama Student Mail Portal),
   "StudyGroup":      { "id": "uuid", "course": "Course", "title": "string", "host": "UserPublic", "target_event": "CourseEvent?", "mode": "string", "place": "Place?", "meeting_url": "string?", "start": "ts", "end": "ts", "capacity": "int", "members": ["UserPublic"], "cross_campus": "bool" }
 }
 ```
+
+> **Tutoring escrow:** `POST /tutoring/sessions/{id}/pay` holds the full `price_cents` on the platform (same `escrow_entries` ledger and providers as orders). In-person sessions then get a `handoff_id`: a Handoff with `context.type: tutoring_session`, giver = tutor, receiver = student, already `agreed` at the session's start and library spot (or `proposing` when the school has no library safe zone). The money moves when the session ends: handoff confirmed (`/confirm` or both `/tap`, `item_ok: true`) or the student calls `/complete` (the only way for virtual sessions) → `completed`, tutor paid (`payout.status: released`, or `awaiting_onboarding` until their Stripe payouts are on); `item_ok: false` keeps the money held on a still-`paid` session for the team; `/cancel` → `cancelled` and the handoff no-show (reported or overdue, either party) → `no_show`, both refunding the student in full.
 
 > **Tutor eligibility rule:** a user shows up in `/tutors` for a course when they have a `past` `ClassRecord` for it with a grade ≥ `School.tutor_min_grade` (verified only, unless `include_unverified=true`), and an enabled `TutorProfile` that lists the course. `mutual_slots` apply the walk-time rule to the tutor and student, using the library (or chosen safe zone) as the meeting spot.
 

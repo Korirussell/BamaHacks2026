@@ -6,6 +6,7 @@ import { ApiError, errorResponse } from "../lib/errors.js";
 import { createApp } from "../app.js";
 import type { OrderRow } from "../db/market.js";
 import type { TokenVerifier } from "../middleware/auth.js";
+import type { EscrowSession } from "./tutoring-escrow.js";
 import { paymentsRoutes } from "../routes/payments.js";
 import {
   accountStatus, applyConnectAccount, ensureConnectAccount, onboardingLink,
@@ -17,11 +18,12 @@ process.env["SUPABASE_URL"] ??= "https://example.supabase.co";
 const school = "33333333-3333-4333-8333-333333333333";
 const uid = "22222222-2222-4222-8222-222222222222";
 
-function fakes(initial?: Partial<ConnectProfile>, orders: Array<Partial<OrderRow>> = []) {
+function fakes(initial?: Partial<ConnectProfile>, orders: Array<Partial<OrderRow>> = [], sessions: Array<Partial<EscrowSession>> = []) {
   const p: ConnectProfile = {
     id: uid, school_id: school, email: "a@ua.edu", stripe_account_id: null, stripe_status: "none", payouts_enabled: false, ...initial,
   };
   const pending = new Map(orders.map((o) => [o.id as string, o as OrderRow]));
+  const pendingSessions = new Map(sessions.map((s) => [s.id as string, s as EscrowSession]));
   const log = { created: [] as Array<{ params: Stripe.V2.Core.AccountCreateParams; key: string | undefined }>, links: [] as Stripe.AccountLinkCreateParams[], released: [] as string[], notes: [] as string[] };
   let account: Partial<Stripe.Account> = { id: "acct_1" };
   const stripe: ConnectStripe = {
@@ -37,10 +39,12 @@ function fakes(initial?: Partial<ConnectProfile>, orders: Array<Partial<OrderRow
     claimAccount: async (_u, id) => { if (p.stripe_account_id) return false; p.stripe_account_id = id; p.stripe_status = "pending"; return true; },
     update: async (_u, patch) => { Object.assign(p, patch); },
     awaitingPayoutOrders: async () => [...pending.values()],
+    awaitingPayoutSessions: async () => [...pendingSessions.values()],
   };
   const deps: ConnectDeps = {
     store,
     release: async (o) => { log.released.push(o.id); pending.delete(o.id); },
+    releaseSession: async (s) => { log.released.push(s.id); pendingSessions.delete(s.id); },
     notify: async (n) => { log.notes.push(n.body); },
   };
   return { p, stripe, deps, log, setAccount: (a: Partial<Stripe.Account>) => { account = { id: "acct_1", ...a }; } };
@@ -169,4 +173,12 @@ test("with an account, status calls Stripe; unconfigured Stripe gives 503", asyn
   const off = () => { throw new ApiError(503, "INTERNAL", "Card payments aren't configured"); };
   const res = await mount(f, off).request("/payments/status", { headers: H });
   assert.equal(res.status, 503);
+});
+
+test("sync also releases a tutor's sessions that waited for onboarding", async () => {
+  const f = fakes({ stripe_account_id: "acct_1", stripe_status: "pending" }, [], [{ id: "s1", tutor_payout_cents: 2850, price_cents: 3000 }]);
+  const on = { id: "acct_1", payouts_enabled: true, details_submitted: true, capabilities: { transfers: "active" } } as Stripe.Account;
+  assert.equal((await applyConnectAccount(on, f.deps))?.released, 1);
+  assert.deepEqual(f.log.released, ["s1"]);
+  assert.deepEqual(f.log.notes, ["Payouts are on — $28.50 released"]);
 });

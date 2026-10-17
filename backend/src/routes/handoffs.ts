@@ -3,7 +3,9 @@ import { z } from "zod";
 import {
   HANDOFF_SELECT, HandoffRow, SafeZoneRow, WIPE_POSITIONS, loadHandoffRow, loadSharing, saveHandoff, toSafeZone, trackingFor,
 } from "../db/fulfillment.js";
-import { announce, handoffOut, reportNoShow, sellerPayoutsEnabled } from "../db/handoff-actions.js";
+import {
+  announce, handoffOut, reportNoShow, requirePaidSession, sellerPayoutsEnabled, sessionOf, settleHandoffSession,
+} from "../db/handoff-actions.js";
 import { loadOrderRow, transitionOrder, type OrderRow } from "../db/market.js";
 import { loadMeetingInputs, loadSchool } from "../db/tutoring.js";
 import { ApiError } from "../lib/errors.js";
@@ -295,6 +297,8 @@ export const handoffRoutes = (verify: TokenVerifier, idempotency: IdempotencySto
     });
     const order = await orderFor(handoff, userId);
     orderNext(order, input.item_ok ? "handoff_confirmed" : "dispute"); // reject before writing anything
+    const session = await sessionOf(handoff);
+    requirePaidSession(session);
 
     const saved = await saveHandoff(handoff, {
       status: result.handoff, receiver_at: nowIso(Date.now()), receiver_nearby: true, item_ok: input.item_ok, ...WIPE_POSITIONS,
@@ -305,6 +309,7 @@ export const handoffRoutes = (verify: TokenVerifier, idempotency: IdempotencySto
       const body = moved.status === "completed" ? "The handoff is done." : "The buyer flagged a problem with the item.";
       await notifyOrder(moved, userId, title, body);
     }
+    if (session) await settleHandoffSession(session, input.item_ok, "handoff_confirmed");
     await notifyOther(saved, userId, "Handoff confirmed", input.item_ok ? "All done." : "They reported a problem with the item.");
     await announce(saved.id, "handoff.completed", await handoffOut(saved));
     return c.json(one(await handoffOut(saved, userId)));
@@ -346,6 +351,8 @@ export const handoffRoutes = (verify: TokenVerifier, idempotency: IdempotencySto
 
       const order = decision.outcome === "paired" ? await orderFor(handoff, userId) : null;
       if (decision.outcome === "paired") orderNext(order, itemOk ? "handoff_confirmed" : "dispute"); // reject before writing anything
+      const session = decision.outcome === "paired" ? await sessionOf(handoff) : null;
+      requirePaidSession(session);
 
       const patch = {
         [`${me}_tap_at`]: nowIso(now), [`${me}_tap_lat`]: input.location.lat, [`${me}_tap_lng`]: input.location.lng,
@@ -378,6 +385,7 @@ export const handoffRoutes = (verify: TokenVerifier, idempotency: IdempotencySto
         await notifyOrder(moved, userId, moved.status === "completed" ? "Order completed" : "Order disputed",
           moved.status === "completed" ? "The handoff is done." : "The buyer flagged a problem with the item.");
       }
+      if (session) await settleHandoffSession(session, itemOk, "handoff_tap_confirmed");
       await notifyOther(saved, userId, "Handoff confirmed", itemOk ? "All done." : "They reported a problem with the item.");
       await announce(saved.id, "handoff.completed", await handoffOut(saved));
       await announce(saved.id, "handoff.updated", await handoffOut(saved));

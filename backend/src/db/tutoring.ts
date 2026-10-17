@@ -12,6 +12,9 @@ import type { UserPublicOut } from "./users.js";
 const Mode = z.enum(["in_person", "virtual"]);
 const Side = z.enum(["tutor", "student"]);
 const ts = z.string().transform((v) => new Date(v).toISOString());
+const tsNull = z.string().nullable().transform((v) => (v ? new Date(v).toISOString() : null));
+export const SessionPaymentStatus = z.enum(["none", "requires_payment", "succeeded", "failed", "refunded"]);
+export const SessionPayoutStatus = z.enum(["held", "awaiting_onboarding", "released", "reversed"]);
 
 export const TutorProfileRow = z.object({
   user_id: z.guid(), school_id: z.guid(), enabled: z.boolean(), hourly_rate_cents: z.number().int(),
@@ -26,6 +29,11 @@ export const SessionRow = z.object({
   room_booking_status: z.enum(["not_needed", "pending", "booked", "manual_required"]), room: z.string().nullable(), booking_url: z.string().nullable(),
   status: z.enum(["requested", "accepted", "paid", "completed", "cancelled", "no_show"]), waiting_on: Side.nullable(),
   history: z.array(HistoryEntry), notes: z.string().nullable(), handoff_id: z.guid().nullable(), cancel_reason: z.string().nullable(),
+  safe_zone_id: z.guid().nullable(), payment_intent_id: z.string().nullable(),
+  // 0019_tutoring_escrow; the defaults keep sessions readable on a database that doesn't have it yet.
+  payment_status: SessionPaymentStatus.default("none"), payout_status: SessionPayoutStatus.nullable().default(null),
+  fee_cents: z.number().int().nullable().default(null), tutor_payout_cents: z.number().int().nullable().default(null),
+  paid_at: tsNull.default(null), released_at: tsNull.default(null),
   course: CourseRow,
 });
 export type TutorProfileRow = z.infer<typeof TutorProfileRow>;
@@ -44,6 +52,8 @@ export function toSession(row: SessionRow, users: Map<string, UserPublicOut>) {
     location: { kind: row.location_kind, name: row.location_name, meeting_url: row.meeting_url },
     room_booking: toRoomBooking(row),
     status: row.status, waiting_on: row.waiting_on, history: row.history, handoff_id: row.handoff_id,
+    payment: { status: row.payment_status, paid_at: row.paid_at },
+    payout: { status: row.payout_status, released_at: row.released_at, tutor_payout_cents: row.tutor_payout_cents },
   });
 }
 

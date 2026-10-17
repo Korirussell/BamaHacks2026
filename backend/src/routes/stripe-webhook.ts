@@ -8,6 +8,7 @@ import { adminClient } from "../lib/supabase.js";
 import { markPaid } from "../services/escrow.js";
 import { nextOrderStatus } from "../services/orders.js";
 import { syncConnectAccount } from "../services/stripe-connect.js";
+import { loadEscrowSession, markSessionPaid, supabaseSessionEscrowStore, type EscrowSession } from "../services/tutoring-escrow.js";
 import { afterPaid } from "./orders.js";
 
 /** Remembers which Stripe events were already received (public.stripe_events). */
@@ -29,6 +30,10 @@ export interface StripeWebhookDeps {
   afterPaid(order: OrderRow): Promise<OrderRow>;
   notify: typeof notify;
   syncConnectAccount(account: Stripe.Account): Promise<void>;
+  loadSession(id: string): Promise<EscrowSession | null>;
+  loadSessionByPaymentIntent(paymentIntentId: string): Promise<EscrowSession | null>;
+  updateSession(row: EscrowSession, patch: Record<string, unknown>): Promise<EscrowSession>;
+  markSessionPaid(row: EscrowSession, ref: string): Promise<EscrowSession>;
 }
 
 const UNIQUE_VIOLATION = "23505";
@@ -76,7 +81,18 @@ export function defaultStripeWebhookDeps(): StripeWebhookDeps {
     afterPaid,
     notify,
     syncConnectAccount,
+    loadSession: (id) => loadEscrowSession("id", id),
+    loadSessionByPaymentIntent: (pi) => loadEscrowSession("payment_intent_id", pi),
+    updateSession: supabaseSessionEscrowStore.update,
+    markSessionPaid: (row, ref) => markSessionPaid(row, ref),
   };
+}
+
+/** The tutoring session a PaymentIntent was made for, when it belongs to this school. */
+async function sessionOf(pi: Stripe.PaymentIntent, d: StripeWebhookDeps): Promise<EscrowSession | null> {
+  const id = pi.metadata["tutoring_session_id"] ?? "";
+  const row = id ? await d.loadSession(id) : null;
+  return row && row.school_id === pi.metadata["school_id"] ? row : null;
 }
 
 const idOf = (v: string | { id: string } | null | undefined): string | null => (typeof v === "string" ? v : v?.id ?? null);
@@ -85,7 +101,13 @@ async function handle(event: Stripe.Event, d: StripeWebhookDeps): Promise<void> 
   switch (event.type) {
     case "payment_intent.succeeded": {
       const pi = event.data.object;
-      if (pi.metadata["kind"] !== "order") return; // tutoring etc. come later
+      if (pi.metadata["kind"] === "tutoring_session") {
+        const row = await sessionOf(pi, d);
+        if (!row) console.warn("stripe webhook: no matching tutoring session for payment", event.id);
+        else if (row.status === "accepted") await d.markSessionPaid(row, pi.id); // else already paid, or cancelled
+        return;
+      }
+      if (pi.metadata["kind"] !== "order") return;
       const order = await d.loadOrder(pi.metadata["order_id"] ?? "");
       if (!order || order.school_id !== pi.metadata["school_id"]) {
         console.warn("stripe webhook: no matching order for payment", event.id);
@@ -98,6 +120,17 @@ async function handle(event: Stripe.Event, d: StripeWebhookDeps): Promise<void> 
     }
     case "payment_intent.payment_failed": {
       const pi = event.data.object;
+      if (pi.metadata["kind"] === "tutoring_session") {
+        const row = await sessionOf(pi, d);
+        if (!row || row.status !== "accepted") return;
+        // Stays accepted so the student can try another card.
+        await d.updateSession(row, { payment_status: "failed" });
+        await d.notify({
+          schoolId: row.school_id, userId: row.student_id, type: "tutoring.updated", title: "Payment didn't go through",
+          body: "Your card was declined. Try another payment method.", deepLink: `/tutoring/sessions/${row.id}`, data: { session_id: row.id },
+        });
+        return;
+      }
       if (pi.metadata["kind"] !== "order") return;
       const order = await d.loadOrder(pi.metadata["order_id"] ?? "");
       if (!order || order.school_id !== pi.metadata["school_id"] || order.status !== "awaiting_payment") return;
@@ -112,6 +145,18 @@ async function handle(event: Stripe.Event, d: StripeWebhookDeps): Promise<void> 
     case "charge.dispute.created": {
       const pi = idOf(event.data.object.payment_intent);
       const order = pi ? await d.loadOrderByPaymentIntent(pi) : null;
+      const session = !order && pi ? await d.loadSessionByPaymentIntent(pi) : null;
+      if (session) {
+        // Sessions have no disputed state: the money stays wherever it is and the team reviews it.
+        console.warn(`stripe webhook: chargeback on tutoring session ${session.id} while ${session.status}; needs manual review`);
+        for (const userId of [session.student_id, session.tutor_id]) {
+          await d.notify({
+            schoolId: session.school_id, userId, type: "tutoring.updated", title: "Payment disputed",
+            body: "The card payment was disputed with the bank. The team will review it.", deepLink: `/tutoring/sessions/${session.id}`, data: { session_id: session.id },
+          });
+        }
+        return;
+      }
       if (!order) {
         console.warn("stripe webhook: dispute for an unknown payment", event.id);
         return;

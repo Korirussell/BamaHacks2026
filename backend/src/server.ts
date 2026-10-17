@@ -78,6 +78,7 @@ export function buildServer(config: Config = loadConfig()) {
     appName: config.APP_NAME,
     groupme: { secret: config.GROUPME_WEBHOOK_SECRET || null, schoolId: config.GROUPME_SCHOOL_ID },
     sweep: { secret: config.CRON_SECRET || null, run: () => sweeper.tickOnce() },
+    instagramWebhookToken: config.INSTAGRAM_WEBHOOK_VERIFY_TOKEN || null,
   });
 
   const startWorkers = () => {

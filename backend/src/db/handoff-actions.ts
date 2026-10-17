@@ -6,6 +6,7 @@ import { adminClient } from "../lib/supabase.js";
 import { settleOrder } from "../services/escrow.js";
 import { decideOverdue, type Party } from "../services/handoff.js";
 import { nextOrderStatus } from "../services/orders.js";
+import { loadEscrowSession, settleSession, type EscrowSession } from "../services/tutoring-escrow.js";
 import {
   HANDOFF_SELECT, HandoffRow, RESET_FOR_RESCHEDULE, WIPE_POSITIONS, loadSharing, saveHandoff, toHandoff,
 } from "./fulfillment.js";
@@ -34,6 +35,30 @@ export async function orderOf(handoff: HandoffRow): Promise<OrderRow | null> {
     .eq("school_id", handoff.school_id).eq("id", handoff.context_id).maybeSingle();
   if (error) throw error;
   return data ? OrderRow.parse(data) : null;
+}
+
+/** The paid tutoring session behind a tutoring handoff (giver = tutor, receiver = student). Null for orders. */
+export async function sessionOf(handoff: HandoffRow): Promise<EscrowSession | null> {
+  if (handoff.context_type !== "tutoring_session") return null;
+  const row = await loadEscrowSession("id", handoff.context_id);
+  return row && row.school_id === handoff.school_id ? row : null;
+}
+
+/** Checks a tutoring session can be settled by its handoff before anything is written. */
+export function requirePaidSession(session: EscrowSession | null) {
+  if (session && session.status !== "paid") throw new ApiError(409, "INVALID_STATE", `Session is ${session.status}`);
+}
+
+/**
+ * Money move for a confirmed tutoring handoff: the student confirmed → pay the tutor. A student
+ * who flags a problem (item_ok=false) leaves the money held on a still-paid session for the team.
+ */
+export async function settleHandoffSession(session: EscrowSession, itemOk: boolean, reason: string): Promise<EscrowSession> {
+  if (!itemOk) {
+    console.warn(`tutoring session ${session.id}: student flagged a problem at the handoff; payment held for review`);
+    return session;
+  }
+  return settleSession(session, "completed", { reason });
 }
 
 export async function sellerPayoutsEnabled(sellerId: string, schoolId: string): Promise<boolean> {
@@ -71,6 +96,8 @@ export async function reportNoShow(handoff: HandoffRow, reporterId: string, abse
   if (handoff.status !== "agreed" && handoff.status !== "arriving") throw new ApiError(409, "INVALID_STATE", `Handoff is ${handoff.status}`);
   const order = await orderOf(handoff);
   const refunded = order ? nextOrderStatus(order.status, "no_show") : null; // reject before writing anything
+  const session = await sessionOf(handoff);
+  requirePaidSession(session);
   const absentId = partyId(handoff, absent);
 
   const saved = await saveHandoff(handoff, { status: "no_show", no_show_party: absent, ...WIPE_POSITIONS });
@@ -78,14 +105,19 @@ export async function reportNoShow(handoff: HandoffRow, reporterId: string, abse
     // Order handoff: giver = seller, receiver = buyer. The buyer is refunded either way.
     await settleOrder(order, "refunded", { reason: `no_show:${absent === "giver" ? "seller" : "buyer"}` });
   }
+  if (session) {
+    // Tutoring handoff: giver = tutor, receiver = student. The student is refunded either way.
+    await settleSession(session, "no_show", { reason: `no_show:${absent === "giver" ? "tutor" : "student"}` });
+  }
+  const payer = session ? "student" : "buyer";
   await bumpNoShowCount(absentId, handoff.school_id);
   await notifyBoth(
     saved,
     (userId) => (userId === absentId ? "Missed meetup" : "Meetup no-show"),
     (userId) => (userId === absentId
-      ? "You didn't make it to the meetup, so it was cancelled and the buyer was refunded."
-      : reason === "overdue" ? "The other person never showed up. The meetup was cancelled and the buyer was refunded."
-      : "No-show recorded. The buyer was refunded."),
+      ? `You didn't make it to the meetup, so it was cancelled and the ${payer} was refunded.`
+      : reason === "overdue" ? `The other person never showed up. The meetup was cancelled and the ${payer} was refunded.`
+      : `No-show recorded. The ${payer} was refunded.`),
   );
   void reporterId;
   await announce(saved.id, "handoff.updated", await handoffOut(saved));
