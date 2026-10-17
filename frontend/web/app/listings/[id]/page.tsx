@@ -61,6 +61,8 @@ export default function ListingDetail({ params }: { params: Promise<{ id: string
   const seller = USE_MOCKS ? userById(listing.seller_id) : real.data?.seller ?? undefined;
   const listingBids = bids.filter(b => b.listing_id === listing.id);
   const claimedFromIg = !ghost && listing.source.channel === 'instagram';
+  // An unclaimed Instagram post has no seller account yet: show the handle we'll DM.
+  const igHandle = !ghost && !seller && listing.source.author_handle ? `@${listing.source.author_handle}` : undefined;
   const share = () => {
     if (typeof navigator !== 'undefined' && navigator.share) navigator.share({ title: listing.title, url: window.location.href }).catch(() => {});
     else toast('Link copied');
@@ -114,11 +116,11 @@ export default function ListingDetail({ params }: { params: Promise<{ id: string
           <p className="mt-5 text-[15.5px] leading-relaxed text-ink">{listing.description}</p>
 
           <div className="mt-6 flex items-center gap-3 rounded-2xl bg-card-bg p-3.5">
-            <span className="flex h-11 w-11 items-center justify-center rounded-full bg-img-bg text-xl" aria-hidden>{ghost ? '📸' : seller?.avatar_emoji}</span>
+            <span className="flex h-11 w-11 items-center justify-center rounded-full bg-img-bg text-xl" aria-hidden>{ghost || igHandle ? '📸' : seller?.avatar_emoji}</span>
             <div className="min-w-0">
-              {ghost ? (
+              {ghost || igHandle ? (
                 <>
-                  <p className="font-semibold text-ink">{listing.source.author_handle}</p>
+                  <p className="font-semibold text-ink">{igHandle ?? listing.source.author_handle}</p>
                   <p className="text-[13px] font-medium text-meta">{copy.ghost.label}</p>
                 </>
               ) : (

@@ -87,6 +87,15 @@ export default function ClaimPage({ params }: { params: Promise<{ token: string 
   return <MockClaimPage token={token} />;
 }
 
+/** "Jordan wants your Campbell Biology" / "3 UA students want your …" from the live offers. */
+function liveHeadline({ listings, pending_offers }: LiveClaim) {
+  const item = listings.length === 1 ? listings[0]!.title : 'stuff';
+  const first = pending_offers[0];
+  if (!first) return `Your ${item} is on Handoff`;
+  const who = pending_offers.length === 1 ? first.buyer.display_name.split(' ')[0] : `${pending_offers.length} UA students`;
+  return `${who} ${pending_offers.length === 1 ? 'wants' : 'want'} your ${item}`;
+}
+
 /** Real API: the link from the Instagram DM. One tap claims it (no sign-in, DEMO_AUTH), then accept an offer. */
 function LiveClaimPage({ token }: { token: string }) {
   const router = useRouter();
@@ -115,7 +124,7 @@ function LiveClaimPage({ token }: { token: string }) {
           <EmptyState emoji="🤔" line={err || "This claim link doesn't look right, or it already expired."} action={<PillLink href="/feed" size="sm">Browse Handoff</PillLink>} />
         ) : (
           <>
-            <h1 className="font-display text-[34px] font-bold">{copy.claim.headline}</h1>
+            <h1 className="font-display text-[34px] font-bold">{liveHeadline(data)}</h1>
             <p className="mt-3 text-[15.5px] font-semibold text-soft">Hey @{data.external_seller.handle}, people on Handoff want what you posted.</p>
             {data.listings.map((l) => (
               <div key={l.id} className="stk mt-5 rounded-[22px] bg-card p-4">
