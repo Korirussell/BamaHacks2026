@@ -8,11 +8,15 @@
 // resets everything they did: sessions, offers, orders, handoffs, the Instagram seller's listings.
 
 import { adminClient } from "../lib/supabase.js";
+import { notifyMaterialMatch } from "../workers/ingest.js";
 
 const SCHOOL = "00000000-0000-4000-a000-000000000001";
 const TERM = { term: "Fall 2026", term_start: "2026-08-19", term_end: "2026-12-11" } as const;
 const PAST = "Fall 2025";
 const INSTAGRAM_HANDLE = "bama_books";
+// The real Instagram account the claim DM goes to (INSTAGRAM_SELLER_IGSID); its claimed account is reset too.
+const DM_HANDLE = "darealkorirussell";
+const DM_SELLER_EMAIL = `instagram.${DM_HANDLE}@crimson.ua.edu`;
 
 const course = {
   CH101: "00000000-0000-4000-e000-000000000001",
@@ -60,6 +64,7 @@ const personas: Record<string, Persona> = {
     display_name: "Jordan Lee",
     major: "Biology",
     grad_year: 2030,
+    profile: { mail_stop_code: "870245" },
     current: [course.CH101, course.MATH125, course.EN101, course.BSC114],
     meetings: [
       { course: course.CH101, days: MWF, start: "09:00", end: "09:50", building: building.SHELBY, room: "1093" },
@@ -171,9 +176,11 @@ async function run(label: string, query: PromiseLike<{ error: { message: string 
 }
 
 async function resetDemoState() {
-  const list = `(${ids.join(",")})`;
+  const dmSeller = await db.from("profiles").select("id").eq("email", DM_SELLER_EMAIL).maybeSingle<{ id: string }>();
+  if (dmSeller.error) throw dmSeller.error;
+  const list = `(${[...ids, ...(dmSeller.data ? [dmSeller.data.id] : [])].join(",")})`;
   const sellerListings = await db.from("listings").select("id").eq("school_id", SCHOOL)
-    .or(`seller_id.in.${list},external_handle.eq.${INSTAGRAM_HANDLE}`);
+    .or(`seller_id.in.${list},external_handle.in.(${INSTAGRAM_HANDLE},${DM_HANDLE})`);
   if (sellerListings.error) throw sellerListings.error;
   const listingIds = sellerListings.data.map((l: { id: string }) => l.id);
 
@@ -182,7 +189,7 @@ async function resetDemoState() {
   if (listingIds.length) await run("orders on listings", db.from("orders").delete().in("listing_id", listingIds));
   await run("handoffs", db.from("handoffs").delete().or(`giver_id.in.${list},receiver_id.in.${list}`));
   await run("offers", db.from("offers").delete().or(`buyer_id.in.${list},seller_id.in.${list}`));
-  await run("seller invites", db.from("seller_invites").delete().eq("school_id", SCHOOL).eq("handle", INSTAGRAM_HANDLE));
+  await run("seller invites", db.from("seller_invites").delete().eq("school_id", SCHOOL).in("handle", [INSTAGRAM_HANDLE, DM_HANDLE]));
   if (listingIds.length) await run("listings", db.from("listings").delete().in("id", listingIds));
   // So the demo post can be ingested again: re-sending a known URL is a no-op.
   await run("ingested posts", db.from("ingested_posts").delete().eq("school_id", SCHOOL).ilike("author_handle", `%${INSTAGRAM_HANDLE}`));
@@ -211,6 +218,7 @@ async function seedPersona(p: Persona) {
     major: p.major,
     grad_year: p.grad_year,
     mail_stop_code: p.profile?.mail_stop_code ?? null,
+    mail_name: p.profile?.mail_stop_code ? p.display_name : null,
     tutor_opt_in: p.profile?.tutor_opt_in ?? false,
     is_admin: p.profile?.is_admin ?? false,
     completed_count: p.profile?.completed_count ?? 0,
@@ -278,6 +286,41 @@ async function seedTickets() {
   }));
 }
 
+type DemoListing = {
+  id: string; seller: string | null; title: string; description: string; price_cents: number; isbn?: string;
+  textbook_title?: string; authors?: string[]; edition?: string; category: "textbook" | "dorm"; courses: string[]; condition: "like_new" | "good" | "fair";
+};
+const L = (n: number) => `00000000-0000-4000-7000-0000000002${String(n).padStart(2, "0")}`;
+const demoListings: DemoListing[] = [
+  { id: L(1), seller: "tutor_ava", category: "textbook", title: "Chemistry: The Central Science (14th ed.)", textbook_title: "Chemistry: The Central Science", authors: ["Brown", "LeMay", "Bursten"], edition: "14", isbn: "9780134414232", price_cents: 4500, condition: "good", courses: [course.CH101, course.CH102], description: "Used for CH 101 and 102. Some highlighting in ch. 1-6, no torn pages." },
+  { id: L(2), seller: "seller", category: "textbook", title: "Calculus: Early Transcendentals (9th ed.)", textbook_title: "Calculus: Early Transcendentals", authors: ["Stewart"], edition: "9", isbn: "9781337613927", price_cents: 6000, condition: "like_new", courses: [course.MATH125, course.MATH126], description: "Barely opened. Comes with the WebAssign card (unused)." },
+  { id: L(3), seller: "tutor_marcus", category: "textbook", title: "Principles of Microeconomics (Mankiw, 9th ed.)", textbook_title: "Principles of Microeconomics", authors: ["Mankiw"], edition: "9", isbn: "9780357133484", price_cents: 3500, condition: "good", courses: [course.EC110], description: "EC 110 book. Clean copy." },
+  { id: L(4), seller: "tutor_priya", category: "dorm", title: "Mini fridge (3.1 cu ft)", price_cents: 7000, condition: "good", courses: [], description: "Works great, moving off campus. Pick up at Presidential." },
+];
+
+/** Feed listings, plus one unclaimed Instagram post: an offer on it DMs the real account a claim link. */
+async function seedMarket() {
+  await run("demo listings", db.from("listings").upsert(demoListings.map((l) => ({
+    id: l.id, school_id: SCHOOL, seller_id: personas[l.seller!]!.id, category: l.category, title: l.title, description: l.description,
+    price_cents: l.price_cents, negotiable: true, condition: l.condition, isbn: l.isbn ?? null, textbook_title: l.textbook_title ?? null,
+    authors: l.authors ?? [], edition: l.edition ?? null, fulfillment: ["in_person", "campus_mail"], status: "active", source_channel: "native",
+  }))));
+  const ig = {
+    id: L(10), school_id: SCHOOL, seller_id: null, external_channel: "instagram", external_handle: DM_HANDLE,
+    external_profile_url: `https://instagram.com/${DM_HANDLE}`, external_url: `https://instagram.com/stories/${DM_HANDLE}/demo`,
+    category: "textbook", title: "Campbell Biology (12th ed.)", textbook_title: "Campbell Biology", authors: ["Urry", "Cain"], edition: "12",
+    isbn: "9780135188743", price_cents: 4000, negotiable: true, condition: "good", fulfillment: ["in_person", "campus_mail"],
+    description: "selling my bio textbook from BSC 114, $40 obo, dm me", status: "active", source_channel: "instagram",
+  };
+  await run("instagram listing", db.from("listings").upsert(ig));
+  const courses = [...demoListings.flatMap((l) => l.courses.map((c) => ({ listing_id: l.id, course_id: c }))), { listing_id: ig.id, course_id: course.BSC114 }];
+  await run("listing courses", db.from("listing_courses").upsert(courses));
+  const told = await notifyMaterialMatch({
+    schoolId: SCHOOL, listingId: ig.id, courseIds: [course.BSC114], title: ig.title, priceCents: ig.price_cents, sellerId: null, from: `@${DM_HANDLE} on Instagram`,
+  });
+  console.log(`Seeded ${demoListings.length + 1} listings; told ${told} BSC 114 student(s) about the Instagram book.`);
+}
+
 async function printOtp(name: string) {
   const p = personas[name];
   if (!p) throw new Error(`Unknown persona "${name}". Pick one of: ${Object.keys(personas).join(", ")}`);
@@ -294,6 +337,7 @@ if (command === "otp") {
   for (const p of Object.values(personas)) await seedPersona(p);
   await seedTutoringReputation();
   await seedTickets();
+  await seedMarket();
   console.log("Demo personas ready:");
   for (const [name, p] of Object.entries(personas)) console.log(`  ${name.padEnd(13)} ${p.email}  (${p.display_name})`);
   console.log(`\nSign in as one: pnpm seed:demo otp <name>`);
