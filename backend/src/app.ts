@@ -29,6 +29,7 @@ import { handoffRoutes } from "./routes/handoffs.js";
 import { shipmentRoutes } from "./routes/shipments.js";
 import { reviewsRoutes } from "./routes/reviews.js";
 import { paymentsRoutes } from "./routes/payments.js";
+import { usersRoutes } from "./routes/users.js";
 import type { InstagramPoller } from "./workers/instagram-poller.js";
 
 export interface AppDeps {
@@ -84,7 +85,7 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     .route("/", libraryRoutes(verify, roomAvailability))
     .route("/admin", adminRoutes(verify, identifier, instagram))
     .route("/claims", claimsRoutes(verify))
-    .route("/", listingsRoutes(verify))
+    .route("/", listingsRoutes(verify, identifier))
     .route("/", offersRoutes(verify, market))
     .route("/", ordersRoutes(verify, idempotency, payments))
     .route("/", webhookRoutes(webhooks))
@@ -92,6 +93,7 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     .route("/", shipmentRoutes(verify, idempotency))
     .route("/", reviewsRoutes(verify))
     .route("/", paymentsRoutes(verify))
+    .route("/", usersRoutes(verify))
     .route("/", notificationsRoutes(verify));
 
   const app = new Hono();
