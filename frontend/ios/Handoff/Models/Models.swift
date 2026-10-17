@@ -227,6 +227,18 @@ struct ScreenshotResult: Codable, Hashable {
     let authorHandle: String?
     let confidence: Double
     let missingFields: [String]
+    /// screenshot | comparable_listings | ai_estimate (Gemma); price_reason only comes with ai_estimate.
+    let priceSource: String?
+    let priceReason: String?
+
+    var priceSourceLine: String? {
+        switch priceSource {
+        case "screenshot": return "Price taken from the post"
+        case "comparable_listings": return "Priced from similar listings on Handoff"
+        case "ai_estimate": return "Priced by Gemma: \(priceReason ?? "estimated from the photo")"
+        default: return nil
+        }
+    }
 }
 
 // MARK: - features-v2 fixtures

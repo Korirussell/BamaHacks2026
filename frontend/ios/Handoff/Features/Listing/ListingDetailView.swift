@@ -8,6 +8,7 @@ struct ListingDetailView: View {
     @State private var payDirect = false
     @State private var openBuyThread = false
     @State private var galleryIndex = 0
+    @State private var haggleAI = false
 
     var body: some View {
         if let listing = store.listing(listingId) {
@@ -29,6 +30,13 @@ struct ListingDetailView: View {
                     }
 
                     sellerRow(listing)
+
+                    if !listing.isGhost, listing.status == "active", listing.sellerId != store.me?.userId {
+                        Button { haggleAI = true } label: {
+                            Label("Haggle with AI", systemImage: "sparkles")
+                        }
+                        .buttonStyle(.pill(.butter, full: true))
+                    }
 
                     if let place = listing.locationLabel.flatMap({ store.place(matchingLabel: $0) }) {
                         pickupMap(place)
@@ -60,6 +68,7 @@ struct ListingDetailView: View {
                     }
                 }
             }
+            .sheet(isPresented: $haggleAI) { HaggleChatSheet(listing: listing) }
             .dealFlow(isPaying: $buying, amountCents: listing.priceCents, listing: listing)
             .task { if listing.isGhost { await store.loadBids(listing.id) } }
         } else {
@@ -242,5 +251,278 @@ struct ListingDetailView: View {
         .padding(.top, 12)
         .padding(.bottom, 8)
         .background(Color.hoBg.overlay(alignment: .top) { Rectangle().fill(Color.cardDivider).frame(height: 1) })
+    }
+}
+
+// MARK: - Haggle with AI (POST /listings/{id}/haggle)
+
+/// The buyer chats with the seller's AI agent. JEV-9B triages each message on the laptop worker;
+/// the API's keyword rules (or `OfflineAI` on the phone, when the API can't be reached) cover the rest.
+struct HaggleChatSheet: View {
+    let listing: Listing
+    @Environment(\.dismiss) private var dismiss
+
+    private struct Line: Identifiable {
+        let id = UUID()
+        let fromBuyer: Bool
+        let text: String
+        var response: HaggleResponse? = nil
+    }
+
+    @State private var lines: [Line] = []
+    @State private var history: [HaggleTurn] = []
+    @State private var lastCounterCents: Int?
+    @State private var draft = ""
+    @State private var sending = false
+    @State private var engine: String?
+    @State private var offlineReason: String?
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 14) {
+                            header
+                            ForEach(lines) { line in
+                                lineView(line).id(line.id)
+                            }
+                            if sending {
+                                HStack(spacing: 8) {
+                                    ProgressView().tint(Color.hoInk)
+                                    Text("Seller's agent is thinking…")
+                                        .font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Color.hoSoft)
+                                }
+                            }
+                        }
+                        .padding(18)
+                    }
+                    .onChange(of: lines.count) {
+                        if let id = lines.last?.id { withAnimation { proxy.scrollTo(id, anchor: .bottom) } }
+                    }
+                }
+                inputBar
+            }
+            .background(Color.hoBg.ignoresSafeArea())
+            .navigationTitle("Haggle with AI")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { dismiss() } label: { Image(systemName: "xmark").fontWeight(.heavy) }.tint(Color.hoInk)
+                }
+            }
+        }
+        .presentationDetents([.large])
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SheetTitle(kicker: "Seller's AI agent", title: listing.title)
+            HStack(spacing: 8) {
+                Text("Asking \(Money.format(listing.priceCents))")
+                    .font(.system(size: 13, weight: .semibold)).foregroundStyle(Color.cardMeta)
+                if let lastCounterCents {
+                    Text("· Last counter \(Money.format(lastCounterCents))")
+                        .font(.system(size: 13, weight: .semibold)).foregroundStyle(Color.cardMeta)
+                }
+                Spacer()
+                if let engine { engineLabel(engine) }
+            }
+            if let offlineReason {
+                Text("Live API unavailable (\(offlineReason)). Using on-phone rules.")
+                    .font(.system(size: 11.5, weight: .medium)).foregroundStyle(Color.hoSoft)
+            }
+            if lines.isEmpty {
+                Text("Ask a question or make an offer, like “Would you take $\(max(1, listing.priceCents * 8 / 10 / 100))?”")
+                    .font(.system(size: 14, weight: .medium)).foregroundStyle(Color.hoSoft)
+                    .padding(.top, 6)
+            }
+        }
+    }
+
+    private func engineLabel(_ engine: String) -> some View {
+        let jev = engine == "jev"
+        return Label(jev ? "JEV-9B on-device" : "rules", systemImage: jev ? "cpu" : "list.bullet")
+            .font(.system(size: 10.5, weight: .heavy))
+            .foregroundStyle(jev ? Color.hoInkOnLight : Color.hoInk)
+            .padding(.horizontal, 8).padding(.vertical, 4)
+            .background(Capsule().fill(jev ? Color.hoMint : Color.hoSunk))
+    }
+
+    @ViewBuilder private func lineView(_ line: Line) -> some View {
+        if line.fromBuyer {
+            BubbleView(side: .me, text: line.text)
+        } else if let r = line.response {
+            VStack(alignment: .leading, spacing: 8) {
+                if !r.scamFlags.isEmpty { safetyBanner(r) }
+                BubbleView(side: .them, text: r.reply.isEmpty ? "…" : r.reply, tag: "Seller's agent")
+                HStack(spacing: 8) {
+                    HaggleActionBadge(action: r.action)
+                    if let p = r.priceCents, r.action == "counter" || r.action == "hold_firm" {
+                        Text(Money.format(p)).font(.system(size: 13, weight: .heavy)).monospacedDigit()
+                            .foregroundStyle(Color.hoInk)
+                    }
+                }
+                if let offer = r.proposedOffer {
+                    Label("Offer sent at \(Money.format(offer.amountCents ?? r.priceCents ?? listing.priceCents))",
+                          systemImage: "checkmark.seal.fill")
+                        .font(.system(size: 13, weight: .heavy)).foregroundStyle(Color.hoInkOnLight)
+                        .padding(.horizontal, 12).padding(.vertical, 8)
+                        .background(Capsule().fill(Color.hoMint))
+                }
+                if let d = r.decisions, !d.isEmpty { JEVWhy(decisions: d) }
+            }
+        }
+    }
+
+    private func safetyBanner(_ r: HaggleResponse) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "exclamationmark.shield.fill").font(.system(size: 18, weight: .bold))
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Possible scam").font(.system(size: 14, weight: .heavy))
+                Text(r.scamFlags.map(Self.flagLabel).joined(separator: " · "))
+                    .font(.system(size: 12.5, weight: .semibold))
+                Text(r.reported == true ? "Reported to Handoff safety. Never pay outside the app." : "Never pay outside the app.")
+                    .font(.system(size: 12, weight: .medium)).opacity(0.85)
+            }
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(Color.white)
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 14).fill(Color.hoAccent))
+    }
+
+    private static func flagLabel(_ flag: String) -> String {
+        switch flag {
+        case "off_platform_payment": return "Off-platform payment"
+        case "urgency_pressure": return "Urgency pressure"
+        case "meetup_change": return "Meetup change"
+        case "phishing": return "Phishing"
+        default: return flag.replacingOccurrences(of: "_", with: " ").capitalized
+        }
+    }
+
+    private var trimmedDraft: String { draft.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    private var inputBar: some View {
+        HStack(spacing: 10) {
+            TextField("Make an offer or ask a question", text: $draft, axis: .vertical)
+                .lineLimit(1...4)
+                .font(.system(size: 15))
+                .foregroundStyle(Color.hoInk)
+                .padding(.horizontal, 14).padding(.vertical, 10)
+                .background(RoundedRectangle(cornerRadius: 12).fill(Color.hoCard))
+            Button(action: send) {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 16, weight: .heavy))
+                    .foregroundStyle(Color.white)
+                    .frame(width: 42, height: 42)
+                    .background(Circle().fill(Color.hoAccent))
+            }
+            .buttonStyle(.plain)
+            .disabled(trimmedDraft.isEmpty || sending)
+            .opacity(trimmedDraft.isEmpty || sending ? 0.5 : 1)
+        }
+        .padding(.horizontal, 18).padding(.vertical, 10)
+        .background(Color.hoBg.overlay(alignment: .top) { Rectangle().fill(Color.cardDivider).frame(height: 1) })
+    }
+
+    private func send() {
+        let message = trimmedDraft
+        guard !message.isEmpty, !sending else { return }
+        draft = ""
+        Haptics.tap()
+        withAnimation(.snappy) { lines.append(Line(fromBuyer: true, text: message)) }
+        sending = true
+        let prior = Array(history.suffix(20))   // the API takes at most 20 turns
+        let counter = lastCounterCents
+        Task { @MainActor in
+            let r: HaggleResponse
+            do {
+                r = try await AIAPI.haggle(listingId: listing.id, message: message, history: prior, lastCounterCents: counter)
+                offlineReason = nil
+            } catch {
+                offlineReason = error.localizedDescription
+                r = OfflineAI.haggle(askCents: listing.priceCents, negotiable: listing.negotiable,
+                                     message: message, lastCounterCents: counter)
+            }
+            history += [HaggleTurn(from: "buyer", text: message), HaggleTurn(from: "seller", text: r.reply)]
+            if r.action == "counter" || r.action == "hold_firm", let p = r.priceCents { lastCounterCents = p }
+            engine = r.engine
+            sending = false
+            if r.action == "accept" { Haptics.success() } else { Haptics.soft() }
+            withAnimation(.snappy) { lines.append(Line(fromBuyer: false, text: r.reply, response: r)) }
+        }
+    }
+}
+
+private struct HaggleActionBadge: View {
+    let action: String
+    var body: some View {
+        let (label, fill, ink): (String, Color, Color) = switch action {
+        case "accept": ("Accept", .hoMint, .hoInkOnLight)
+        case "counter": ("Counter", .hoButter, .hoInkOnLight)
+        case "hold_firm": ("Hold firm", .hoPeach, .hoInk)
+        case "warn": ("Warn", .hoAccent, .white)
+        case "ignore": ("Ignore", .hoSunk, .hoSoft)
+        default: ("Reply", .hoCard, .hoInk)
+        }
+        Text(label)
+            .font(.system(size: 10.5, weight: .heavy))
+            .textCase(.uppercase)
+            .foregroundStyle(ink)
+            .padding(.horizontal, 8).padding(.vertical, 3)
+            .background(Capsule().fill(fill))
+            .overlay(Capsule().strokeBorder(Color.hoInk, lineWidth: 1.5))
+    }
+}
+
+/// "Why (JEV)": each decision key → pick, with its value as a bar. Score questions (0–5) show the expected level.
+private struct JEVWhy: View {
+    let decisions: [String: JEVDecision]
+    @State private var open = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button { withAnimation(.snappy) { open.toggle() } } label: {
+                HStack(spacing: 4) {
+                    Text("Why (JEV)").font(.system(size: 12, weight: .heavy))
+                    Image(systemName: open ? "chevron.up" : "chevron.down").font(.system(size: 10, weight: .heavy))
+                }
+                .foregroundStyle(Color.hoAccentText)
+            }
+            .buttonStyle(.plain)
+            if open {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(decisions.keys.sorted(), id: \.self) { key in
+                        if let d = decisions[key] { row(key, d) }
+                    }
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 12).fill(Color.hoCard))
+            }
+        }
+    }
+
+    private func row(_ key: String, _ d: JEVDecision) -> some View {
+        let isScore = d.probabilities.map { Set($0.keys) == Set(["0", "1", "2", "3", "4", "5"]) } ?? false
+        let fraction = min(max(isScore ? d.value / 5 : d.value, 0), 1)
+        let valueText = isScore ? String(format: "%.1f / 5", d.value) : "\(Int((fraction * 100).rounded()))%"
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("\(key.replacingOccurrences(of: "_", with: " ")) → \(d.pick)")
+                    .font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.hoInk)
+                Spacer()
+                Text(valueText).font(.system(size: 11.5, weight: .heavy)).monospacedDigit().foregroundStyle(Color.hoSoft)
+            }
+            GeometryReader { g in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.hoSunk)
+                    Capsule().fill(Color.hoMint).frame(width: g.size.width * fraction)
+                }
+            }
+            .frame(height: 6)
+        }
     }
 }
