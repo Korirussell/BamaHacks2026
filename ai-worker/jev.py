@@ -14,7 +14,7 @@ import threading
 import time
 
 import torch
-from huggingface_hub import hf_hub_download
+from huggingface_hub import snapshot_download
 from peft import PeftModel
 from safetensors.torch import load_file
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
@@ -24,12 +24,35 @@ NOUL = ["false", "true"]
 SCORE = ["0", "1", "2", "3", "4", "5"]
 
 
+NEEDED = ["config.json", "head.safetensors", "judge_config.json", "calibration.json", "adapter/adapter_model.safetensors", "model.safetensors.index.json"]
+
+
+def _cached_snapshot(repo: str) -> str | None:
+    """Any cached snapshot that has every file decision mode needs (the cache's `main` ref can point at a partial one)."""
+    from huggingface_hub.constants import HF_HUB_CACHE
+
+    snaps = os.path.join(HF_HUB_CACHE, "models--" + repo.replace("/", "--"), "snapshots")
+    if not os.path.isdir(snaps):
+        return None
+    for name in sorted(os.listdir(snaps), key=lambda n: os.path.getmtime(os.path.join(snaps, n)), reverse=True):
+        root = os.path.join(snaps, name)
+        if all(os.path.exists(os.path.join(root, f)) for f in NEEDED):
+            return root
+    return None
+
+
 class Jev:
     def __init__(self, repo: str = "autotrust/JEV-9B", quant: str = "4bit"):
         self.repo = repo
         self.quant = quant
         self.lock = threading.Lock()
         t0 = time.time()
+        # A local folder, or the repo resolved from the HF cache (online only if it isn't cached).
+        if os.path.isdir(repo):
+            root = repo
+        else:
+            root = _cached_snapshot(repo) or snapshot_download(repo)
+        repo = root
         self.tok = AutoTokenizer.from_pretrained(repo)
         kwargs: dict = {"device_map": "cuda"}
         if quant == "4bit":
@@ -41,14 +64,14 @@ class Jev:
         else:
             kwargs["dtype"] = torch.bfloat16
         base = AutoModelForCausalLM.from_pretrained(repo, **kwargs)
-        self.model = PeftModel.from_pretrained(base, repo, subfolder="adapter")
+        self.model = PeftModel.from_pretrained(base, os.path.join(repo, "adapter"))
         self.model.eval()
-        head = load_file(hf_hub_download(repo, "head.safetensors"))
+        head = load_file(os.path.join(repo, "head.safetensors"))
         self.W = head["proj.weight"].float().cuda()
         self.b = head["proj.bias"].float().cuda()
-        with open(hf_hub_download(repo, "judge_config.json")) as f:
+        with open(os.path.join(repo, "judge_config.json")) as f:
             self.ranges = json.load(f)["slots"]["ranges"]
-        with open(hf_hub_download(repo, "calibration.json")) as f:
+        with open(os.path.join(repo, "calibration.json")) as f:
             self.temp = json.load(f)["per_kind"]
         print(f"JEV loaded ({quant}) in {time.time() - t0:.0f}s, {torch.cuda.memory_allocated() / 2**30:.1f} GB on GPU", flush=True)
 
