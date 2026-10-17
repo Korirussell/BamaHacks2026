@@ -3,6 +3,7 @@ import { OrderRow } from "../db/market.js";
 import { ApiError } from "../lib/errors.js";
 import { notify } from "../lib/notify.js";
 import { adminClient } from "../lib/supabase.js";
+import { primaryOrigin } from "../lib/origins.js";
 import { releaseAwaitingPayout } from "./escrow.js";
 
 // Stripe Connect Express onboarding for sellers. New platforms must create connected accounts
@@ -125,7 +126,7 @@ export interface ConnectUrls {
 }
 
 export const connectUrlsFromEnv = (env: NodeJS.ProcessEnv = process.env): ConnectUrls => ({
-  webOrigin: (env["WEB_ORIGIN"] ?? "http://localhost:3000").replace(/\/+$/, ""),
+  webOrigin: primaryOrigin(env["WEB_ORIGIN"]),
   appUrlScheme: env["APP_URL_SCHEME"] || undefined,
 });
 

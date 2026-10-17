@@ -2,7 +2,8 @@ import { z } from "zod";
 
 const optional = z.string().optional();
 const Env = z.object({
-  PORT: z.coerce.number().int(),
+  PORT: z.coerce.number().int().default(8787),
+  // Comma-separated; the first is the app URL in links. "https://*.vercel.app" allows preview deploys (CORS).
   WEB_ORIGIN: z.string().min(1),
   PLATFORM_FEE_BPS: z.coerce.number().int(),
   SUPABASE_URL: optional,
