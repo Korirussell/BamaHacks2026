@@ -1,111 +1,175 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { placeholderLabelRenderer } from "../adapters/stubs.js";
-import { DropOffPointRow, ShipmentRow, toShipment } from "../db/fulfillment.js";
+import { DropOffPointRow, SHIPMENT_SELECT, ShipmentRow, toShipment } from "../db/fulfillment.js";
+import { loadListingRow, loadOrderRow, loadViewer, orderOut, transitionOrder, type OrderRow } from "../db/market.js";
+import { loadSchool } from "../db/tutoring.js";
 import { ApiError } from "../lib/errors.js";
 import { notify } from "../lib/notify.js";
 import { one } from "../lib/respond.js";
 import { adminClient } from "../lib/supabase.js";
 import { parseBody } from "../lib/validate.js";
 import { requireUser, type AuthEnv, type TokenVerifier } from "../middleware/auth.js";
-import { idempotent, supabaseIdempotencyStore } from "../middleware/idempotency.js";
+import { idempotent, type IdempotencyStore } from "../middleware/idempotency.js";
 import { CreateShipmentReq, DroppedOffReq, ReceivedReq } from "../schemas/orders.js";
 import { nextOrderStatus, payoutFor } from "../services/orders.js";
 import { buildLabel, verifyDropOff, verifyReceived } from "../services/shipping.js";
 
-const ORDER_STATUS = z.enum(["awaiting_payment", "paid", "scheduled", "handing_off", "in_transit", "completed", "cancelled", "disputed", "refunded"]);
-const ORDER_SELECT = "*, buyer:profiles!orders_buyer_id_fkey(*), seller:profiles!orders_seller_id_fkey(*), listing:listings(*)";
-const SHIPMENT_SELECT = "*, drop_off:drop_off_points(*)";
-const OrderRow = z.object({ id: z.guid(), school_id: z.guid(), buyer_id: z.guid(), seller_id: z.guid(), status: ORDER_STATUS, payout_status: z.enum(["held", "awaiting_onboarding", "released", "reversed"]), buyer: z.object({ display_name: z.string(), mail_stop_code: z.string().nullable() }), seller: z.object({ display_name: z.string(), payouts_enabled: z.boolean() }), listing: z.object({ title: z.string() }) });
-const ShipmentOrder = z.object({ id: z.guid(), school_id: z.guid(), buyer_id: z.guid(), seller_id: z.guid(), status: ORDER_STATUS, seller: z.object({ payouts_enabled: z.boolean() }) });
+const UNIQUE_VIOLATION = "23505";
+const PartyName = z.object({ id: z.guid(), display_name: z.string(), mail_stop_code: z.string().nullable(), payouts_enabled: z.boolean() });
 
-async function orderFor(id: string, schoolId: string, userId: string) {
-  const result = await adminClient().from("orders").select(ORDER_SELECT).eq("id", id).eq("school_id", schoolId).or(`buyer_id.eq.${userId},seller_id.eq.${userId}`).maybeSingle();
-  if (result.error) throw result.error;
-  if (!result.data) throw new ApiError(404, "NOT_FOUND", "Order not found");
-  return OrderRow.parse(result.data);
+const parseId = (raw: string, what: string) => {
+  const id = z.guid().safeParse(raw);
+  if (!id.success) throw new ApiError(404, "NOT_FOUND", `${what} not found`);
+  return id.data;
+};
+
+/** A shipment plus its order; the user must be the buyer or seller, else 404. */
+async function loadShipment(id: string, userId: string, schoolId: string) {
+  const { data, error } = await adminClient().from("shipments").select(SHIPMENT_SELECT)
+    .eq("id", id).eq("school_id", schoolId).maybeSingle();
+  if (error) throw error;
+  if (!data) throw new ApiError(404, "NOT_FOUND", "Shipment not found");
+  const shipment = ShipmentRow.parse(data);
+  try {
+    return { shipment, order: await loadOrderRow(shipment.order_id, userId, schoolId) };
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) throw new ApiError(404, "NOT_FOUND", "Shipment not found");
+    throw err;
+  }
 }
 
-async function shipmentFor(id: string, schoolId: string, userId: string) {
-  const shipmentResult = await adminClient().from("shipments").select(SHIPMENT_SELECT).eq("id", id).eq("school_id", schoolId).maybeSingle();
-  if (shipmentResult.error) throw shipmentResult.error;
-  if (!shipmentResult.data) throw new ApiError(404, "NOT_FOUND", "Shipment not found");
-  const row = ShipmentRow.parse(shipmentResult.data);
-  const orderResult = await adminClient().from("orders").select("id, school_id, buyer_id, seller_id, status, seller:profiles!orders_seller_id_fkey(payouts_enabled)").eq("id", row.order_id).eq("school_id", schoolId).maybeSingle();
-  if (orderResult.error) throw orderResult.error;
-  if (!orderResult.data) throw new ApiError(404, "NOT_FOUND", "Shipment not found");
-  const order = ShipmentOrder.parse(orderResult.data);
-  if (userId !== order.buyer_id && userId !== order.seller_id) throw new ApiError(404, "NOT_FOUND", "Shipment not found");
-  return { row, order };
+async function loadParties(order: OrderRow) {
+  const { data, error } = await adminClient().from("profiles").select("id, display_name, mail_stop_code, payouts_enabled")
+    .eq("school_id", order.school_id).in("id", [order.buyer_id, order.seller_id]);
+  if (error) throw error;
+  const rows = new Map(z.array(PartyName).parse(data).map((p) => [p.id, p]));
+  const buyer = rows.get(order.buyer_id);
+  const seller = rows.get(order.seller_id);
+  if (!buyer || !seller) throw new Error(`Order ${order.id} references missing profiles`);
+  return { buyer, seller };
 }
 
-async function notifyOther(order: z.infer<typeof ShipmentOrder>, actorId: string, type: "shipment.updated" | "order.updated", title: string, body: string, deepLink: string, data: Record<string, unknown>) {
-  await notify({ schoolId: order.school_id, userId: order.buyer_id === actorId ? order.seller_id : order.buyer_id, type, title, body, deepLink, data });
+async function notifyBoth(order: OrderRow, shipment: ShipmentRow, actorId: string, title: string, body: string) {
+  const userId = order.buyer_id === actorId ? order.seller_id : order.buyer_id;
+  await notify({
+    schoolId: order.school_id, userId, type: "shipment.updated", title, body,
+    deepLink: `/shipments/${shipment.id}`, data: { shipment_id: shipment.id, status: shipment.status },
+  });
+  await notify({
+    schoolId: order.school_id, userId, type: "order.updated", title, body,
+    deepLink: `/orders/${order.id}`, data: { order_id: order.id, status: order.status },
+  });
 }
 
-export const shipmentRoutes = (verify: TokenVerifier) => {
-  const app = new Hono<AuthEnv>().use("/orders/*", requireUser(verify)).use("/shipments/*", requireUser(verify));
+export const shipmentRoutes = (verify: TokenVerifier, idempotency: IdempotencyStore) => {
+  const app = new Hono<AuthEnv>()
+    .use("/orders/:id/shipment", requireUser(verify))
+    .use("/shipments/*", requireUser(verify));
 
   app.get("/shipments/:id", async (c) => {
-    const { row } = await shipmentFor(c.req.param("id"), c.var.user.schoolId, c.var.user.id);
-    return c.json(one(toShipment(row)));
-  });
-
-  app.post("/orders/:id/shipment", idempotent(supabaseIdempotencyStore()), async (c) => {
-    const input = await parseBody(c, CreateShipmentReq);
-    const order = await orderFor(c.req.param("id"), c.var.user.schoolId, c.var.user.id);
-    if (order.seller_id !== c.var.user.id) throw new ApiError(403, "FORBIDDEN", "Only the seller can create a shipment");
-    let points = adminClient().from("drop_off_points").select("*").eq("school_id", order.school_id).eq("active", true);
-    if (input.drop_off_point_id) points = points.eq("id", input.drop_off_point_id);
-    const pointResult = await points.limit(1);
-    if (pointResult.error) throw pointResult.error;
-    const point = z.array(DropOffPointRow).parse(pointResult.data)[0];
-    if (!point) throw new ApiError(400, "VALIDATION", "Invalid request", { drop_off_point_id: "Active drop-off point must belong to your school" });
-    const label = buildLabel({ orderId: order.id, buyer: { name: order.buyer.display_name, mailStopCode: order.buyer.mail_stop_code }, sellerName: order.seller.display_name, itemTitle: order.listing.title, dropOff: { name: point.name, instructions: point.instructions } });
-    const rendered = await placeholderLabelRenderer.render(label);
-    const inserted = await adminClient().from("shipments").insert({ school_id: order.school_id, order_id: order.id, label_code: label.label_code, to_name: label.to.name, to_mail_stop_code: label.to.mail_stop_code, drop_off_point_id: point.id }).select(SHIPMENT_SELECT).single();
-    if (inserted.error) throw inserted.error;
-    const status = nextOrderStatus(order.status, "label_created");
-    const moved = await adminClient().from("orders").update({ status }).eq("id", order.id).eq("school_id", order.school_id).eq("seller_id", c.var.user.id);
-    if (moved.error) throw moved.error;
-    const shipment = ShipmentRow.parse(inserted.data);
-    const notifyOrderRow = ShipmentOrder.parse({ ...order, status });
-    await notifyOther(notifyOrderRow, c.var.user.id, "shipment.updated", "Shipment created", "A campus-mail shipment label is ready.", `/shipments/${shipment.id}`, { shipment_id: shipment.id, status: shipment.status });
-    await notifyOther(notifyOrderRow, c.var.user.id, "order.updated", "Order updated", "Your order is scheduled for campus mail.", `/orders/${order.id}`, { order_id: order.id, status });
-    return c.json(one(toShipment(shipment, rendered.pdfUrl)));
-  });
-
-  app.post("/shipments/:id/dropped-off", idempotent(supabaseIdempotencyStore()), async (c) => {
-    const input = await parseBody(c, DroppedOffReq);
-    const { row, order } = await shipmentFor(c.req.param("id"), c.var.user.schoolId, c.var.user.id);
-    if (order.seller_id !== c.var.user.id) throw new ApiError(403, "FORBIDDEN", "Only the seller can drop off a shipment");
-    const patch = verifyDropOff({ status: row.status, at: input.location, accuracyM: input.accuracy_m, point: { location: { lat: row.drop_off.lat, lng: row.drop_off.lng }, radiusM: row.drop_off.radius_m }, photoMediaId: input.photo_media_id, now: Date.now() });
-    const updated = await adminClient().from("shipments").update({ ...patch, drop_off_proof_media_id: input.photo_media_id, drop_off_lat: input.location.lat, drop_off_lng: input.location.lng }).eq("id", row.id).eq("school_id", row.school_id).select(SHIPMENT_SELECT).single();
-    if (updated.error) throw updated.error;
-    const status = nextOrderStatus(order.status, "dropped_off");
-    const moved = await adminClient().from("orders").update({ status }).eq("id", row.order_id).eq("school_id", row.school_id).eq("seller_id", c.var.user.id);
-    if (moved.error) throw moved.error;
-    const shipment = ShipmentRow.parse(updated.data);
-    await notifyOther(order, c.var.user.id, "shipment.updated", "Shipment dropped off", "Your package has been dropped off.", `/shipments/${shipment.id}`, { shipment_id: shipment.id, status: shipment.status });
-    await notifyOther(ShipmentOrder.parse({ ...order, status }), c.var.user.id, "order.updated", "Order updated", "Your order is in transit.", `/orders/${row.order_id}`, { order_id: row.order_id, status });
+    const { id: userId, schoolId } = c.var.user;
+    const { shipment } = await loadShipment(parseId(c.req.param("id"), "Shipment"), userId, schoolId);
     return c.json(one(toShipment(shipment)));
   });
 
-  app.post("/shipments/:id/received", idempotent(supabaseIdempotencyStore()), async (c) => {
-    const input = await parseBody(c, ReceivedReq);
-    const { row, order } = await shipmentFor(c.req.param("id"), c.var.user.schoolId, c.var.user.id);
-    if (order.buyer_id !== c.var.user.id) throw new ApiError(403, "FORBIDDEN", "Only the buyer can receive a shipment");
-    verifyReceived({ status: row.status, expectedCode: row.label_code, givenCode: input.label_code });
-    const updated = await adminClient().from("shipments").update({ status: "received", received_at: new Date().toISOString() }).eq("id", row.id).eq("school_id", row.school_id).select(SHIPMENT_SELECT).single();
+  app.post("/orders/:id/shipment", async (c) => {
+    const input = await parseBody(c, CreateShipmentReq);
+    const { id: userId, schoolId } = c.var.user;
+    const order = await loadOrderRow(parseId(c.req.param("id"), "Order"), userId, schoolId);
+    if (order.seller_id !== userId) throw new ApiError(403, "FORBIDDEN", "Only the seller creates the shipment");
+    if (order.fulfillment !== "campus_mail") throw new ApiError(409, "INVALID_STATE", "This order is an in-person handoff");
+    const status = nextOrderStatus(order.status, "label_created");
+    const school = await loadSchool(schoolId);
+    if (!school.campus_mail_supported) throw new ApiError(409, "INVALID_STATE", "Campus mail isn't available at your school");
+
+    let points = adminClient().from("drop_off_points").select("*").eq("school_id", schoolId).eq("active", true);
+    if (input.drop_off_point_id) points = points.eq("id", input.drop_off_point_id);
+    const pointResult = await points.order("name").limit(1);
+    if (pointResult.error) throw pointResult.error;
+    const point = z.array(DropOffPointRow).parse(pointResult.data)[0];
+    if (!point) {
+      throw new ApiError(400, "VALIDATION", "Invalid request", { drop_off_point_id: "Pick an active drop-off point at your school" });
+    }
+
+    const [{ buyer, seller }, listing] = await Promise.all([loadParties(order), loadListingRow(order.listing_id, schoolId)]);
+    const label = buildLabel({
+      orderId: order.id,
+      buyer: { name: buyer.display_name, mailStopCode: buyer.mail_stop_code },
+      sellerName: seller.display_name,
+      itemTitle: listing.textbook_title ?? listing.title,
+      dropOff: { name: point.name, instructions: point.instructions },
+    });
+    const inserted = await adminClient().from("shipments").insert({
+      school_id: schoolId, order_id: order.id, label_code: label.label_code,
+      to_name: label.to.name, to_mail_stop_code: label.to.mail_stop_code, drop_off_point_id: point.id,
+    }).select(SHIPMENT_SELECT).single();
+    if (inserted.error?.code === UNIQUE_VIOLATION) throw new ApiError(409, "INVALID_STATE", "This order already has a shipment");
+    if (inserted.error) throw inserted.error;
+    const shipment = ShipmentRow.parse(inserted.data);
+
+    const moved = await transitionOrder(order, { status });
+    await notifyBoth(moved, shipment, userId, "Label ready", "The seller is sending your item by campus mail.");
+    return c.json(one(toShipment(shipment)));
+  });
+
+  app.post("/shipments/:id/dropped-off", idempotent(idempotency), async (c) => {
+    const input = await parseBody(c, DroppedOffReq);
+    const { id: userId, schoolId } = c.var.user;
+    const { shipment, order } = await loadShipment(parseId(c.req.param("id"), "Shipment"), userId, schoolId);
+    if (order.seller_id !== userId) throw new ApiError(403, "FORBIDDEN", "Only the seller drops off the package");
+    const status = nextOrderStatus(order.status, "dropped_off");
+
+    const photo = await adminClient().from("media").select("id")
+      .eq("id", input.photo_media_id).eq("school_id", schoolId).eq("owner_id", userId).maybeSingle();
+    if (photo.error) throw photo.error;
+    if (!photo.data) throw new ApiError(400, "VALIDATION", "Invalid request", { photo_media_id: "Upload the drop-off photo first" });
+
+    const patch = verifyDropOff({
+      status: shipment.status,
+      at: input.location,
+      accuracyM: input.accuracy_m,
+      point: { location: { lat: shipment.drop_off.lat, lng: shipment.drop_off.lng }, radiusM: shipment.drop_off.radius_m },
+      photoMediaId: input.photo_media_id,
+      now: Date.now(),
+    });
+    const updated = await adminClient().from("shipments").update({
+      ...patch, drop_off_proof_media_id: input.photo_media_id, drop_off_lat: input.location.lat, drop_off_lng: input.location.lng,
+    }).eq("id", shipment.id).eq("school_id", schoolId).eq("status", "label_created").select(SHIPMENT_SELECT).maybeSingle();
     if (updated.error) throw updated.error;
-    const status = nextOrderStatus(order.status, "received");
-    const payout = payoutFor(status, order.seller.payouts_enabled);
-    const moved = await adminClient().from("orders").update({ status, payout_status: payout, ...(status === "completed" ? { released_at: new Date().toISOString() } : {}) }).eq("id", row.order_id).eq("school_id", row.school_id).eq("buyer_id", c.var.user.id);
-    if (moved.error) throw moved.error;
-    const shipment = ShipmentRow.parse(updated.data);
-    await notifyOther(order, c.var.user.id, "shipment.updated", "Shipment received", "The package was marked received.", `/shipments/${shipment.id}`, { shipment_id: shipment.id, status: shipment.status });
-    await notifyOther(ShipmentOrder.parse({ ...order, status }), c.var.user.id, "order.updated", "Order completed", "The order is complete.", `/orders/${row.order_id}`, { order_id: row.order_id, status, payout_status: payout });
-    return c.json(one({ shipment: toShipment(shipment), order: { id: row.order_id, status, payout: { status: payout } } }));
+    if (!updated.data) throw new ApiError(409, "INVALID_STATE", "This shipment just changed; reload it");
+    const saved = ShipmentRow.parse(updated.data);
+
+    const moved = await transitionOrder(order, { status });
+    await notifyBoth(moved, saved, userId, "Package dropped off", "Your item is in campus mail.");
+    return c.json(one(toShipment(saved)));
+  });
+
+  app.post("/shipments/:id/received", idempotent(idempotency), async (c) => {
+    const input = await parseBody(c, ReceivedReq);
+    const { id: userId, schoolId } = c.var.user;
+    const { shipment, order } = await loadShipment(parseId(c.req.param("id"), "Shipment"), userId, schoolId);
+    if (order.buyer_id !== userId) throw new ApiError(403, "FORBIDDEN", "Only the buyer marks the package received");
+    const status = nextOrderStatus(order.status, input.item_ok ? "received" : "dispute");
+    verifyReceived({ status: shipment.status, expectedCode: shipment.label_code, givenCode: input.label_code });
+
+    const updated = await adminClient().from("shipments").update({ status: "received", received_at: new Date().toISOString() })
+      .eq("id", shipment.id).eq("school_id", schoolId).eq("status", "dropped_off").select(SHIPMENT_SELECT).maybeSingle();
+    if (updated.error) throw updated.error;
+    if (!updated.data) throw new ApiError(409, "INVALID_STATE", "This shipment just changed; reload it");
+    const saved = ShipmentRow.parse(updated.data);
+
+    const { seller } = await loadParties(order);
+    const payout = payoutFor(status, seller.payouts_enabled);
+    const moved = await transitionOrder(order, {
+      status, payout_status: payout, ...(payout === "released" ? { released_at: new Date().toISOString() } : {}),
+    });
+    if (moved.status === "completed") {
+      const sold = await adminClient().from("listings").update({ status: "sold" }).eq("id", order.listing_id).eq("school_id", schoolId);
+      if (sold.error) throw sold.error;
+    }
+    const body = moved.status === "completed" ? "The buyer got the package." : "The buyer flagged a problem with the item.";
+    await notifyBoth(moved, saved, userId, moved.status === "completed" ? "Order completed" : "Order disputed", body);
+    return c.json(one({ shipment: toShipment(saved), order: await orderOut(moved, await loadViewer(userId, schoolId)) }));
   });
 
   return app;

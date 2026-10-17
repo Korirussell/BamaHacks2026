@@ -190,6 +190,15 @@ export async function loadOrderRow(id: string, userId: string, schoolId: string)
   return row;
 }
 
+/** Writes an order change only if nobody else changed it since we read it. */
+export async function transitionOrder(row: OrderRow, patch: Record<string, unknown>): Promise<OrderRow> {
+  const data = check(
+    await adminClient().from("orders").update(patch).eq("id", row.id).eq("updated_at", row.updated_at).select("*").maybeSingle(),
+  );
+  if (!data) throw new ApiError(409, "INVALID_STATE", "This order just changed; reload it");
+  return OrderRow.parse(data);
+}
+
 /** Order objects with listing, both parties and shipment joined. */
 export async function ordersOut(rows: OrderRow[], schoolId: string, viewer: Viewer | null) {
   if (!rows.length) return [];

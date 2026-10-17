@@ -73,7 +73,8 @@ export function agreeToProposal(proposal: ProposalState, actorId: string, input:
     throw new ApiError(409, "INVALID_STATE", "Handoff has no proposal to accept");
   }
   if (proposal.proposedBy === actorId) throw new ApiError(409, "INVALID_STATE", "The other party must accept this proposal");
-  if (proposal.proposedStart !== input.start || proposal.proposedZoneId !== input.safeZoneId) {
+  // Compare instants, not strings: Postgres hands back "+00:00" where the client sent "Z".
+  if (Date.parse(proposal.proposedStart) !== Date.parse(input.start) || proposal.proposedZoneId !== input.safeZoneId) {
     throw new ApiError(409, "INVALID_STATE", "Agreement must match the current proposal");
   }
 }

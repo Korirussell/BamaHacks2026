@@ -70,8 +70,8 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     .route("/", listingsRoutes(verify))
     .route("/", offersRoutes(verify, market))
     .route("/", ordersRoutes(verify, idempotency, payments))
-    .route("/", handoffRoutes(verify))
-    .route("/", shipmentRoutes(verify));
+    .route("/", handoffRoutes(verify, idempotency))
+    .route("/", shipmentRoutes(verify, idempotency));
 
   const app = new Hono();
   if (log) app.use(logger());

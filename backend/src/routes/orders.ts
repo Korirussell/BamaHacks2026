@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Hono } from "hono";
 import { z } from "zod";
-import { OrderRow, loadListingRow, loadOrderRow, loadViewer, orderOut, ordersOut } from "../db/market.js";
+import { OrderRow, loadListingRow, loadOrderRow, loadViewer, orderOut, ordersOut, transitionOrder as transition } from "../db/market.js";
 import { ApiError } from "../lib/errors.js";
 import { notify } from "../lib/notify.js";
 import { one, page } from "../lib/respond.js";
@@ -26,15 +26,6 @@ const parseId = (raw: string) => {
   if (!id.success) throw new ApiError(404, "NOT_FOUND", "Order not found");
   return id.data;
 };
-
-/** Writes an order change only if nobody else changed it since we read it. */
-async function transition(row: OrderRow, patch: Record<string, unknown>) {
-  const data = check(
-    await adminClient().from("orders").update(patch).eq("id", row.id).eq("updated_at", row.updated_at).select("*").maybeSingle(),
-  );
-  if (!data) throw new ApiError(409, "INVALID_STATE", "This order just changed; reload it");
-  return OrderRow.parse(data);
-}
 
 /** In-person orders get a handoff to schedule once they're paid; the seller gives, the buyer receives. */
 async function openHandoff(order: OrderRow) {
