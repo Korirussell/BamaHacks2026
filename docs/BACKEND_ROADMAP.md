@@ -40,6 +40,7 @@ The services are **pure functions**: they take plain data in and return decision
 - **Done when:** the deployed `/api/v1/health` is green and `GET /me` with no token returns `401 UNAUTHENTICATED`.
 
 ### 4. .edu auth + profile
+- ✅ `0004_auth.sql`: `hook_before_user_created` + `auth.users` triggers (stamp `school_id`, create the profile, keep `profiles.email` in sync). Checked in PGlite. ✅ `POST /auth/check-email` looks up `schools.email_domains`. ✅ `GET/PATCH /me`. ✅ `pnpm seed:demo` (personas) and `pnpm seed:demo otp <name>` (sign-in code, no email sent).
 - A Supabase **before-user-created auth hook** (SQL function): reject non-`.edu` and unknown domains, and set `school_id` in `app_metadata`. A trigger creates the `profiles` row.
 - 🧑 In the Supabase dashboard, turn on email OTP (6-digit code) and enable the hook. Custom SMTP (Resend) is optional for the demo; the built-in mailer allows only a few emails per hour.
 - `POST /auth/check-email` looks schools up by domain. Add `GET /me` and `PATCH /me` (including `mail_stop_code` and `tutor_opt_in`).
@@ -50,6 +51,7 @@ The services are **pure functions**: they take plain data in and return decision
 - **Done when:** the app can upload a photo and get back a `media_id` that resolves to a URL.
 
 ### 6. Academics + schedule
+- ✅ Done (Codex, `routes/academics.ts`, `routes/schedule.ts`).
 - `GET /courses`, `GET /buildings`, `GET/POST/DELETE /me/classes` (grades entered by hand are `self_reported`; the seed marks demo tutors as verified).
 - `GET/PUT /me/class-schedule` maps rows to `MeetingInput`. `GET /me/availability` wires `expandMeetings` and `freeBlocks`.
 - Transcript and schedule import (Claude) can wait: the demo uses seeded or hand-entered schedules.

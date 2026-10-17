@@ -45,3 +45,16 @@ The auth hook, OTP email settings and Storage buckets come in roadmap steps 4–
 ## Changing the schema
 
 Add a new numbered file (`0004_….sql`); never edit a migration that has already been pushed. Run `pnpm dlx supabase db push`, and update `docs/API_CONTRACT.md` in the same PR if a response shape changes.
+
+## Turn on the .edu sign-up hook (after `db push`)
+
+1. Dashboard → **Authentication → Hooks → Before User Created** → **Postgres** → schema `public`, function `hook_before_user_created` → Save.
+2. **Authentication → Sign In / Providers → Email**: keep Email on, turn **Confirm email** on, and set **Email OTP length** to 6.
+3. **Authentication → Emails → Magic Link** template: replace the link with `{{ .Token }}` so the email shows the 6-digit code.
+
+Without step 1 the triggers still block non-school emails, but the app gets a generic "Database error saving new user" instead of a clear message.
+
+## Demo users
+
+`cd backend && pnpm seed:demo` creates the personas and resets their demo state (safe to re-run).
+`pnpm seed:demo otp student` prints a sign-in code for a persona; no email is sent, so the fake `@crimson.ua.edu` addresses work.
