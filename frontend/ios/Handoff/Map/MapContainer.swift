@@ -25,6 +25,7 @@ struct MapContainer<Fallback: View>: View {
 
     @Environment(\.colorScheme) private var colorScheme
     @State private var phase: Phase = .loading
+    @State private var wobble = false
 
     private enum Phase { case loading, ready, fallback }
 
@@ -72,7 +73,15 @@ struct MapContainer<Fallback: View>: View {
     }
 
     private var skeleton: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 10) {
+            Image("Glyph")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 40, height: 40)
+                .rotationEffect(.degrees(wobble ? 6 : -6))
+                .onAppear {
+                    withAnimation(.easeInOut(duration: 0.55).repeatForever(autoreverses: true)) { wobble = true }
+                }
             Text("Building campus\u{2026} \u{1F3D7}\u{FE0F}")
                 .font(.system(size: 13, weight: .heavy))
                 .foregroundStyle(Color.hoInk)

@@ -41,6 +41,14 @@ struct CelebrationView: View {
                 }
                 .frame(width: 200, height: 220)
 
+                Image("Glyph")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 56, height: 56)
+                    .scaleEffect(showHeadline ? 1 : 0.4)
+                    .opacity(showHeadline ? 1 : 0)
+                    .rotationEffect(.degrees(showHeadline ? 0 : -10))
+
                 ZStack(alignment: .topTrailing) {
                     Text(title)
                         .font(.display(46))

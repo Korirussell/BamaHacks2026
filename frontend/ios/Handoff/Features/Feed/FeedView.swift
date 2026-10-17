@@ -50,6 +50,11 @@ struct FeedView: View {
     private var header: some View {
         HStack(alignment: .bottom) {
             VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Image("Glyph").resizable().scaledToFit().frame(width: 30, height: 30)
+                    Image("Wordmark").resizable().scaledToFit().frame(height: 14)
+                }
+                .padding(.bottom, 4)
                 Text("University of Alabama")
                     .font(.system(size: 12, weight: .bold)).foregroundStyle(Color.hoSoft)
                 Text(Copy.feedTitle).font(.display(30)).displayTracking(30).foregroundStyle(Color.hoInk)

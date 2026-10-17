@@ -65,6 +65,13 @@ struct ProfileView: View {
                     settingRow("building.columns.fill", "School", "University of Alabama")
                 }
                 .sticker(radius: 18, shadow: 3)
+
+                Image("Glyph")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 28, height: 28)
+                    .opacity(0.5)
+                    .padding(.top, 8)
             }
             .padding(.horizontal, 18)
             .padding(.bottom, 24)
