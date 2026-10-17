@@ -132,3 +132,36 @@ export const totalMinutes = (blocks: Interval[]) =>
   Math.round(blocks.reduce((sum, b) => sum + (b.end - b.start), 0) / MINUTE);
 
 export const hours = (n: number) => n * HOUR;
+
+/** Remove every part of `busy` that overlaps `classes`, so classes win and nothing is reported twice. */
+export function trimBusy(busy: Interval[], classes: Interval[]): BusyInterval[] {
+  const cuts = [...classes].sort((a, b) => a.start - b.start);
+  const out: BusyInterval[] = [];
+  for (const b of busy) {
+    let pieces: Interval[] = [{ start: b.start, end: b.end }];
+    for (const c of cuts) {
+      pieces = pieces.flatMap((p) => {
+        if (c.end <= p.start || c.start >= p.end) return [p];
+        const left = c.start > p.start ? [{ start: p.start, end: c.start }] : [];
+        const right = c.end < p.end ? [{ start: c.end, end: p.end }] : [];
+        return [...left, ...right];
+      });
+    }
+    for (const p of pieces) out.push({ ...p, kind: "busy" });
+  }
+  return out.sort((a, b) => a.start - b.start);
+}
+
+export interface AvailabilityBlock {
+  start: string;
+  end: string;
+  kind: "free" | "busy" | "class";
+}
+
+/** GET /me/availability body: classes, calendar-busy (trimmed by classes) and free blocks, sorted by start. */
+export function composeAvailability(classes: BusyInterval[], googleBusy: Interval[], from: number, to: number, tz: string): AvailabilityBlock[] {
+  const busy = trimBusy(googleBusy.map((b) => ({ start: Math.max(b.start, from), end: Math.min(b.end, to) })).filter((b) => b.end > b.start), classes);
+  const free = freeBlocks([...classes, ...busy], from, to, tz);
+  const toBlock = (block: Interval, kind: AvailabilityBlock["kind"]): AvailabilityBlock => ({ start: new Date(block.start).toISOString(), end: new Date(block.end).toISOString(), kind });
+  return [...classes.map((b) => toBlock(b, "class")), ...busy.map((b) => toBlock(b, "busy")), ...free.map((b) => toBlock(b, "free"))].sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
+}

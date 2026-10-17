@@ -7,7 +7,8 @@ import { adminClient } from "../lib/supabase.js";
 import { parseBody, parseQuery } from "../lib/validate.js";
 import { requireUser, type AuthEnv, type TokenVerifier } from "../middleware/auth.js";
 import { PutClassScheduleReq } from "../schemas/schedule.js";
-import { expandMeetings, freeBlocks } from "../services/availability.js";
+import { composeAvailability, expandMeetings } from "../services/availability.js";
+import { freeBusy } from "../services/google.js";
 
 const ScheduleQuery = z.object({ term: z.string().optional() });
 const AvailabilityQuery = z.object({ from: z.iso.datetime(), to: z.iso.datetime() }).superRefine((value, ctx) => {
@@ -82,8 +83,7 @@ export const scheduleRoutes = (verify: TokenVerifier) => new Hono<AuthEnv>()
     const tz = await schoolTimezone(c.var.user.schoolId);
     const start = Date.parse(from);
     const end = Date.parse(to);
-    const busy = expandMeetings(rows.map(toMeetingInput), start, end);
-    const free = freeBlocks(busy, start, end, tz).map((block) => ({ start: new Date(block.start).toISOString(), end: new Date(block.end).toISOString(), kind: "free" as const }));
-    const classes = busy.map((block) => ({ start: new Date(block.start).toISOString(), end: new Date(block.end).toISOString(), kind: "class" as const }));
-    return c.json(one({ blocks: [...classes, ...free].sort((a, b) => Date.parse(a.start) - Date.parse(b.start)) }));
+    const classes = expandMeetings(rows.map(toMeetingInput), start, end);
+    const googleBusy = await freeBusy(c.var.user.id, start, end);
+    return c.json(one({ blocks: composeAvailability(classes, googleBusy, start, end, tz) }));
   });

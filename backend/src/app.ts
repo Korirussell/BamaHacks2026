@@ -3,6 +3,9 @@ import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { ApiError, errorResponse } from "./lib/errors.js";
 import { supabaseVerifier, type TokenVerifier } from "./middleware/auth.js";
+import { integrationsRoutes } from "./routes/integrations.js";
+import { jobsRoutes } from "./routes/jobs.js";
+import { scheduleImportRoutes } from "./routes/schedule-import.js";
 import { authRoutes, supabaseSchoolLookup, type SchoolLookup } from "./routes/auth.js";
 import { academicsRoutes } from "./routes/academics.js";
 import { meRoutes } from "./routes/me.js";
@@ -23,8 +26,11 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     .get("/health", (c) => c.json({ data: { ok: true } }))
     .route("/auth", authRoutes(findSchool))
     .route("/me", meRoutes(verify))
+    .route("/integrations/google", integrationsRoutes(verify))
     .route("/", academicsRoutes(verify))
-    .route("/", scheduleRoutes(verify));
+    .route("/", scheduleRoutes(verify))
+    .route("/", scheduleImportRoutes(verify))
+    .route("/", jobsRoutes(verify));
 
   const app = new Hono();
   if (log) app.use(logger());
