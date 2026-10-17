@@ -26,6 +26,8 @@ export const DisputeReq = z.object({
   details: z.string().trim().min(1).max(1000),
   media_ids: z.array(Uuid).max(10).default([]),
 });
+// The body is optional: no body means no proof screenshot.
+export const TicketSentReq = z.object({ proof_media_id: Uuid.optional() }).nullable().transform((v) => ({ proof_media_id: v?.proof_media_id }));
 export const ResolveReq = z.object({ outcome: z.enum(["complete", "refund"]), note: z.string().trim().min(1).max(1000) });
 export const EscrowEntry = z.object({
   kind: z.enum(["hold", "release", "refund"]), amount_cents: Cents, provider: z.enum(["demo", "stripe"]), created_at: Timestamp, reason: z.string().nullable(),

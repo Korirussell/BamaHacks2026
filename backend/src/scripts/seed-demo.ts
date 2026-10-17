@@ -260,6 +260,24 @@ async function seedTutoringReputation() {
   await run("tutoring reviews", db.from("reviews").insert(reviews));
 }
 
+// Upcoming UA events (times are UTC; Tuscaloosa is UTC-5 in November, UTC-6 in winter).
+const events = [
+  { id: "00000000-0000-4000-7000-000000000001", name: "Alabama vs. Auburn (Iron Bowl)", kind: "athletics", starts_at: "2026-11-28T20:30:00.000Z", venue: "Bryant-Denny Stadium" },
+  { id: "00000000-0000-4000-7000-000000000002", name: "Alabama vs. Kentucky Men's Basketball", kind: "athletics", starts_at: "2027-01-23T23:00:00.000Z", venue: "Coleman Coliseum" },
+  { id: "00000000-0000-4000-7000-000000000003", name: "Homecoming Concert", kind: "concert", starts_at: "2026-10-30T01:00:00.000Z", venue: "Tuscaloosa Amphitheater" },
+] as const;
+
+/** Events plus one app-transfer ticket from the seller, so GET /events/{id}/tickets has something to show. */
+async function seedTickets() {
+  await run("events", db.from("events").upsert(events.map((e) => ({ ...e, school_id: SCHOOL }))));
+  await run("ticket listing", db.from("listings").insert({
+    id: "00000000-0000-4000-7000-000000000101", school_id: SCHOOL, seller_id: personas["seller"]!.id, category: "ticket",
+    title: "Iron Bowl student ticket", description: "Can't make it home for the game. Transfers through the ticket app.",
+    price_cents: 8500, negotiable: true, condition: "new", fulfillment: ["digital_transfer"], status: "active", source_channel: "native",
+    event_id: events[0].id, ticket_section: "N4", ticket_row: "22", ticket_seat: null, ticket_transfer: "app_transfer",
+  }));
+}
+
 async function printOtp(name: string) {
   const p = personas[name];
   if (!p) throw new Error(`Unknown persona "${name}". Pick one of: ${Object.keys(personas).join(", ")}`);
@@ -275,6 +293,7 @@ if (command === "otp") {
   await resetDemoState();
   for (const p of Object.values(personas)) await seedPersona(p);
   await seedTutoringReputation();
+  await seedTickets();
   console.log("Demo personas ready:");
   for (const [name, p] of Object.entries(personas)) console.log(`  ${name.padEnd(13)} ${p.email}  (${p.display_name})`);
   console.log(`\nSign in as one: pnpm seed:demo otp <name>`);
