@@ -121,3 +121,13 @@ Test cards: `4242 4242 4242 4242` (works), `4000 0000 0000 9995` (declined), any
 - Stripe sends them back to `/settings/payments?stripe=return` (web) or `<scheme>://payments?stripe=return` (iOS). Then refetch `GET /payments/status`. `?stripe=refresh` means the link expired: call `onboard` again and reopen.
 - `requirements_due` non-empty → *"Stripe needs a bit more info"* with the same button.
 - Once payouts turn on, anything that was waiting is paid out automatically and the seller gets *"Payouts are on"*.
+
+### 3. Tutoring payments
+
+Shapes: [API_CONTRACT.md](API_CONTRACT.md) → `POST /tutoring/sessions/{id}/pay`, *Tutoring escrow*. Same sheet and same key as orders.
+
+- Once a session is `accepted`, show **Pay $X** to the student only. `POST /tutoring/sessions/{id}/pay` with an `Idempotency-Key`; branch on `demo` exactly like orders (`demo: true` → `session` is already `paid`; `demo: false` → PaymentSheet with `client_secret`, then wait for `tutoring.updated` / refetch the session to see `paid`). `session.payment.status: "failed"` → let them try another card.
+- Paid **in person**: `session.handoff_id` is set. Open the normal meetup screen (`GET /handoffs/{id}`); it's already `agreed` at the session time and library spot, so skip suggest/propose. The tutor is the giver (shows the code), the student the receiver (scans / taps with `item_ok`). Confirming pays the tutor; a no-show refunds the student.
+- Paid **virtual**: after the start time the student taps **Mark as done** → `POST /tutoring/sessions/{id}/complete`, which pays the tutor. Hide that button for the tutor on paid sessions (it's FORBIDDEN for them).
+- Cancelling a paid session refunds the student: show *"You'll be refunded $X"* in the confirm dialog.
+- Tutor side: `session.payout.status` `held` → *"You'll be paid $Y after the session"* (`payout.tutor_payout_cents`); `awaiting_onboarding` → **Set up payouts** (same flow as sellers); `released` → *"Paid out"*.

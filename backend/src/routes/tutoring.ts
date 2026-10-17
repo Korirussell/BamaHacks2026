@@ -14,10 +14,15 @@ import { one } from "../lib/respond.js";
 import { adminClient } from "../lib/supabase.js";
 import { parseBody, parseQuery } from "../lib/validate.js";
 import { requireUser, type AuthEnv, type TokenVerifier } from "../middleware/auth.js";
-import { CounterSessionReq, CreateSessionReq, PutTutorProfileReq, TutorAvailability, TutorsQuery } from "../schemas/tutoring.js";
+import { idempotent, type IdempotencyStore } from "../middleware/idempotency.js";
+import { PaySessionRes, CounterSessionReq, CreateSessionReq, PutTutorProfileReq, TutorAvailability, TutorsQuery } from "../schemas/tutoring.js";
 import { expandMeetings, freeBlocks, intersect, type BusyInterval, type FreeBlock, type Interval } from "../services/availability.js";
 import { freeBusy } from "../services/google.js";
 import { DAY, MINUTE, iso, localDate, localDatesBetween, weekdayOf, zonedToUtc } from "../services/time.js";
+import {
+  EscrowSession, beginSessionPayment, defaultSessionEscrowDeps, settleSession, type SessionEscrowDeps,
+} from "../services/tutoring-escrow.js";
+import type { PaymentsMode } from "./orders.js";
 import {
   acceptSession, cancelSession, completeSession, counterSession, declineSession, findTutorMatches, priceFor,
   tutorEligibility, type Side, type SessionState, type TutorCandidate,
@@ -87,9 +92,10 @@ async function freeTimeFor(userIds: string[], schoolId: string, tz: string, from
   }));
 }
 
-async function loadSessionRow(id: string, userId: string) {
+async function loadSessionRow(id: string, userId: string): Promise<EscrowSession> {
+  if (!z.guid().safeParse(id).success) throw new ApiError(404, "NOT_FOUND", "Session not found");
   const data = check(await adminClient().from("tutoring_sessions").select(`${SESSION_SELECT}, updated_at`).eq("id", id).maybeSingle());
-  const parsed = data ? SessionRow.extend({ updated_at: z.string() }).parse(data) : null;
+  const parsed = data ? EscrowSession.parse(data) : null;
   if (!parsed || (parsed.tutor_id !== userId && parsed.student_id !== userId)) throw new ApiError(404, "NOT_FOUND", "Session not found");
   return parsed;
 }
@@ -145,7 +151,27 @@ const SessionsQuery = z.object({
 });
 const CancelReq = z.object({ reason: z.string().trim().min(1).max(500) });
 
-export const tutoringRoutes = (verify: TokenVerifier, rooms: RoomBooker, availability: RoomAvailability) => {
+/** Card payments for sessions (POST /tutoring/sessions/{id}/pay and the money side of cancel/complete). */
+export interface TutoringPayments {
+  idempotency: IdempotencyStore;
+  mode: PaymentsMode;
+  feeBps: number;
+  escrow: SessionEscrowDeps;
+  /** Loads a session the caller is a party to (404 otherwise); tests inject fakes. */
+  loadSession: (id: string, userId: string) => Promise<EscrowSession>;
+}
+
+export const tutoringRoutes = (
+  verify: TokenVerifier,
+  rooms: RoomBooker,
+  availability: RoomAvailability,
+  payOpts: Partial<TutoringPayments> = {},
+) => {
+  const pay: TutoringPayments = {
+    idempotency: { begin: async () => null, complete: async () => {}, abandon: async () => {} },
+    mode: "demo", feeBps: 500, loadSession: loadSessionRow, ...payOpts,
+    escrow: payOpts.escrow ?? defaultSessionEscrowDeps(),
+  };
   const app = new Hono<AuthEnv>()
     .use("/me/tutor-eligibility/*", requireUser(verify))
     .use("/me/tutor-profile/*", requireUser(verify))
@@ -368,21 +394,43 @@ export const tutoringRoutes = (verify: TokenVerifier, rooms: RoomBooker, availab
     return c.json(one(await sessionOut(saved)));
   });
 
+  // Student pays an accepted session. Demo: paid at once. Stripe: open the payment sheet with
+  // client_secret; the session turns paid from the payment_intent.succeeded webhook.
+  app.post("/tutoring/sessions/:id/pay", idempotent(pay.idempotency), async (c) => {
+    const me = c.var.user.id;
+    const row = await pay.loadSession(c.req.param("id"), me);
+    if (row.student_id !== me) throw new ApiError(403, "FORBIDDEN", "Only the student pays");
+    const key = c.req.header("Idempotency-Key") ?? `pay:${row.id}`;
+    const begun = await beginSessionPayment(row, { idempotencyKey: key, feeBps: pay.feeBps }, pay.escrow);
+    return c.json(one(PaySessionRes.parse({
+      client_secret: begun.clientSecret, payment_intent_id: begun.session.payment_intent_id, demo: pay.mode === "demo",
+      session: await sessionOut(begun.session),
+    })));
+  });
+
+  // A paid session is refunded; an unfinished payment is abandoned.
   app.post("/tutoring/sessions/:id/cancel", async (c) => {
     const { reason } = await parseBody(c, CancelReq);
     const me = c.var.user.id;
-    const row = await loadSessionRow(c.req.param("id"), me);
+    const row = await pay.loadSession(c.req.param("id"), me);
     cancelSession(stateOf(row));
-    const saved = await saveTransition(row, { status: "cancelled", waiting_on: null, cancel_reason: reason });
-    await tellOtherSide(saved, me, "Tutoring session cancelled", `${saved.course.code} · ${reason}`);
+    const saved = await settleSession(row, "cancelled", {
+      reason: `cancelled_by_${sideOf(row, me)}: ${reason}`.slice(0, 500), patch: { cancel_reason: reason },
+    }, pay.escrow);
+    const refunded = saved.payment_status === "refunded";
+    await tellOtherSide(saved, me, "Tutoring session cancelled", `${saved.course.code} · ${reason}${refunded ? " · the student was refunded" : ""}`);
     return c.json(one(await sessionOut(saved)));
   });
 
+  // A paid session is the student's to confirm (it pays the tutor); the handoff confirm does the same in person.
   app.post("/tutoring/sessions/:id/complete", async (c) => {
     const me = c.var.user.id;
-    const row = await loadSessionRow(c.req.param("id"), me);
+    const row = await pay.loadSession(c.req.param("id"), me);
     completeSession(stateOf(row), Date.now());
-    const saved = await saveTransition(row, { status: "completed", waiting_on: null });
+    if (row.payment_status === "succeeded" && row.student_id !== me) {
+      throw new ApiError(403, "FORBIDDEN", "The student confirms a paid session");
+    }
+    const saved = await settleSession(row, "completed", { reason: "student_completed" }, pay.escrow);
     await tellOtherSide(saved, me, "How was your session?", `Leave a review for ${saved.course.code}`);
     return c.json(one(await sessionOut(saved)));
   });

@@ -4,6 +4,8 @@ import { ApiError } from "../lib/errors.js";
 import { notify } from "../lib/notify.js";
 import { adminClient } from "../lib/supabase.js";
 import { releaseAwaitingPayout } from "./escrow.js";
+import { EscrowSession, releaseAwaitingSessionPayout } from "./tutoring-escrow.js";
+import { SESSION_SELECT } from "../db/tutoring.js";
 
 // Stripe Connect Express onboarding for sellers. Everything Stripe-facing goes through the small
 // ConnectStripe interface (the real client satisfies it) and every database touch through
@@ -38,11 +40,14 @@ export interface ConnectStore {
   update(userId: string, patch: { stripe_status: StripeStatus; payouts_enabled: boolean }): Promise<void>;
   /** The seller's completed orders still waiting for them to be payable. */
   awaitingPayoutOrders(sellerId: string): Promise<OrderRow[]>;
+  /** The tutor's completed sessions still waiting for them to be payable. */
+  awaitingPayoutSessions(tutorId: string): Promise<EscrowSession[]>;
 }
 
 export interface ConnectDeps {
   store: ConnectStore;
   release: (order: OrderRow) => Promise<unknown>;
+  releaseSession: (session: EscrowSession) => Promise<unknown>;
   notify: typeof notify;
 }
 
@@ -78,9 +83,18 @@ export const supabaseConnectStore: ConnectStore = {
     );
     return (rows ?? []).map((r) => OrderRow.parse(r));
   },
+  async awaitingPayoutSessions(tutorId) {
+    const rows = ok(
+      await adminClient().from("tutoring_sessions").select(`${SESSION_SELECT}, updated_at`)
+        .eq("tutor_id", tutorId).eq("status", "completed").eq("payout_status", "awaiting_onboarding"),
+    );
+    return (rows ?? []).map((r) => EscrowSession.parse(r));
+  },
 };
 
-export const defaultConnectDeps = (): ConnectDeps => ({ store: supabaseConnectStore, release: releaseAwaitingPayout, notify });
+export const defaultConnectDeps = (): ConnectDeps => ({
+  store: supabaseConnectStore, release: releaseAwaitingPayout, releaseSession: (s) => releaseAwaitingSessionPayout(s), notify,
+});
 
 /** Returns the seller's Stripe account id, creating the Express account the first time. */
 export async function ensureConnectAccount(
@@ -172,6 +186,15 @@ export async function applyConnectAccount(
         releasedCents += order.seller_payout_cents;
       } catch (err) {
         console.error("payout release failed", order.id, err instanceof Error ? err.message : err);
+      }
+    }
+    for (const session of await deps.store.awaitingPayoutSessions(profile.id)) {
+      try {
+        await deps.releaseSession(session);
+        released += 1;
+        releasedCents += session.tutor_payout_cents ?? session.price_cents;
+      } catch (err) {
+        console.error("tutoring payout release failed", session.id, err instanceof Error ? err.message : err);
       }
     }
   }
