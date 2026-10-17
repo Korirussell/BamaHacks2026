@@ -62,6 +62,7 @@ export interface AppDeps {
   webOrigin: string;
   /** GroupMe bot callback: shared secret (null rejects all) and the school its groups belong to. */
   groupme: { secret: string | null; schoolId: string };
+  instagramWebhookToken: string | null;
   log: boolean;
 }
 
@@ -81,6 +82,7 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     appName = "Campus Marketplace",
     webOrigin = "http://localhost:3000",
     groupme = { secret: null, schoolId: "00000000-0000-4000-a000-000000000001" },
+    instagramWebhookToken = null,
     log = true,
   } = deps;
 
@@ -109,7 +111,7 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     .route("/", pushRoutes(verify))
     .route("/", tutoringRequestRoutes(verify))
     .route("/", ingestedPostsRoutes(verify))
-    .route("/webhooks", webhookRoutes({ identifier, groupmeSecret: groupme.secret, groupmeSchoolId: groupme.schoolId }))
+    .route("/webhooks", webhookRoutes({ identifier, groupmeSecret: groupme.secret, groupmeSchoolId: groupme.schoolId, instagramVerifyToken: instagramWebhookToken }))
     .route("/", ordersRoutes(verify, idempotency, payments))
     .route("/", stripeWebhookRoutes(stripeWebhooks))
     .route("/", handoffRoutes(verify, idempotency))
