@@ -13,6 +13,7 @@ import { requireUser, type AuthEnv, type TokenVerifier } from "../middleware/aut
 import { CreateListingReq, ExploreQuery, PatchListingReq } from "../schemas/listings.js";
 import { draftFromScreenshot, suggestedPrice } from "../services/listing-draft.js";
 import { normalizeIsbn } from "../services/materials.js";
+import { ticketFields, ticketInputOf } from "../services/tickets.js";
 import { knownBooks, materialsFor, notifyMaterialMatch } from "../workers/ingest.js";
 
 const FEED_WINDOW = 100;
@@ -194,7 +195,7 @@ export const listingsRoutes = (verify: TokenVerifier, identifier: TextbookIdenti
       throw new ApiError(400, "VALIDATION", "Invalid request", { floor_price_cents: "Can't be above the price" });
     }
     if (!body.fulfillment.length) throw new ApiError(400, "VALIDATION", "Invalid request", { fulfillment: "Pick at least one" });
-    if (body.category === "ticket") throw new ApiError(400, "VALIDATION", "Invalid request", { category: "Tickets aren't supported yet" });
+    const ticket = await ticketFields(body.category, body.ticket, schoolId);
     await ownListingPhotos(id, body.media_ids);
     const courseIds = body.course_ids.length ? [...new Set(body.course_ids)] : isbn ? await coursesForIsbn(schoolId, isbn) : [];
 
@@ -203,7 +204,7 @@ export const listingsRoutes = (verify: TokenVerifier, identifier: TextbookIdenti
       await db.from("listings").insert({
         school_id: schoolId, seller_id: id, category: body.category, title: body.title, description: body.description,
         price_cents: body.price_cents, negotiable: body.negotiable, floor_price_cents: body.floor_price_cents ?? null,
-        condition: body.condition, isbn, textbook_title: isbn ? body.title : null, fulfillment: [...new Set(body.fulfillment)],
+        condition: body.condition, isbn, textbook_title: isbn ? body.title : null, fulfillment: ticket.fulfillment ?? [...new Set(body.fulfillment)], ...ticket.columns,
         status: body.publish ? "active" : "draft", source_channel: "native",
       }).select("id").single(),
     ) as { id: string };
@@ -297,7 +298,7 @@ export const listingsRoutes = (verify: TokenVerifier, identifier: TextbookIdenti
       throw new ApiError(400, "VALIDATION", "Invalid request", { floor_price_cents: "Can't be above the price" });
     }
     if (!next.fulfillment.length) throw new ApiError(400, "VALIDATION", "Invalid request", { fulfillment: "Pick at least one" });
-    if (next.category === "ticket") throw new ApiError(400, "VALIDATION", "Invalid request", { category: "Tickets aren't supported yet" });
+    const ticket = await ticketFields(next.category, body.ticket ?? (next.category === "ticket" ? ticketInputOf(row) : undefined), schoolId);
     if (body.media_ids) await ownListingPhotos(userId, body.media_ids);
     // New ISBN without explicit courses: re-match the classes that need the book.
     const courseIds = body.course_ids ? [...new Set(body.course_ids)] : isbn !== row.isbn ? (isbn ? await coursesForIsbn(schoolId, isbn) : []) : null;
@@ -305,6 +306,8 @@ export const listingsRoutes = (verify: TokenVerifier, identifier: TextbookIdenti
     const db = adminClient();
     const updated = await db.from("listings").update({
       ...next,
+      ...ticket.columns,
+      fulfillment: ticket.fulfillment ?? next.fulfillment,
       description: body.description ?? row.description,
       negotiable: body.negotiable ?? row.negotiable,
       condition: body.condition ?? row.condition,

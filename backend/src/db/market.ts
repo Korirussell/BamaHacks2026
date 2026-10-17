@@ -5,6 +5,7 @@ import { Listing } from "../schemas/listings.js";
 import { Offer } from "../schemas/offers.js";
 import { Order, Shipment } from "../schemas/orders.js";
 import { CourseRow, OpeningHoursRow, toCourse } from "./academics.js";
+import { EVENT_COLUMNS, EventRow } from "./events.js";
 import { loadUsersPublic, type UserPublicOut } from "./users.js";
 
 const ts = z.string().transform((v) => new Date(v).toISOString());
@@ -29,6 +30,8 @@ export const ListingRow = z.object({
   fulfillment: z.array(Fulfillment), status: z.enum(["draft", "active", "pending", "sold", "removed"]),
   source_channel: z.enum(["native", "screenshot", "instagram", "groupme", "facebook", "snapchat"]),
   external_url: z.string().nullable(), ingested_post_id: z.guid().nullable(), claimed: z.boolean(), created_at: ts,
+  event_id: z.guid().nullish(), ticket_section: z.string().nullish(), ticket_row: z.string().nullish(), ticket_seat: z.string().nullish(),
+  ticket_transfer: z.enum(["app_transfer", "in_person"]).nullish(), event: EventRow.nullish(),
   listing_courses: z.array(z.object({ course: CourseRow })),
   listing_media: z.array(z.object({
     position: z.number().int(),
@@ -41,7 +44,7 @@ export const ListingRow = z.object({
 export type ListingRow = z.infer<typeof ListingRow>;
 
 export const LISTING_SELECT =
-  "*, listing_courses(course:courses(*)), listing_media(position, media:media(id, bucket, path, kind, width, height, uploaded))";
+  `*, listing_courses(course:courses(*)), listing_media(position, media:media(id, bucket, path, kind, width, height, uploaded)), event:events(${EVENT_COLUMNS})`;
 
 /** What the viewer is enrolled in (current or planned), for `course_match` and the feed's `your_class`. */
 export interface Viewer {
@@ -89,7 +92,9 @@ export function toListing(row: ListingRow, users: Map<string, UserPublicOut>, vi
     textbook: row.category === "textbook" && row.isbn
       ? { isbn: row.isbn, title: row.textbook_title ?? row.title, authors: row.authors, edition: row.edition, courses: courses.map(toCourse) }
       : null,
-    ticket: null,
+    ticket: row.category === "ticket" && row.event && row.ticket_section && row.ticket_transfer
+      ? { event: row.event, section: row.ticket_section, row: row.ticket_row ?? null, seat: row.ticket_seat ?? null, transfer: row.ticket_transfer }
+      : null,
     fulfillment: row.fulfillment,
     status: row.status,
     source: { channel: row.source_channel, external_url: row.external_url, claimed: row.claimed },
