@@ -27,7 +27,11 @@ const saveSession = (next: Session | null) => {
   if (typeof window === 'undefined') return;
   if (next) window.localStorage.setItem(SESSION_KEY, JSON.stringify(next)); else window.localStorage.removeItem(SESSION_KEY);
 };
-async function request<T>(path: string, init: RequestInit = {}, auth = true): Promise<T> {
+/**
+ * The one client for live demo screens. It unwraps the API envelope, attaches
+ * the demo bearer token, and keeps ngrok from serving its interstitial page.
+ */
+export async function request<T>(path: string, init: RequestInit = {}, auth = true): Promise<T> {
   let active = session ?? storedSession();
   if (auth && active && active.expires_at <= Math.floor(Date.now() / 1000) + 30) {
     await demoLogin(active.email);
