@@ -28,6 +28,12 @@ import { handoffRoutes } from "./routes/handoffs.js";
 import { shipmentRoutes } from "./routes/shipments.js";
 import { reviewsRoutes } from "./routes/reviews.js";
 import { usersRoutes } from "./routes/users.js";
+import { bargainRoutes } from "./routes/bargain.js";
+import { reportsRoutes } from "./routes/reports.js";
+import { pushRoutes } from "./routes/push.js";
+import { tutoringRequestRoutes } from "./routes/tutoring-requests.js";
+import { ingestedPostsRoutes } from "./routes/ingested-posts.js";
+import { webhookRoutes } from "./routes/webhooks.js";
 import type { InstagramPoller } from "./workers/instagram-poller.js";
 
 export interface AppDeps {
@@ -43,6 +49,8 @@ export interface AppDeps {
   feeBps: number;
   appName: string;
   webOrigin: string;
+  /** GroupMe bot callback: shared secret (null rejects all) and the school its groups belong to. */
+  groupme: { secret: string | null; schoolId: string };
   log: boolean;
 }
 
@@ -60,6 +68,7 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     feeBps = 500,
     appName = "Campus Marketplace",
     webOrigin = "http://localhost:3000",
+    groupme = { secret: null, schoolId: "00000000-0000-4000-a000-000000000001" },
     log = true,
   } = deps;
 
@@ -82,6 +91,12 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     .route("/claims", claimsRoutes(verify))
     .route("/", listingsRoutes(verify, identifier))
     .route("/", offersRoutes(verify, market))
+    .route("/", bargainRoutes(verify, market))
+    .route("/", reportsRoutes(verify))
+    .route("/", pushRoutes(verify))
+    .route("/", tutoringRequestRoutes(verify))
+    .route("/", ingestedPostsRoutes(verify))
+    .route("/webhooks", webhookRoutes({ identifier, groupmeSecret: groupme.secret, groupmeSchoolId: groupme.schoolId }))
     .route("/", ordersRoutes(verify, idempotency, payments))
     .route("/", handoffRoutes(verify, idempotency))
     .route("/", shipmentRoutes(verify, idempotency))
