@@ -50,3 +50,52 @@ After it succeeds, show `shipment.auto_complete_at` as "Completes automatically 
 ### 4. Buyer: pickup
 
 The buyer gets Campus Mail's own email/text with the locker and pickup code (that's UA's code, not ours). Once they have the package: `POST /shipments/{id}/received` with **our** `label_code` (written on the package) and `item_ok`. Make it clear which code is which: *"Enter the 8-character code the seller wrote on the package."*
+
+## In-person meetup (both tap + location)
+
+Applies to orders with `fulfillment: "in_person"` (the user picks in-person or campus mail per order; campus mail never touches handoffs). Shapes: [API_CONTRACT.md → Meetup confirm, location and escrow](API_CONTRACT.md#meetup-confirm-location-and-escrow). Order of events: `pay` (money held) → `suggest`/`propose`/`agree` (handoff `agreed`) → both phones ping location → both tap **Confirm trade** → `completed` and the seller is paid.
+
+### 1. Before the meetup: location permission
+
+Ask for **when-in-use** location the first time a user agrees to a meetup (not at launch). Explain it: *"We use your location only around meetup time, to show you're at the spot and to confirm the trade."* Also offer the `PATCH /me` `location_sharing` toggle:
+
+- `during_handoffs` (default): the other person also sees roughly how far you are from the spot ("about 120 m away"), only from 30 min before to 30 min after the meetup. Never your map position.
+- `off`: they only see whether you've arrived. Pings and taps still work; the server still checks where you are.
+
+If permission is denied, the app can't tap or ping: send the user to the QR fallback (below) and say why.
+
+### 2. Meetup screen: pinging and the map
+
+Open it from the order or the `agreed` handoff. While it is open and `now` is inside `GET /handoffs/{id}` → `agreed.start - 30 min` to `agreed.end + 30 min` (the `sharing_window` from the ping response):
+
+- `POST /handoffs/{id}/location` with `location` + the **real** `accuracy_m` from the device (don't hardcode it) every **10–15 s**, plus once on a big movement (~25 m). Stop pinging when the screen closes or the handoff leaves `agreed|arriving`.
+- **Draw yourself from the device GPS** (the 3D map), not from the API. Use the response only for text and state: `me.inside_zone` (show "You're at the spot"), `me.distance_to_zone_m` ("40 m to the spot"; 0 when inside).
+- The other person: `other.arrived` is always set ("Alex is here"). `other.distance_m` is null unless they share and it's within the window; then show "about 120 m away" (no pin on the map, there are no coordinates). `other.last_seen_at` can say "seen 20 s ago".
+- `me.accuracy_ok: false` (accuracy worse than 100 m): the server ignores that fix for presence. Show *"Weak GPS. Move outside, or use the code."* and offer the QR fallback.
+- When both are inside the zone the handoff goes `arriving` and the order `handing_off`; show the confirm screen.
+- **Realtime:** subscribe to the **private** channel `handoff:{id}` with the user's access token (the Supabase client's own session; only the two parties are allowed in). Events: `handoff.presence` (arrival changed), `handoff.tap` (the other side tapped), `handoff.updated` (status changed), `handoff.completed`. Payloads carry no locations, so on `handoff.presence`/`handoff.updated` just refetch `GET /handoffs/{id}` for your own `tracking`. Keep pinging as the fallback if the channel drops.
+
+### 3. Confirm screen
+
+- Big **Confirm trade** button, enabled when `me.inside_zone` is true. Tap sends `POST /handoffs/{id}/tap` with `location`, `accuracy_m` and an `Idempotency-Key` (one key per tap press; reuse it on a retry).
+- **Buyer (receiver) first asks** *"Got the item and it's as described?"* and sends the answer as `item_ok`. The seller sends no `item_ok`; omitting it as the buyer is `400 VALIDATION`.
+- Response `status`:
+  - `waiting_for_other`: show *"Waiting for {name} to tap"* with a countdown to `tap_expires_at` (60 s). The other side gets `handoff.tap` / a push.
+  - `completed`: done; show the receipt, ask for a review.
+  - `disputed`: buyer said `item_ok: false`; money stays held, show *"We'll review this."*
+- On `handoff.tap` from the other side (or `taps.giver_at` / `taps.receiver_at` set and not yours): show *"{name} tapped. Tap now (60 s)."* If the 60 s lapses, both just tap again.
+- Errors: `403 NOT_NEARBY` (outside the spot or weak GPS) → *"We can't tell you're at the spot."* and offer the **QR fallback**: the seller opens "Show code" (`POST /handoffs/{id}/code`, QR rotates every 60 s, also a 6-digit code), the buyer scans or types it (`POST /handoffs/{id}/confirm` with `item_ok`). `409 INVALID_STATE` means the handoff changed (completed, no-show); refetch.
+
+### 4. No-show
+
+Show **"They didn't show up"** only when `now >= agreed.start + 15 min`, `me.inside_zone` is true and `other.arrived` is false. It sends `POST /handoffs/{id}/no-show` with `location` + `accuracy_m`. Result: handoff `no_show`, the buyer is refunded, the absent person's reliability drops. `403 NOT_NEARBY` → "Be at the spot to report this". `409 INVALID_STATE` ("other person has arrived" / too early) → hide the button and refetch. If nobody comes, the server cleans it up itself an hour after the slot: one-sided no-show, or back to `proposing` ("Pick a new time") with the order still paid.
+
+### 5. Payment timeline and disputes
+
+On the order screen, `GET /orders/{id}/escrow` drives a three-step timeline from `entries` (`kind`, `created_at`, `amount_cents`):
+
+- **Held**: a `hold` entry. *"Your $X is held until the trade is confirmed."* (`held_cents` > 0.)
+- **Released**: a `release` entry. Seller sees *"Paid out"*. If the order is `completed` with `payout.status: "awaiting_onboarding"` there's no release yet: *"Finish payout setup to get paid."*
+- **Refunded**: a `refund` entry (no-show, cancel, unpaid timeout, or admin ruling). Buyer sees *"Refunded"*.
+
+`provider` is `demo` for now, no real charges; don't show it. Reload the timeline on `order.updated` (user channel). Either party can open a dispute from `scheduled`, `handing_off` or `in_transit`: `POST /orders/{id}/dispute` with `reason`, `details` and optional photos (`purpose: handoff_proof` uploads), plus an `Idempotency-Key`. The order shows `disputed` with money still held until the team resolves it; you then get a *"Dispute resolved"* notification and the order lands on `completed` or `refunded`.

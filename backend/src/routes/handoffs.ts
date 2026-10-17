@@ -168,7 +168,7 @@ export const handoffRoutes = (verify: TokenVerifier, idempotency: IdempotencySto
     // A new proposal replaces any earlier one; the other party has to agree to this exact one.
     const saved = await saveHandoff(handoff, { proposed_by: userId, proposed_start: input.start, proposed_zone_id: input.safe_zone_id });
     await notifyOther(saved, userId, "Meetup proposed", "Check the proposed time and safe spot.");
-    await announce(saved.id, "handoff.updated", { id: saved.id, status: saved.status });
+    await announce(saved.id, "handoff.updated", await handoffOut(saved));
     return c.json(one(await handoffOut(saved, userId)));
   });
 
@@ -198,7 +198,7 @@ export const handoffRoutes = (verify: TokenVerifier, idempotency: IdempotencySto
       await notifyOrder(moved, userId, "Meetup set", "Your handoff time and safe spot are confirmed.");
     }
     await notifyOther(saved, userId, "Meetup agreed", "The handoff time and place are confirmed.");
-    await announce(saved.id, "handoff.updated", { id: saved.id, status: saved.status });
+    await announce(saved.id, "handoff.updated", await handoffOut(saved));
     return c.json(one(await handoffOut(saved, userId)));
   });
 
@@ -238,7 +238,7 @@ export const handoffRoutes = (verify: TokenVerifier, idempotency: IdempotencySto
         } catch (e) {
           console.error("both_nearby order step failed", e instanceof Error ? e.message : e); // the handoff can still finish from `scheduled`
         }
-        await announce(row.id, "handoff.updated", { id: row.id, status: row.status });
+        await announce(row.id, "handoff.updated", await handoffOut(row));
       }
     }
     if (nearby !== (me === "giver" ? handoff.giver_nearby : handoff.receiver_nearby)) {
@@ -380,7 +380,7 @@ export const handoffRoutes = (verify: TokenVerifier, idempotency: IdempotencySto
       }
       await notifyOther(saved, userId, "Handoff confirmed", itemOk ? "All done." : "They reported a problem with the item.");
       await announce(saved.id, "handoff.completed", await handoffOut(saved));
-      await announce(saved.id, "handoff.updated", { id: saved.id, status: saved.status });
+      await announce(saved.id, "handoff.updated", await handoffOut(saved));
       return c.json(one(TapRes.parse({ handoff: await handoffOut(saved, userId), status: itemOk ? "completed" : "disputed", tap_expires_at: expires })));
     }
   });

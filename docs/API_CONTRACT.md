@@ -141,8 +141,15 @@ All traffic is **JSON REST under `/api/v1`**, authenticated with the Supabase ac
     "suggestions": ["MeetupSuggestion"], "agreed": { "start": "ts", "end": "ts", "safe_zone": "SafeZone" },
     "status": "proposing|agreed|arriving|completed|no_show|cancelled|expired",
     "presence": { "giver_nearby": "bool", "receiver_nearby": "bool" },
-    "confirmations": { "giver_at": "ts?", "receiver_at": "ts?", "item_ok": "bool?" }
+    "confirmations": { "giver_at": "ts?", "receiver_at": "ts?", "item_ok": "bool?" },
+    "tracking": "Tracking (viewer-relative: the caller is \"me\")",
+    "taps": "Taps"
   },
+  "Tracking":     { "me": "MeTracking? (null outside agreed/arriving or before your first ping)", "other": "OtherTracking" },
+  "MeTracking":   { "inside_zone": "bool", "distance_to_zone_m": "int? (to the zone edge, nearest 10 m; 0 inside; null when accuracy_ok is false)", "accuracy_ok": "bool (accuracy_m <= 100)" },
+  "OtherTracking": { "arrived": "bool", "distance_m": "int? (to the zone edge, nearest 10 m; null unless they share, see Meetup confirm rules)", "last_seen_at": "ts?" },
+  "Taps":         { "giver_at": "ts? (only while the tap is still valid, 60 s, or the handoff is completed)", "receiver_at": "ts?" },
+  "EscrowEntry":  { "kind": "hold|release|refund", "amount_cents": "cents", "provider": "demo|stripe", "created_at": "ts", "reason": "string?" },
   "Shipment": {
     "id": "uuid", "order_id": "uuid", "label_pdf_url": "string", "label_code": "string (printed on label as QR + text)",
     "to": { "name": "string", "mail_stop_code": "string", "address_lines": ["string (4 lines: NAME, 1831 UNIVERSITY STATION, MSC ######, TUSCALOOSA, AL 35487-0002)"] },
@@ -242,7 +249,8 @@ Transcript parsing is **review-then-confirm**: grades only count as `grade_verif
   "GET /me/orders":           { "query": { "role": "buyer|seller", "status": "string?" }, "res": ["Order"] },
   "POST /orders/{id}/pay":    { "headers": ["Idempotency-Key"], "note": "buyer only. With PAYMENTS=demo (until Stripe lands) the order is paid at once: client_secret is null, demo is true and the paid Order comes back; skip the payment sheet. In-person orders get handoff_id here.", "res": { "client_secret": "string?", "payment_intent_id": "string", "demo": "bool?", "order": "Order?" } },
   "POST /orders/{id}/cancel": { "req": { "reason": "string" }, "res": "Order" },
-  "POST /orders/{id}/dispute":{ "req": { "reason": "not_as_described|no_show|never_received|other", "details": "string", "media_ids": ["uuid"] }, "res": "Order" },
+  "POST /orders/{id}/dispute":{ "headers": ["Idempotency-Key"], "note": "buyer or seller; only from scheduled, handing_off or in_transit (else INVALID_STATE). details 1-1000 chars, media_ids max 10 and must be the caller's own uploads. Order becomes disputed, money stays held until the team resolves it, the other party is notified", "req": { "reason": "not_as_described|no_show|never_received|other", "details": "string", "media_ids": ["uuid"] }, "res": "Order" },
+  "GET /orders/{id}/escrow":  { "note": "buyer or seller; the money ledger for the order, oldest first, for the payment timeline", "res": { "entries": ["EscrowEntry"], "held_cents": "cents (hold minus release minus refund, so 0 once settled)" } },
   "POST /payments/onboard":   { "res": { "onboarding_url": "string" } },
   "GET /payments/status":     { "res": { "charges_enabled": "bool", "payouts_enabled": "bool", "requirements_due": ["string"] } },
 
@@ -251,10 +259,11 @@ Transcript parsing is **review-then-confirm**: grades only count as `grade_verif
   "POST /handoffs/{id}/suggest": { "res": { "suggestions": ["MeetupSuggestion"] } },
   "POST /handoffs/{id}/propose": { "req": { "start": "ts", "safe_zone_id": "uuid" }, "res": "Handoff" },
   "POST /handoffs/{id}/agree":   { "req": { "start": "ts", "safe_zone_id": "uuid" }, "res": "Handoff" },
-  "POST /handoffs/{id}/location":{ "req": { "location": "LatLng", "accuracy_m": "int" }, "res": { "giver_nearby": "bool", "receiver_nearby": "bool" } },
+  "POST /handoffs/{id}/location":{ "note": "either party, status agreed|arriving; accuracy_m 0-5000. Latest position only; fixes with accuracy_m > 100 refresh last-seen but never change presence. When both are nearby the handoff goes arriving", "req": { "location": "LatLng", "accuracy_m": "int" }, "res": { "giver_nearby": "bool", "receiver_nearby": "bool", "me": "MeTracking", "other": "OtherTracking", "sharing_window": { "starts_at": "ts", "ends_at": "ts" } } },
   "POST /handoffs/{id}/code":    { "note": "giver only; giver must be inside the zone, which records confirmations.giver_at", "req": { "location": "LatLng", "accuracy_m": "int" }, "res": { "qr_token": "string", "short_code": "string", "expires_at": "ts" } },
   "POST /handoffs/{id}/confirm": { "note": "receiver only", "headers": ["Idempotency-Key"], "req": { "qr_token": "string?", "short_code": "string?", "location": "LatLng", "accuracy_m": "int", "item_ok": "bool" }, "res": "Handoff" },
-  "POST /handoffs/{id}/no-show": { "res": "Handoff" },
+  "POST /handoffs/{id}/tap":     { "note": "either party; primary confirm. Both must tap within 60 s, both inside the safe zone with accuracy_m <= 100, tap positions within 50 m + min(both accuracies, 50). The receiver must send item_ok (else 400 VALIDATION). First tap waits; the second completes it (status completed, or disputed when item_ok=false: money stays held). NOT_NEARBY (403) when outside the zone or accuracy is poor: fall back to /code + /confirm. Status agreed|arriving only", "headers": ["Idempotency-Key"], "req": { "location": "LatLng", "accuracy_m": "int", "item_ok": "bool? (required for the receiver)" }, "res": { "handoff": "Handoff", "status": "waiting_for_other|completed|disputed", "tap_expires_at": "ts (this tap + 60 s)" } },
+  "POST /handoffs/{id}/no-show": { "note": "reporter must be inside the zone now (accuracy_m <= 100), at least agreed start + 15 min, and the other party never arrived or tapped; else 409 INVALID_STATE (too early, other arrived) or 403 NOT_NEARBY. Buyer is always refunded; the absent party's no-show count goes up", "req": { "location": "LatLng", "accuracy_m": "int" }, "res": "Handoff" },
 
   "GET /mail/drop-off-points":      { "res": ["DropOffPoint"] },
   "POST /orders/{id}/shipment":      { "note": "seller; needs buyer MSC + mail_name else MAIL_INFO_REQUIRED", "req": { "drop_off_point_id": "uuid?" }, "res": "Shipment" },
@@ -281,7 +290,15 @@ How UA Campus Mail works (campusmail.ua.edu and the myBama Student Mail Portal),
 - **Fees:** off-campus students (not in residence halls, Greek housing or UA-leased apartments) pay Campus Mail **$2.50 per package**, capped at $25 per billing period (Jan–May, Jun–Dec), billed to their student account. Show this to off-campus buyers before they pick campus mail.
 - **Auto-complete:** `auto_complete_at` = 7 days after the package enters the mail stream, at 3:00 pm local.
 
-> **Sync confirm rule (anti-scam):** the giver shows a QR (or 6-digit code) that rotates every 60 s; the receiver scans it and sends their location. The server completes the handoff only if the token is valid **and** the receiver is inside the agreed safe zone's radius. That completion is what releases money to the seller.
+> **Sync confirm rule (anti-scam):** the primary confirm is **both parties tapping "Confirm trade"** (`POST /handoffs/{id}/tap`) within 60 s of each other, both inside the agreed safe zone's radius. The **QR fallback** (for bad GPS): the giver shows a QR (or 6-digit code) that rotates every 60 s; the receiver scans it and sends their location. The server completes the handoff only if the token is valid **and** the receiver is inside the zone. Either way, that completion is what releases money to the seller.
+
+### Meetup confirm, location and escrow
+
+- **Both-tap:** a tap carries `location` + `accuracy_m`. It counts only when `accuracy_m <= 100` and the point is inside the safe zone. The other tap must land within 60 s and within 50 m + min(both accuracies, 50) of the first. The receiver's tap carries `item_ok`; `false` makes the order `disputed` and the money stays held. Taps expire after 60 s (`Handoff.taps` hides expired ones).
+- **Location privacy:** the other party only ever gets `arrived` and a distance to the zone edge (rounded to 10 m), never coordinates. Distance shows only while the handoff is `agreed|arriving`, inside `[agreed_start - 30 min, agreed_end + 30 min]` (`sharing_window`), and only if that person's `location_sharing` is `during_handoffs`; otherwise `distance_m` and `last_seen_at` are null. `arrived` is always visible. Stored positions are wiped when the meetup ends (completed, no-show, reschedule).
+- **No-show:** the reporter must be inside the zone, at least 15 min after `agreed.start`, and the other side must never have arrived or tapped. The buyer is always refunded (seller no-show or buyer no-show) and the absent party's `no_show_count` goes up by 1.
+- **Escrow:** `POST /orders/{id}/pay` holds the full amount in the `escrow_entries` ledger (`GET /orders/{id}/escrow`). Final states settle it: `completed` releases the seller payout (or `awaiting_onboarding` until Stripe onboarding), `refunded`/`cancelled` refunds the buyer and relists the item. Today `provider` is `demo` (nothing leaves the platform); Stripe plugs in as another provider later without changing these shapes.
+- **Disputes:** `POST /orders/{id}/dispute` freezes the money; an admin ends it with `POST /admin/orders/{id}/resolve`.
 
 > **Auto-accept rule:** an offer with `kind: cash` and `amount_cents >= price_cents` on a **claimed** listing is accepted immediately and the response includes the new `Order`. On an unclaimed listing every offer waits with `waiting_on: seller_claim` and triggers a claim invite to the external seller.
 
@@ -388,6 +405,7 @@ Tickets reuse Listings, Offers and Orders (`category: ticket`); only the transfe
   "POST /me/push-subscriptions":      { "req": { "platform": "web|ios|android", "subscription": "object" }, "res": "204" },
 
   "GET /ingested-posts/{id}":         { "res": { "id": "uuid", "channel": "string", "raw_text": "string", "author_handle": "string?", "posted_at": "ts", "listing": "Listing?", "ride_request": "RideRequest?" } },
+  "POST /admin/orders/{id}/resolve":  { "note": "admin; only for a disputed order (else INVALID_STATE). complete = release to the seller (or awaiting_onboarding), refund = money back to the buyer. Both parties are notified", "req": { "outcome": "complete|refund", "note": "string (1-1000)" }, "res": "Order" },
   "POST /admin/ingested-posts":       { "note": "admin (profiles.is_admin) or scraper; feeds one external post in; the same URL twice is a no-op; 202 → ingest_classify job (owned by the caller, so GET /jobs/{id} works; result: { listing_id, status, isbn, missing, matched_course_ids, notified }) → Listing with source.claimed=false", "req": { "channel": "instagram|groupme|facebook|snapchat", "external_url": "string", "author_handle": "string", "caption": "string", "media_ids": ["uuid"], "posted_at": "ts" }, "res": { "job_id": "uuid", "ingested_post_id": "uuid" } },
   "GET /admin/seller-invites":        { "note": "admin; DMs to send by hand until outreach is automated", "query": { "status": "queued|sent|claimed?" }, "res": ["SellerInvite"] },
   "POST /admin/seller-invites/{id}/sent": { "res": "SellerInvite" },
@@ -407,12 +425,12 @@ The frontend **never talks to Stripe, Google or GroupMe directly**, except Strip
 
 ### Realtime channels (Supabase Realtime)
 
-Every message is `{ "event": "string", "at": "ts", "data": object }`. Channels are private and authorised by RLS.
+Every message is `{ "event": "string", "at": "ts", "data": object }`. Channels are private and authorised by RLS: subscribe with the user's access token; on `handoff:{id}` only the giver and receiver receive (clients never send). Payloads are identical for both phones and never carry locations or distances; refetch `GET /handoffs/{id}` for your own `tracking`.
 
 | Channel | Events | Payload `data` |
 |---|---|---|
 | `user:{id}` | `notification.created`, `offer.created`, `offer.updated`, `order.updated`, `job.finished`, `wishlist.match`, `material.match`, `tutoring.updated`, `shipment.updated` | `Notification`, `Offer`, `Offer`, `Order`, `Job`, `{ wishlist_item_id, listing }`, `{ listing, course }`, `TutoringSession`, `Shipment` |
-| `handoff:{id}` | `handoff.updated`, `handoff.presence`, `handoff.completed` | `Handoff`, `{ giver_nearby, receiver_nearby }`, `Handoff` |
+| `handoff:{id}` | `handoff.updated`, `handoff.presence`, `handoff.tap`, `handoff.completed` | `Handoff` (neutral: `tracking.me` null, no distances), `{ giver_nearby, receiver_nearby }`, `{ by: giver\|receiver, expires_at }`, `Handoff` (neutral: `tracking.me` null, no distances) |
 | `ride:{id}` | `ride.location`, `ride.updated` | `{ location: LatLng }`, `Ride` |
 | `auto-bargain:{id}` | `round`, `finished` | `{ by, amount_cents }`, `{ status, proposed_offer }` |
 
@@ -487,8 +505,9 @@ awaiting_payment --pay--> paid --agree time/place--> scheduled --both nearby--> 
 - `paid` = buyer charged; money sits on the platform balance.
 - `completed` = Stripe transfer to the seller minus `fee_cents`, then reviews unlock and reliability updates.
 - Campus mail swaps the handoff steps: `paid --label created--> scheduled --dropped off (geofence + photo)--> in_transit --buyer scans label--> completed`. Tickets swap them for `ticket-sent → ticket-received`.
+- Escrow ledger: `pay` writes a `hold`, final states write a `release` or `refund` (`GET /orders/{id}/escrow`). Demo provider for now; Stripe plugs in as a provider later.
 - Payout: `held` while the order is open; on `completed` it becomes `released` (Stripe transfer), or `awaiting_onboarding` if the seller hasn't finished Stripe yet; a refund makes it `reversed`.
-- Timers (job runner): offers expire after 48 h, unpaid orders cancel after 30 min, mail orders auto-complete N days after drop-off (N is an open question).
+- Timers (`workers/order-timers.ts`, `ORDER_TIMERS=on|off`, every `ORDER_TIMERS_INTERVAL_MS`, default 60 s): unpaid orders cancel after 30 min; campus-mail orders auto-complete at `auto_complete_at`; pending offers expire after 48 h; overdue meetups (1 h past `agreed.end`, still agreed/arriving): only one side ever arrived → no-show against the other + buyer refund; nobody arrived → handoff back to `proposing` (order stays `scheduled`); both arrived but no confirm → both notified once.
 
 ### Build order
 
@@ -544,6 +563,7 @@ APNS_KEY_ID  APNS_TEAM_ID  APNS_PRIVATE_KEY  APNS_BUNDLE_ID
 VAPID_PUBLIC_KEY  VAPID_PRIVATE_KEY
 GROUPME_BOT_TOKEN  RESEND_API_KEY  WEB_ORIGIN  APP_URL_SCHEME
 ROOM_BOOKER  ROOM_BOOKING_URL  LIBCAL (on|off, live free library rooms)
+HANDOFF_SECRET (32+ chars, signs handoff QR codes)  PAYMENTS (demo|stripe)  ORDER_TIMERS (on|off)  ORDER_TIMERS_INTERVAL_MS (default 60000)
 ```
 
 > **Never ship the Supabase service-role key or Stripe secret key to either client**; only the anon key and Stripe publishable key go in the app and website.
@@ -557,7 +577,7 @@ The first four change what gets built for the demo; the rest can be answered as 
 - [ ] **Time and team:** how many hours is the hackathon and how many backend people? That decides where the P0 line actually falls.
 - [ ] **Demo school:** UA only, or must a second school work live?
 - [ ] **Money:** Stripe test mode for the demo? What platform fee (default assumed 5%), and does buyer or seller pay it?
-- [ ] **Escrow:** OK to hold buyer funds until the QR confirm, with refund on no-show? Or pay seller immediately for speed?
+- [x] **Escrow:** hold buyer funds from pay until the meetup is confirmed (both tap, or QR); refund on no-show or cancel. Built on an `escrow_entries` ledger with a demo provider; Stripe comes later as a provider.
 - [ ] **Tutoring threshold:** minimum grade to tutor (assumed A-)? Allow self-reported grades with an "unverified" badge, or transcript only?
 - [ ] **Auto-bargaining:** must a human tap accept on the agent's deal (assumed yes), or can it auto-close?
 - [ ] **Rides:** scheduled carpools (like Joyride), or on-demand with live driver tracking? Carpools are far simpler and lower liability.

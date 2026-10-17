@@ -88,7 +88,7 @@ export async function reportNoShow(handoff: HandoffRow, reporterId: string, abse
       : "No-show recorded. The buyer was refunded."),
   );
   void reporterId;
-  await announce(saved.id, "handoff.updated", { id: saved.id, status: saved.status, no_show_party: absent });
+  await announce(saved.id, "handoff.updated", await handoffOut(saved));
   return saved;
 }
 
@@ -120,7 +120,7 @@ export async function sweepOverdueHandoffs(now: number): Promise<{ noShows: numb
       } else if (decision.action === "reschedule") {
         const saved = await saveHandoff(h, RESET_FOR_RESCHEDULE);
         await notifyBoth(saved, () => "Meetup didn't happen", () => "Neither of you made it. Pick a new time and place.");
-        await announce(saved.id, "handoff.updated", { id: saved.id, status: saved.status });
+        await announce(saved.id, "handoff.updated", await handoffOut(saved));
         out.rescheduled++;
       } else if (decision.action === "notify_both" && !h.overdue_notified_at) {
         const saved = await saveHandoff(h, { overdue_notified_at: new Date(now).toISOString() });
