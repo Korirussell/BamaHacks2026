@@ -89,7 +89,7 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     stripeWebhooks = {},
     tutoringPayments = {},
     feeBps = 500,
-    appName = "Campus Marketplace",
+    appName = "Handoff",
     webOrigin = "http://localhost:3000",
     groupme = { secret: null, schoolId: "00000000-0000-4000-a000-000000000001" },
     sweep = { secret: null, run: async () => { throw new Error("sweep not wired"); } },

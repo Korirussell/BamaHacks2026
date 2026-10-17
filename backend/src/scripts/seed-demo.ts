@@ -192,7 +192,8 @@ async function resetDemoState() {
   await run("seller invites", db.from("seller_invites").delete().eq("school_id", SCHOOL).in("handle", [INSTAGRAM_HANDLE, DM_HANDLE]));
   if (listingIds.length) await run("listings", db.from("listings").delete().in("id", listingIds));
   // So the demo post can be ingested again: re-sending a known URL is a no-op.
-  await run("ingested posts", db.from("ingested_posts").delete().eq("school_id", SCHOOL).ilike("author_handle", `%${INSTAGRAM_HANDLE}`));
+  await run("ingested posts", db.from("ingested_posts").delete().eq("school_id", SCHOOL).or(`author_handle.ilike.%${INSTAGRAM_HANDLE},author_handle.eq.${DM_HANDLE}`));
+  await run("demo story job", db.from("jobs").delete().eq("id", IG_STORY_JOB));
   await run("ingest jobs", db.from("jobs").delete().eq("kind", "ingest_classify").in("user_id", ids));
   await run("tutoring sessions", db.from("tutoring_sessions").delete().or(`tutor_id.in.${list},student_id.in.${list}`));
   await run("reviews", db.from("reviews").delete().or(`from_id.in.${list},to_id.in.${list}`));
@@ -290,6 +291,8 @@ type DemoListing = {
   id: string; seller: string | null; title: string; description: string; price_cents: number; isbn?: string;
   textbook_title?: string; authors?: string[]; edition?: string; category: "textbook" | "dorm"; courses: string[]; condition: "like_new" | "good" | "fair";
 };
+const IG_STORY_POST = "00000000-0000-4000-7000-000000000301";
+const IG_STORY_JOB = "00000000-0000-4000-7000-000000000302";
 const L = (n: number) => `00000000-0000-4000-7000-0000000002${String(n).padStart(2, "0")}`;
 const demoListings: DemoListing[] = [
   { id: L(1), seller: "tutor_ava", category: "textbook", title: "Chemistry: The Central Science (14th ed.)", textbook_title: "Chemistry: The Central Science", authors: ["Brown", "LeMay", "Bursten"], edition: "14", isbn: "9780134414232", price_cents: 4500, condition: "good", courses: [course.CH101, course.CH102], description: "Used for CH 101 and 102. Some highlighting in ch. 1-6, no torn pages." },
@@ -305,12 +308,23 @@ async function seedMarket() {
     price_cents: l.price_cents, negotiable: true, condition: l.condition, isbn: l.isbn ?? null, textbook_title: l.textbook_title ?? null,
     authors: l.authors ?? [], edition: l.edition ?? null, fulfillment: ["in_person", "campus_mail"], status: "active", source_channel: "native",
   }))));
+  // The story the listing came from: the first offer only DMs the claim link for listings with a stories ingest job.
+  const igUrl = `https://instagram.com/stories/${DM_HANDLE}/demo`;
+  const igCaption = "selling my bio textbook from BSC 114, $40 obo, dm me";
+  await run("demo story job", db.from("jobs").upsert({
+    id: IG_STORY_JOB, school_id: SCHOOL, user_id: null, kind: "ingest_classify", status: "succeeded",
+    payload: { ingested_post_id: IG_STORY_POST, ig_media_id: "demo", source: "instagram_stories" },
+  }));
+  await run("demo story", db.from("ingested_posts").upsert({
+    id: IG_STORY_POST, school_id: SCHOOL, channel: "instagram", external_url: igUrl, author_handle: DM_HANDLE,
+    caption: igCaption, posted_at: new Date().toISOString(), status: "processed", job_id: IG_STORY_JOB,
+  }));
   const ig = {
-    id: L(10), school_id: SCHOOL, seller_id: null, external_channel: "instagram", external_handle: DM_HANDLE,
-    external_profile_url: `https://instagram.com/${DM_HANDLE}`, external_url: `https://instagram.com/stories/${DM_HANDLE}/demo`,
+    id: L(10), ingested_post_id: IG_STORY_POST, school_id: SCHOOL, seller_id: null, external_channel: "instagram", external_handle: DM_HANDLE,
+    external_profile_url: `https://instagram.com/${DM_HANDLE}`, external_url: igUrl,
     category: "textbook", title: "Campbell Biology (12th ed.)", textbook_title: "Campbell Biology", authors: ["Urry", "Cain"], edition: "12",
     isbn: "9780135188743", price_cents: 4000, negotiable: true, condition: "good", fulfillment: ["in_person", "campus_mail"],
-    description: "selling my bio textbook from BSC 114, $40 obo, dm me", status: "active", source_channel: "instagram",
+    description: igCaption, status: "active", source_channel: "instagram",
   };
   await run("instagram listing", db.from("listings").upsert(ig));
   const courses = [...demoListings.flatMap((l) => l.courses.map((c) => ({ listing_id: l.id, course_id: c }))), { listing_id: ig.id, course_id: course.BSC114 }];

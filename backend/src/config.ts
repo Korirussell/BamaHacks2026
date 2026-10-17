@@ -74,7 +74,7 @@ const Env = z.object({
   // Bearer for POST|GET /api/v1/internal/sweep (one timer pass; Vercel Cron sends it). Unset = endpoint disabled.
   CRON_SECRET: optional,
   // Name used in the claim DM we send to Instagram sellers.
-  APP_NAME: z.string().min(1).default("Campus Marketplace"),
+  APP_NAME: z.string().min(1).default("Handoff"),
 });
 
 export type Config = z.infer<typeof Env>;
