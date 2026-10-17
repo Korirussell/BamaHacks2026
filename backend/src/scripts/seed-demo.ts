@@ -149,6 +149,21 @@ const personas: Record<string, Persona> = {
     grad_year: 2027,
     profile: { is_admin: true },
   },
+  // The on-stage demo account: sign in with `pnpm demo:password alex` (email + password, no laptop needed).
+  alex: {
+    id: "00000000-0000-4000-9000-000000000008",
+    email: "ajgundrum@crimson.ua.edu",
+    display_name: "Alex Gundrum",
+    major: "Computer Science",
+    grad_year: 2027,
+    profile: { mail_stop_code: "870789", completed_count: 3 },
+    transcript: [{ course: course.CS100, grade: "A" }],
+    current: [course.CS101, course.MATH126],
+    meetings: [
+      { course: course.CS101, days: MWF, start: "13:00", end: "13:50", building: building.NERC, room: "1013" },
+      { course: course.MATH126, days: TR, start: "09:30", end: "10:45", building: building.GORDON_PALMER, room: "246" },
+    ],
+  },
 };
 
 const db = adminClient();
@@ -278,6 +293,35 @@ async function seedTickets() {
   }));
 }
 
+/** Alex's own listings + notifications, so the demo account isn't an empty shell. */
+async function seedAlexExtras() {
+  const alex = personas["alex"]!.id;
+  await run("alex listings", db.from("listings").insert([
+    {
+      id: "00000000-0000-4000-7000-000000000201", school_id: SCHOOL, seller_id: alex, category: "dorm",
+      title: "Mini fridge, barely used", description: "3.2 cu ft, moving out of the dorm and don't need it anymore.",
+      price_cents: 6000, negotiable: true, floor_price_cents: 4000, condition: "good",
+      fulfillment: ["in_person"], status: "active", source_channel: "native",
+    },
+    {
+      id: "00000000-0000-4000-7000-000000000202", school_id: SCHOOL, seller_id: alex, category: "lab_supplies",
+      title: "TI-84 Plus CE calculator", description: "Works great, upgraded to a new one.",
+      price_cents: 6500, negotiable: true, floor_price_cents: 5000, condition: "like_new",
+      fulfillment: ["in_person", "campus_mail"], status: "active", source_channel: "native",
+    },
+  ]));
+  await run("alex notifications", db.from("notifications").insert([
+    {
+      school_id: SCHOOL, user_id: alex, type: "offer.created", title: "New offer on your mini fridge",
+      body: "Someone offered $55 for your mini fridge.", deep_link: "/listings/00000000-0000-4000-7000-000000000201",
+    },
+    {
+      school_id: SCHOOL, user_id: alex, type: "wishlist.match", title: "New CS 101 listing",
+      body: "A CS 101 textbook just got listed near you.", deep_link: "/feed",
+    },
+  ]));
+}
+
 async function printOtp(name: string) {
   const p = personas[name];
   if (!p) throw new Error(`Unknown persona "${name}". Pick one of: ${Object.keys(personas).join(", ")}`);
@@ -294,6 +338,7 @@ if (command === "otp") {
   for (const p of Object.values(personas)) await seedPersona(p);
   await seedTutoringReputation();
   await seedTickets();
+  await seedAlexExtras();
   console.log("Demo personas ready:");
   for (const [name, p] of Object.entries(personas)) console.log(`  ${name.padEnd(13)} ${p.email}  (${p.display_name})`);
   console.log(`\nSign in as one: pnpm seed:demo otp <name>`);

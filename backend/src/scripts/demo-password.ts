@@ -1,17 +1,19 @@
 // Sets a password on a seeded demo persona so it can sign in on the live site with email +
 // password (no laptop needed during the demo). You type the password; it is never printed.
 //
-//   pnpm demo:password buyer      (also: seller, student, ava, marcus, priya)
+//   pnpm demo:password buyer      (also: seller, student, ava, marcus, priya, alex)
 //
-// Only the bamahacks.* demo accounts; real users are never touched. Needs SUPABASE_URL +
+// Only the bamahacks.*/ajgundrum@ demo accounts; real users are never touched. Needs SUPABASE_URL +
 // SUPABASE_SERVICE_ROLE_KEY in .env.
 
 import { createInterface } from "node:readline";
 import { Writable } from "node:stream";
 import { adminClient } from "../lib/supabase.js";
 
-const PERSONAS = ["buyer", "seller", "student", "ava", "marcus", "priya"] as const;
+const PERSONAS = ["buyer", "seller", "student", "ava", "marcus", "priya", "alex"] as const;
 type Persona = (typeof PERSONAS)[number];
+/** Alex is the on-stage demo account; everyone else follows the bamahacks.<persona> pattern. */
+const EMAIL_OVERRIDES: Partial<Record<Persona, string>> = { alex: "ajgundrum@crimson.ua.edu" };
 
 function ask(prompt: string): Promise<string> {
   let muted = false;
@@ -29,7 +31,7 @@ if (!persona || !PERSONAS.includes(persona)) {
   console.error(`Usage: pnpm demo:password <${PERSONAS.join("|")}>`);
   process.exit(1);
 }
-const email = `bamahacks.${persona}@crimson.ua.edu`;
+const email = EMAIL_OVERRIDES[persona] ?? `bamahacks.${persona}@crimson.ua.edu`;
 
 const db = adminClient();
 const found = await db.from("profiles").select("id, display_name").eq("email", email).maybeSingle<{ id: string; display_name: string }>();
