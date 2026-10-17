@@ -4,33 +4,49 @@ import { ApiError } from "../lib/errors.js";
 import { adminClient } from "../lib/supabase.js";
 import { payoutFor, type OrderStatus } from "./orders.js";
 
-// Escrow without Stripe: the buyer's money is "held" on the platform from pay until the trade is
-// confirmed (released to the seller) or falls through (refunded to the buyer). Every movement goes
-// through a PaymentProvider and is written to escrow_entries. Only the demo provider exists today;
-// a Stripe provider plugs in here later without touching the routes.
+// Escrow: the buyer's money is "held" on the platform from pay until the trade is confirmed
+// (released to the seller) or falls through (refunded to the buyer). Every movement goes through a
+// PaymentProvider and is written to escrow_entries. `demo` settles instantly; `stripe` (separate
+// charges and transfers) starts a PaymentIntent and the payment is confirmed later by the webhook.
 
 export type EscrowKind = "hold" | "release" | "refund";
 
+export interface StartedPayment {
+  /** PaymentIntent id (or demo id); stored as orders.payment_intent_id. */
+  ref: string;
+  /** For Stripe PaymentSheet / Elements; null when nothing is left for the buyer to do. */
+  clientSecret: string | null;
+  /** true = money is already held (demo); false = wait for the provider's webhook. */
+  settled: boolean;
+}
+
 export interface PaymentProvider {
   readonly name: "demo" | "stripe";
-  hold(order: OrderRow): Promise<{ ref: string }>;
+  /** Start collecting the buyer's money. Must be idempotent per order (retries return the same payment). */
+  startPayment(order: OrderRow, opts: { idempotencyKey: string }): Promise<StartedPayment>;
+  /** Abandon a payment that never succeeded (order cancelled while awaiting_payment). */
+  cancelPayment(order: OrderRow): Promise<void>;
+  /** Pay the seller their share of a held payment. */
   release(order: OrderRow, amountCents: number): Promise<{ ref: string }>;
+  /** Give the buyer their money back. */
   refund(order: OrderRow, amountCents: number): Promise<{ ref: string }>;
 }
 
 /** Money "moves" instantly and nothing leaves the platform. */
 export const demoProvider: PaymentProvider = {
   name: "demo",
-  hold: async () => ({ ref: `demo_pi_${randomUUID()}` }),
+  startPayment: async () => ({ ref: `demo_pi_${randomUUID()}`, clientSecret: null, settled: true }),
+  cancelPayment: async () => {},
   release: async () => ({ ref: `demo_tr_${randomUUID()}` }),
   refund: async () => ({ ref: `demo_re_${randomUUID()}` }),
 };
 
 let provider: PaymentProvider = demoProvider;
-/** Swap the provider (tests, or Stripe later). */
+/** Swap the provider (index.ts picks it from PAYMENTS; tests inject fakes). */
 export function setPaymentProvider(p: PaymentProvider) {
   provider = p;
 }
+export const paymentProvider = () => provider;
 
 async function record(order: OrderRow, kind: EscrowKind, amountCents: number, ref: string, reason: string | null) {
   const { error } = await adminClient().from("escrow_entries").insert({
@@ -40,14 +56,31 @@ async function record(order: OrderRow, kind: EscrowKind, amountCents: number, re
   if (error && error.code !== "23505") throw error;
 }
 
-/** Buyer pays: hold the full amount. Order must be awaiting_payment; returns it as paid. */
-export async function holdFunds(order: OrderRow): Promise<OrderRow> {
-  const { ref } = await provider.hold(order);
+/**
+ * Buyer taps pay. Order must be awaiting_payment. Demo: held at once (order comes back paid).
+ * Stripe: the PaymentIntent is created and stored; the order stays awaiting_payment until
+ * markPaid runs from the payment_intent.succeeded webhook.
+ */
+export async function beginPayment(order: OrderRow, idempotencyKey: string): Promise<{ order: OrderRow; clientSecret: string | null }> {
+  const started = await provider.startPayment(order, { idempotencyKey });
+  if (started.settled) return { order: await markPaid(order, started.ref), clientSecret: null };
+  const pending = order.payment_intent_id === started.ref ? order : await transitionOrder(order, { payment_intent_id: started.ref });
+  return { order: pending, clientSecret: started.clientSecret };
+}
+
+/** The buyer's money is held: order → paid, ledger "hold". Safe to call twice (webhook retries). */
+export async function markPaid(order: OrderRow, ref: string): Promise<OrderRow> {
+  if (order.status !== "awaiting_payment") return order;
   const paid = await transitionOrder(order, {
     status: "paid", payment_status: "succeeded", payment_intent_id: ref, paid_at: new Date().toISOString(), payout_status: "held",
   });
   await record(paid, "hold", paid.amount_cents, ref, "buyer_paid");
   return paid;
+}
+
+/** @deprecated use beginPayment; kept for callers that only run in demo mode. */
+export async function holdFunds(order: OrderRow): Promise<OrderRow> {
+  return (await beginPayment(order, `hold:${order.id}`)).order;
 }
 
 export type SettleStatus = Extract<OrderStatus, "completed" | "refunded" | "cancelled">;
@@ -82,6 +115,7 @@ export async function settleOrder(
     return moved;
   }
 
+  if (!wasPaid && order.payment_intent_id) await provider.cancelPayment(order);
   const moved = await transitionOrder(order, {
     ...opts.patch, status, payout_status: payout, ...(wasPaid ? { payment_status: "refunded" } : {}),
   });
