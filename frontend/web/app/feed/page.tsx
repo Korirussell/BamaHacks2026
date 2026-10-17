@@ -14,7 +14,7 @@ import { ChipRow, EmptyState, ErrorState, PageTitle, PillLink } from '@/componen
 type Chip = (typeof copy.chips)[number];
 
 export default function Feed() {
-  const { listings, scrapeTick } = useDemo();
+  const { listings, scrapeTick, notificationItems } = useDemo();
   const { status, retry } = useMockLoad();
   const [chip, setChip] = useState<Chip>('All');
   const [q, setQ] = useState('');
@@ -26,7 +26,7 @@ export default function Feed() {
     .filter(f => !wish || f.wishlist_id === wish)
     .map(f => ({ f, l: listings.find(l => l.id === f.listing_id)! }))
     .filter(x => x.l);
-  const unread = notifications.filter(n => !n.read).length;
+  const unread = (notificationItems.length ? notificationItems : notifications).filter(n => !n.read).length;
 
   const shown = useMemo(() => {
     let l = listings;

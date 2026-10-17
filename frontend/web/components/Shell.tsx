@@ -5,6 +5,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ArrowLeftRight, BookOpen, Home, Plus, Search, Ticket, User, X } from 'lucide-react';
 import { useTheme } from 'next-themes';
+import { DemoLoginPicker } from './DemoLoginPicker';
 
 const RAIL = [
   { href: '/feed', label: 'Feed', icon: Home },
@@ -191,6 +192,7 @@ export function Shell({ children }: { children: ReactNode }) {
   if (path.startsWith('/claim') || path.startsWith('/embed')) return <>{children}</>;
   return (
     <>
+      <DemoLoginPicker />
       <div className="fixed left-[18px] top-5 z-40 hidden min-[900px]:block"><Logo /></div>
       <Rail path={path} />
       <button onClick={() => setMenu(true)} className="label fixed bottom-6 left-[18px] z-40 hidden text-[12px] text-ink hover:text-accent-text min-[900px]:block">

@@ -32,11 +32,10 @@ export function InterestSheet({ listing, onClose }: { listing: Listing | null; o
             role="dialog"
             aria-modal="true"
             aria-label="I want this"
-            onSubmit={e => {
+            onSubmit={async e => {
               e.preventDefault();
-              addInterest(listing.id, amount, msg);
-              toast(copy.ghost.toast);
-              onClose();
+              try { await addInterest(listing.id, amount, msg); toast(copy.ghost.toast); onClose(); }
+              catch (error) { toast.error(error instanceof Error ? error.message : 'Could not make offer'); }
             }}
             className="relative w-full max-w-[460px] rounded-t-[28px] border-[2.5px] border-ink bg-card p-6 pb-8 shadow-[5px_5px_0_var(--shadow)] sm:rounded-[28px]"
             initial={{ y: 400 }}

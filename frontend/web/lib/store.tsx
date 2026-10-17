@@ -1,14 +1,16 @@
 'use client';
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
-import type { Bid, Listing, Order } from './types';
+import type { Bid, Listing, Notification, Order } from './types';
 import { bids as seedBids, listings as seedListings, order as seedOrder } from './data';
 import { Celebration, type CelebrationKind } from '@/components/Celebration';
+import { USE_MOCKS, getFeed, getNotifications, makeOffer } from './api';
 
 export type DmStatus = 'queued' | 'sent' | 'clicked' | 'claimed';
 export type DmLog = { handle: string; message: string; status: DmStatus; link: string };
 
 type DemoState = {
   listings: Listing[];
+  notificationItems: Notification[];
   bids: Bid[];
   order: Order;
   lockedMeetupId: string | null;
@@ -36,6 +38,7 @@ const seedDm = (): DmLog[] => [
 
 const seed = (): DemoState => ({
   listings: structuredClone(seedListings),
+  notificationItems: [],
   bids: structuredClone(seedBids),
   order: structuredClone(seedOrder) as Order,
   lockedMeetupId: null,
@@ -59,7 +62,8 @@ type Ctx = DemoState & {
   hydrated: boolean;
   set: (fn: (s: DemoState) => DemoState) => void;
   reset: () => void;
-  addInterest: (listingId: string, amount: number, message: string) => void;
+  addInterest: (listingId: string, amount: number, message: string) => Promise<void>;
+  refreshLive: () => Promise<void>;
   claimGhost: () => void;
   publishListing: (l: Listing) => void;
   bumpDm: (to: DmStatus) => void;
@@ -108,7 +112,16 @@ export function DemoProvider({ children }: { children: ReactNode }) {
     }));
   }, []);
 
-  const addInterest = useCallback((listingId: string, amount: number, message: string) => {
+  const refreshLive = useCallback(async () => {
+    if (USE_MOCKS) return;
+    const [liveListings, liveNotifications] = await Promise.all([getFeed(), getNotifications()]);
+    setState((current) => ({ ...current, listings: liveListings, notificationItems: liveNotifications, mockMode: false }));
+  }, []);
+
+  useEffect(() => { void refreshLive().catch(() => undefined); }, [refreshLive]);
+
+  const addInterest = useCallback(async (listingId: string, amount: number, message: string) => {
+    if (!USE_MOCKS) await makeOffer(listingId, amount, message);
     setState(s => ({
       ...s,
       listings: s.listings.map(l =>
@@ -138,7 +151,7 @@ export function DemoProvider({ children }: { children: ReactNode }) {
   const celebrate = useCallback((o: CelebrateOpts) => setCel(o), []);
 
   return (
-    <DemoCtx.Provider value={{ ...state, hydrated, set, reset, addInterest, claimGhost, publishListing, bumpDm, celebrate }}>
+    <DemoCtx.Provider value={{ ...state, hydrated, set, reset, addInterest, refreshLive, claimGhost, publishListing, bumpDm, celebrate }}>
       {children}
       {cel && (
         <Celebration
