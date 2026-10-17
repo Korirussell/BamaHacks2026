@@ -1,5 +1,5 @@
 'use client';
-// Real mode only: email → 6-digit code (demo personas get theirs from `pnpm seed:demo otp <persona>`).
+// Real mode only: email → 6-8 digit code (Supabase OTP length setting) (demo personas get theirs from `pnpm seed:demo otp <persona>`).
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { USE_MOCKS } from '@/lib/api';
@@ -33,12 +33,12 @@ export default function SignIn() {
     <div className="mx-auto max-w-md py-8">
       <StickerCard className="p-6">
         <h1 className="font-display text-[24px] font-bold">Sign in</h1>
-        <p className="mt-1 text-[14px] font-semibold text-soft">{step === 'email' ? 'Use your campus email. We will send a 6-digit code.' : `Enter the 6-digit code for ${email}.`}</p>
+        <p className="mt-1 text-[14px] font-semibold text-soft">{step === 'email' ? 'Use your campus email. We will send a sign-in code.' : `Enter the code sent to ${email}.`}</p>
         <form onSubmit={submit} className="mt-5 space-y-4">
           {step === 'email' ? (
             <input type="email" required autoFocus value={email} onChange={e => setEmail(e.target.value)} placeholder="you@crimson.ua.edu" aria-label="Email" className="w-full rounded-full border-[2.5px] border-ink bg-card px-4 py-3 text-[15px] font-medium outline-none" />
           ) : (
-            <input inputMode="numeric" pattern="[0-9]{6}" maxLength={6} required autoFocus value={code} onChange={e => setCode(e.target.value)} placeholder="123456" aria-label="6-digit code" className="w-full rounded-full border-[2.5px] border-ink bg-card px-4 py-3 text-center text-[20px] font-bold tracking-[0.4em] outline-none" />
+            <input inputMode="numeric" pattern="[0-9]{6,8}" maxLength={8} required autoFocus value={code} onChange={e => setCode(e.target.value)} placeholder="123456" aria-label="Sign-in code" className="w-full rounded-full border-[2.5px] border-ink bg-card px-4 py-3 text-center text-[20px] font-bold tracking-[0.4em] outline-none" />
           )}
           {err && <p role="alert" className="text-[13px] font-bold text-accent-text">{err}</p>}
           <Pill type="submit" className="w-full" disabled={busy}>{busy ? 'One sec…' : step === 'email' ? 'Send code' : 'Sign in'}</Pill>
