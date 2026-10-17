@@ -26,6 +26,14 @@ npm run dev        # http://localhost:3000
 
 P1/P2: `/activity`, `/profile`, `/notifications`, `/explore`, `/tickets`, `/rides`, `/tutoring`.
 
+## Real mode
+Mock mode is the default. To run against the real API (marketplace feed, listing, buy, Stripe pay):
+1. `cp .env.example .env.local` and fill in `NEXT_PUBLIC_USE_MOCKS=false`, `NEXT_PUBLIC_API_BASE` (backend origin), `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` (`pk_test_…` only).
+2. `npm run dev`, open `/signin`, enter a demo persona's `@crimson.ua.edu` email, then the 6-digit code from `pnpm seed:demo otp buyer`. supabase-js keeps the session; pages redirect to `/signin` without one.
+3. `/feed` and `/listings/{id}` load from `GET /feed` and `GET /listings/{id}`. **Buy** sends a cash offer at the listing price: an auto-accepted offer opens `/orders/{id}` to pay; otherwise it shows "Offer sent, waiting for the seller".
+4. `/orders/{id}` calls `POST /orders/{id}/pay`. With `PAYMENTS=demo` the order is paid at once; with Stripe it shows the Payment Element, then polls the order until it leaves `awaiting_payment`. Test card `4242 4242 4242 4242`.
+Other pages (post, requests, handoff, etc.) are still scripted demo screens. Contract-to-web mapping lives in `lib/real.ts`.
+
 ## Notes
 - Demo state lives in `lib/store.tsx` and persists to `localStorage` (synced across tabs). **Reset** on `/admin/demo`.
 - `?fail=1` on list pages / `/post` shows the error state.
