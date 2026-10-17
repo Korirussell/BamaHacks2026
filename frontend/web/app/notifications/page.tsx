@@ -1,11 +1,13 @@
 'use client';
 import Link from 'next/link';
-import { notifications } from '@/lib/data';
-import { useMockLoad } from '@/lib/store';
+import { notifications as mockNotifications } from '@/lib/data';
+import { useDemo, useMockLoad } from '@/lib/store';
 import { EmptyState, ErrorState, PageTitle, Skeleton } from '@/components/ui';
 
 export default function Notifications() {
   const { status, retry } = useMockLoad();
+  const { notificationItems } = useDemo();
+  const notifications = notificationItems.length ? notificationItems : mockNotifications;
   return (
     <div className="mx-auto max-w-[760px]">
       <PageTitle title="Notifications" />

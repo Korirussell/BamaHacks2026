@@ -20,7 +20,7 @@ export default function Feed() {
   const demo = useDemo();
   const mock = useMockLoad();
   const real = useRealLoad(realFeed, [], !USE_MOCKS);
-  const { scrapeTick } = demo;
+  const { scrapeTick, notificationItems } = demo;
   const listings = USE_MOCKS ? demo.listings : real.data ?? [];
   const { status, retry } = USE_MOCKS ? mock : real;
   const [chip, setChip] = useState<Chip>('All');
@@ -33,7 +33,7 @@ export default function Feed() {
     .filter(f => !wish || f.wishlist_id === wish)
     .map(f => ({ f, l: listings.find(l => l.id === f.listing_id)! }))
     .filter(x => x.l);
-  const unread = notifications.filter(n => !n.read).length;
+  const unread = (notificationItems.length ? notificationItems : notifications).filter(n => !n.read).length;
 
   const shown = useMemo(() => {
     let l = listings;

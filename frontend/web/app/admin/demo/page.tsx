@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { copy } from '@/lib/copy';
 import { listings as seedListings, bids as seedBids } from '@/lib/data';
 import { useDemo, type DmStatus } from '@/lib/store';
+import { ApiError, USE_MOCKS, getAdminIngestionFeed, type IngestionPost } from '@/lib/api';
 import { PageTitle, Pill, StickerCard } from '@/components/ui';
 
 const STATUS_BG: Record<DmStatus, string> = { queued: 'bg-card', sent: 'bg-butter text-dark-ink', clicked: 'bg-mint text-dark-ink', claimed: 'bg-accent text-on-accent' };
@@ -15,9 +16,17 @@ export default function DemoPanel() {
   const { dm, mockMode, set, reset, celebrate, listings, zoe, maya } = useDemo();
   const { setTheme } = useTheme();
   const [scraping, setScraping] = useState(false);
+  const [liveSources, setLiveSources] = useState<IngestionPost[]>([]);
   const bike = listings.find(l => l.id === 'l_bike');
 
-  const scrape = () => {
+  const scrape = async () => {
+    if (!USE_MOCKS) {
+      setScraping(true);
+      try { setLiveSources(await getAdminIngestionFeed()); }
+      catch (error) { toast.error(error instanceof ApiError && error.code === 'FORBIDDEN' ? 'Sign in as the seeded admin to view live sources.' : error instanceof Error ? error.message : 'Could not load live sources'); }
+      finally { setScraping(false); }
+      return;
+    }
     setScraping(true);
     setTimeout(() => {
       const seedBike = structuredClone(seedListings.find(l => l.id === 'l_bike')!);
@@ -41,13 +50,14 @@ export default function DemoPanel() {
           <h2 className="font-display text-[21px] font-bold">Instagram scraper</h2>
           <p className="mt-1 text-[13.5px] font-semibold text-soft">Pulls the latest UA buy/sell posts and turns them into ghost listings.</p>
           <div className="mt-4 flex flex-wrap items-center gap-3">
-            <Pill onClick={scrape} disabled={scraping}>
+            <Pill onClick={() => void scrape()} disabled={scraping}>
               {scraping ? <Loader2 size={16} className="animate-spin" /> : <Camera size={16} strokeWidth={2.4} />}
               {scraping ? 'Scraping…' : 'Run Instagram scrape'}
             </Pill>
             <Link href="/feed" className="text-[13px] font-extrabold text-accent-text hover:underline">Open feed →</Link>
           </div>
           <p className="mt-3 text-[12.5px] font-semibold text-soft">Bike: <b className="text-ink">{bike?.status}</b> · 🔥 {bike?.interest?.count ?? 0} want it</p>
+          {!USE_MOCKS && <div className="mt-3 space-y-1 text-[12px] font-semibold text-soft">{liveSources.length ? liveSources.slice(0, 5).map((post) => <p key={post.id}>@{post.author_handle} · {post.status} · {post.listing?.title || post.caption}</p>) : 'Sign in as admin, then load the real ingestion feed.'}</div>}
         </StickerCard>
 
         <StickerCard className="p-5">

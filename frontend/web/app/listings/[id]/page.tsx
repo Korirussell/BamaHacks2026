@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import { use, useState } from 'react';
+import { use, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, ExternalLink, Heart, Share2 } from 'lucide-react';
 import { toast } from 'sonner';
