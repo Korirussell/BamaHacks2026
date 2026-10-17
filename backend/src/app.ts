@@ -31,6 +31,7 @@ import { socialRoutes } from "./routes/social.js";
 import { usersRoutes } from "./routes/users.js";
 import { wishlistRoutes } from "./routes/wishlist.js";
 import { eventsRoutes } from "./routes/events.js";
+import { ridesRoutes } from "./routes/rides.js";
 import type { InstagramPoller } from "./workers/instagram-poller.js";
 
 export interface AppDeps {
@@ -93,6 +94,7 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     .route("/", socialRoutes(verify))
     .route("/", wishlistRoutes(verify))
     .route("/", eventsRoutes(verify, idempotency))
+    .route("/", ridesRoutes(verify, idempotency, payments))
     .route("/", notificationsRoutes(verify));
 
   const app = new Hono();
