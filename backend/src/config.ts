@@ -65,6 +65,12 @@ const Env = z.object({
   // Textbook identification: "claude" (vision) when ANTHROPIC_API_KEY is set, else the caption parser.
   IDENTIFIER: z.enum(["auto", "claude", "caption"]).default("auto"),
   CLAUDE_VISION_MODEL: z.string().min(1).default("claude-sonnet-5-5"),
+  // Local AI worker (ai-worker/ on the laptop): Gemma 4 reads photos, JEV-9B makes typed decisions.
+  // "laptop" queues work in Supabase ai_tasks for it; anything it can't answer in time falls back
+  // (vision → Claude if ANTHROPIC_API_KEY, else the caption parser; decisions → keyword rules).
+  AI: z.enum(["laptop", "off"]).default("laptop"),
+  AI_VISION_TIMEOUT_MS: z.coerce.number().int().min(1000).default(45_000),
+  AI_DECIDE_TIMEOUT_MS: z.coerce.number().int().min(500).default(10_000),
   // Background timers: unpaid orders cancel, campus-mail orders auto-complete, offers expire.
   ORDER_TIMERS: z.enum(["on", "off"]).default("on"),
   // Demo only: sign in by email with no code, and claim a seller link with no sign-in. Never on anywhere real.

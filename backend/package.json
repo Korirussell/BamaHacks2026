@@ -13,7 +13,8 @@
     "demo:password": "tsx --env-file-if-exists=.env src/scripts/demo-password.ts",
     "live-check": "tsx --env-file-if-exists=.env scripts/live-check.ts",
     "smoke": "tsx --env-file-if-exists=.env scripts/smoke.ts",
-    "libcal": "tsx --env-file-if-exists=.env scripts/libcal.ts"
+    "libcal": "tsx --env-file-if-exists=.env scripts/libcal.ts",
+    "ai-check": "tsx --env-file-if-exists=.env scripts/ai-check.ts"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.5",

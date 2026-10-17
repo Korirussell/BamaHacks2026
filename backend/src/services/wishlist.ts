@@ -116,3 +116,35 @@ export function suggestTrades(input: {
     .sort((a, b) => b.score - a.score)
     .slice(0, MAX_SUGGESTIONS);
 }
+
+// ---------------------------------------------------------------- semantic (JEV) matching
+
+/** A keyword match JEV should also count: "mini fridge" ~ "Galanz compact refrigerator". */
+export const SEMANTIC_MIN_SCORE = 3.5;
+const MAX_SEMANTIC_ITEMS = 12;
+
+/**
+ * Keyword wishes the exact matcher missed but that are otherwise eligible (active, not the seller's
+ * own, under their max price), for one person each. These are the ones worth asking JEV about.
+ */
+export function semanticCandidates(items: WishItem[], listing: Candidate, alreadyMatchedUsers: Set<string>): WishItem[] {
+  const seen = new Set(alreadyMatchedUsers);
+  const out: WishItem[] = [];
+  for (const item of items) {
+    if (out.length >= MAX_SEMANTIC_ITEMS) break;
+    if (item.kind !== "keyword" || !item.keyword || seen.has(item.userId)) continue;
+    if (listing.status !== "active" || listing.sellerId === item.userId) continue;
+    if (item.maxPriceCents !== null && listing.priceCents > item.maxPriceCents) continue;
+    seen.add(item.userId);
+    out.push(item);
+  }
+  return out;
+}
+
+export const semanticState = (listing: Candidate) => `A listing on a campus marketplace: ${listing.text.slice(0, 1500)}`;
+
+export const semanticQuestion = (item: WishItem, i: number) => ({
+  key: `wish_${i}`,
+  kind: "score" as const,
+  question: `A student is looking for "${item.keyword}". How well does this listing satisfy that (0 = unrelated, 5 = exactly it)?`,
+});

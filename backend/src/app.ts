@@ -22,7 +22,10 @@ import { notificationsRoutes } from "./routes/notifications.js";
 import { offersRoutes } from "./routes/offers.js";
 import { ordersRoutes, type PaymentsMode } from "./routes/orders.js";
 import { stripeWebhookRoutes, type StripeWebhookDeps } from "./routes/stripe-webhook.js";
-import type { RoomAvailability, RoomBooker, TextbookIdentifier } from "./adapters/ports.js";
+import type { Decider, RoomAvailability, RoomBooker, TextbookIdentifier } from "./adapters/ports.js";
+import { noDecider, offlineAiQueue, type AiQueue } from "./adapters/local-ai.js";
+import { setAi } from "./lib/ai.js";
+import { aiRoutes } from "./routes/ai.js";
 import { captionTextbookIdentifier, manualRoomBooker, noRoomAvailability } from "./adapters/stubs.js";
 import { libraryRoutes } from "./routes/library.js";
 import type { MarketConfig } from "./db/market-actions.js";
@@ -55,6 +58,10 @@ export interface AppDeps {
   /** Live library study-room availability (LibCal); tests default to none. */
   roomAvailability: RoomAvailability;
   identifier: TextbookIdentifier;
+  /** JEV decisions (haggle, scam, listing gate, wishlist); noDecider → keyword rules. */
+  decider: Decider;
+  /** The laptop AI worker queue, for /ai/status. */
+  aiQueue: AiQueue;
   instagram: InstagramPoller | null;
   idempotency: IdempotencyStore;
   payments: PaymentsMode;
@@ -83,6 +90,8 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     rooms = manualRoomBooker("https://www.lib.ua.edu/"),
     roomAvailability = noRoomAvailability,
     identifier = captionTextbookIdentifier,
+    decider = noDecider,
+    aiQueue = offlineAiQueue,
     instagram = null,
     idempotency = supabaseIdempotencyStore(),
     payments = "demo",
@@ -98,6 +107,7 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     log = true,
   } = deps;
 
+  setAi({ decider, queue: aiQueue });
   // WEB_ORIGIN may list several origins (comma-separated, e.g. localhost and the Vercel deploy); the first is the app URL in links.
   const market: MarketConfig = { feeBps, appUrl: primaryOrigin(webOrigin), appName, ...(instagram ? { outreach: instagram.outreach } : {}) };
 
@@ -119,6 +129,7 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     .route("/", listingsRoutes(verify, identifier))
     .route("/", offersRoutes(verify, market))
     .route("/", bargainRoutes(verify, market))
+    .route("/", aiRoutes(verify, market))
     .route("/", reportsRoutes(verify))
     .route("/", pushRoutes(verify))
     .route("/", tutoringRequestRoutes(verify))
