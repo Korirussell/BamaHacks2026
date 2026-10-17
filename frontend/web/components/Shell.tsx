@@ -1,4 +1,5 @@
 'use client';
+import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
@@ -23,10 +24,32 @@ const MENU = [
 
 const isActive = (path: string, href: string) => path === href || (href !== '/' && path.startsWith(href + '/'));
 
-export function Logo({ className = '', onAccent }: { className?: string; onAccent?: boolean }) {
+export function Logo({
+  className = '',
+  glyphSize = 44,
+  showWordmark = true,
+  onAccent = false,
+}: {
+  className?: string;
+  glyphSize?: number;
+  showWordmark?: boolean;
+  onAccent?: boolean;
+}) {
   return (
-    <Link href="/" aria-label="Handoff home" className={`font-display block text-[24px] font-bold leading-[0.85] ${onAccent ? 'text-on-accent' : 'text-ink'} ${className}`}>
-      Hand<br />off
+    <Link href="/" aria-label="Handoff home" className={`inline-flex items-center gap-2 ${className}`}>
+      <Image src="/brand/glyph-512.webp" alt="" width={glyphSize} height={glyphSize} priority className="shrink-0" />
+      {/* eslint-disable @next/next/no-img-element -- vector wordmarks, no benefit from next/image optimization */}
+      {showWordmark && (
+        onAccent ? (
+          <img src="/brand/wordmark-cream.svg" alt="Handoff" className="h-[18px] w-auto" />
+        ) : (
+          <>
+            <img src="/brand/wordmark-ink.svg" alt="Handoff" className="h-[18px] w-auto dark:hidden" />
+            <img src="/brand/wordmark-cream.svg" alt="Handoff" className="hidden h-[18px] w-auto dark:block" />
+          </>
+        )
+      )}
+      {/* eslint-enable @next/next/no-img-element */}
     </Link>
   );
 }
@@ -102,7 +125,7 @@ function MenuSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
           transition={{ duration: 0.45, ease: [0.7, 0, 0.2, 1] }}
         >
           <div className="flex items-start justify-between">
-            <span className="font-display text-[24px] font-bold leading-[0.85]">Hand<br />off</span>
+            <Logo glyphSize={36} onAccent />
             <button onClick={onClose} aria-label="Close menu" className="flex h-12 w-12 items-center justify-center rounded-full border-[2.5px] border-white">
               <X strokeWidth={2.6} />
             </button>
@@ -191,7 +214,7 @@ export function Shell({ children }: { children: ReactNode }) {
   if (path.startsWith('/claim') || path.startsWith('/embed')) return <>{children}</>;
   return (
     <>
-      <div className="fixed left-[18px] top-5 z-40 hidden min-[900px]:block"><Logo /></div>
+      <div className="fixed left-[18px] top-5 z-40 hidden min-[900px]:block"><Logo glyphSize={44} /></div>
       <Rail path={path} />
       <button onClick={() => setMenu(true)} className="label fixed bottom-6 left-[18px] z-40 hidden text-[12px] text-ink hover:text-accent-text min-[900px]:block">
         Menu <span className="tracking-[0.2em]">···</span>
@@ -200,7 +223,7 @@ export function Shell({ children }: { children: ReactNode }) {
       <CampusClock />
       {/* mobile header */}
       <div className="flex items-center justify-between px-4 pt-4 min-[900px]:hidden">
-        <Logo className="!text-[20px]" />
+        <Logo glyphSize={32} showWordmark={false} />
         <button onClick={() => setMenu(true)} className="label text-[12px]">Menu ···</button>
       </div>
       <main className="min-h-screen px-4 pb-28 pt-4 min-[900px]:pb-16 min-[900px]:pl-[100px] min-[900px]:pr-[72px] min-[900px]:pt-8">{children}</main>

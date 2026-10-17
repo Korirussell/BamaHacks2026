@@ -6,6 +6,7 @@
  * Spec: frontend-build.md §8.
  */
 import { motion, useReducedMotion } from 'framer-motion';
+import Image from 'next/image';
 import { useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { copy } from '@/lib/copy';
@@ -91,7 +92,15 @@ export function Celebration({ kind, title, line, onDone }: { kind: CelebrationKi
       </div>
 
       <motion.div
-        className="relative mt-10"
+        initial={reduce ? false : { scale: 0.4, opacity: 0, rotate: -10 }}
+        animate={{ scale: 1, opacity: 1, rotate: 0 }}
+        transition={{ delay: d(0.75), type: 'spring', stiffness: 380, damping: 14 }}
+      >
+        <Image src="/brand/glyph-512.webp" alt="" width={72} height={72} priority />
+      </motion.div>
+
+      <motion.div
+        className="relative mt-4"
         initial={reduce ? false : { scale: 0.3, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         transition={{ delay: d(0.8), type: 'spring', stiffness: 380, damping: 14 }}

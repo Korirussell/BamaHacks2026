@@ -8,9 +8,16 @@ import { history, placeById } from '@/lib/data';
 import { money } from '@/lib/money';
 import { useDemo, useMockLoad } from '@/lib/store';
 import { HistoryMap3D, type MapPin } from '@/components/HistoryMap3D';
-import { ErrorState, PageTitle, Skeleton, StickerCard } from '@/components/ui';
+import { ErrorState, LoadingGlyph, PageTitle, Skeleton, StickerCard } from '@/components/ui';
 
-const Campus3D = dynamic(() => import('@/components/campus3d/Campus3D'), { ssr: false, loading: () => <Skeleton className="h-full w-full rounded-[24px]" /> });
+const Campus3D = dynamic(() => import('@/components/campus3d/Campus3D'), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-full w-full items-center justify-center rounded-[24px] skel">
+      <LoadingGlyph />
+    </div>
+  ),
+});
 
 export default function History() {
   const { extraHistory, celebrate } = useDemo();

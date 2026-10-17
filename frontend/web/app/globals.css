@@ -116,6 +116,10 @@ body {
 @keyframes shimmer { 0%,100% { opacity: .55 } 50% { opacity: 1 } }
 .skel { background: var(--sunk); animation: shimmer 1.2s ease-in-out infinite; }
 
+/* Brand glyph loading wobble */
+@keyframes glyph-wobble { 0%,100% { transform: rotate(-6deg) } 50% { transform: rotate(6deg) } }
+.glyph-wobble { animation: glyph-wobble 1.1s ease-in-out infinite; }
+
 /* Sticker map */
 .map-ground {
   background-color: var(--map-ground);
@@ -127,6 +131,7 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .ticker-track { animation: none; }
   .skel { animation: none; }
+  .glyph-wobble { animation: none; }
   html { scroll-behavior: auto; }
 }
 

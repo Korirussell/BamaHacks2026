@@ -1,4 +1,5 @@
 'use client';
+import Image from 'next/image';
 import Link from 'next/link';
 import type { ComponentProps, ReactNode } from 'react';
 import { Bike, BookOpen, Calculator, CupSoda, Glasses, Lamp, Mouse, Package, Refrigerator, RotateCw, Ticket as TicketIcon } from 'lucide-react';
@@ -141,6 +142,18 @@ export function PriceTag({ listing, big }: { listing: Listing; big?: boolean }) 
 
 export function Skeleton({ className = '' }: { className?: string }) {
   return <div className={`skel rounded-[14px] ${className}`} />;
+}
+
+export function LoadingGlyph({ size = 40, className = '' }: { size?: number; className?: string }) {
+  return <Image src="/brand/glyph-512.webp" alt="Loading" width={size} height={size} className={`glyph-wobble ${className}`} />;
+}
+
+export function LoadingState({ className = '' }: { className?: string }) {
+  return (
+    <div className={`flex items-center justify-center py-10 ${className}`}>
+      <LoadingGlyph />
+    </div>
+  );
 }
 
 export function EmptyState({ emoji = '🫙', line, action }: { emoji?: string; line: string; action?: ReactNode }) {

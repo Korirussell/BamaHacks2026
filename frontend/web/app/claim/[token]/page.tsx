@@ -8,14 +8,15 @@ import { money } from '@/lib/money';
 import { claim } from '@/lib/data';
 import { useDemo, useMockLoad } from '@/lib/store';
 import { BidBubbles } from '@/components/BidBubbles';
-import { EmptyState, ErrorState, Pill, PillLink, Skeleton, Sticker } from '@/components/ui';
+import { Logo } from '@/components/Shell';
+import { EmptyState, ErrorState, LoadingState, Pill, PillLink, Sticker } from '@/components/ui';
 
 const DEMO_CODE = '428913';
 
 function Band() {
   return (
     <div className="flex items-center justify-between border-b-[2.5px] border-ink bg-accent px-5 py-4 text-on-accent">
-      <span className="font-display text-[22px] font-bold leading-[0.85]">Hand<br />off</span>
+      <Logo glyphSize={32} onAccent />
       <span className="label text-[11px] opacity-90">Claim your listing</span>
     </div>
   );
@@ -100,7 +101,7 @@ export default function ClaimPage({ params }: { params: Promise<{ token: string 
       <Band />
       <main className="mx-auto max-w-[480px] px-4 pb-16 pt-6">
         {status === 'loading' ? (
-          <div className="space-y-4"><Skeleton className="h-24" /><Skeleton className="h-28" /><Skeleton className="h-52" /></div>
+          <LoadingState />
         ) : status === 'error' ? (
           <ErrorState onRetry={retry} />
         ) : !valid ? (

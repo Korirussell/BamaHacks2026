@@ -5,7 +5,7 @@ import { copy } from '@/lib/copy';
 import { money } from '@/lib/money';
 import { meetups, placeById } from '@/lib/data';
 import { useDemo, useMockLoad } from '@/lib/store';
-import { ChipRow, EmptyState, ErrorState, PageTitle, PillLink, Skeleton } from '@/components/ui';
+import { ChipRow, EmptyState, ErrorState, LoadingState, PageTitle, PillLink } from '@/components/ui';
 
 const TABS = ['Buying', 'Selling', 'Interests'] as const;
 type Row = { emoji: string; title: string; sub: string; status: string; action?: { label: string; href: string } };
@@ -37,7 +37,7 @@ export default function Activity() {
       <PageTitle title="Activity" sub="Everything you're buying, selling and eyeing." />
       <ChipRow items={TABS} value={tab} onChange={setTab} />
       <div className="mt-4 space-y-3">
-        {status === 'error' ? <ErrorState onRetry={retry} /> : status === 'loading' ? [0, 1].map(i => <Skeleton key={i} className="h-20" />) : rows.length === 0 ? (
+        {status === 'error' ? <ErrorState onRetry={retry} /> : status === 'loading' ? <LoadingState /> : rows.length === 0 ? (
           <EmptyState line={tab === 'Selling' ? copy.empty.feed : 'Nothing here yet. Tap "I want this" on something you like.'} action={<PillLink href={tab === 'Selling' ? '/post' : '/feed'} size="sm">{tab === 'Selling' ? 'Post something' : 'Browse the feed'}</PillLink>} />
         ) : rows.map((r, i) => (
           <div key={i} className="stk flex items-center gap-3 rounded-[20px] bg-card p-3.5">

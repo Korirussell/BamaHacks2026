@@ -1,4 +1,5 @@
 'use client';
+import Image from 'next/image';
 import Link from 'next/link';
 import { motion, useReducedMotion } from 'framer-motion';
 import { toast } from 'sonner';
@@ -18,15 +19,21 @@ export default function Landing() {
   const reduce = useReducedMotion();
   return (
     <div className="mx-auto max-w-[1180px]">
-      <header className="flex items-center justify-end gap-6">
-        <nav className="hidden items-center gap-6 text-[13.5px] font-bold md:flex">
-          <a href="#how" className="hover:text-accent-text">How it works</a>
-          <a href="#how" className="hover:text-accent-text">Safety</a>
-          <Link href="/claim/abc123" className="hover:text-accent-text">For sellers</Link>
-        </nav>
-        <button onClick={() => toast("You're in as Kori R. · kori@crimson.ua.edu")} className="stk-btn label rounded-full bg-card px-3.5 py-1.5 text-[11.5px] border-2 !shadow-[3px_3px_0_var(--shadow)]">
-          {copy.cta.signin}
-        </button>
+      <header className="flex items-center justify-between gap-6">
+        <Link href="/" aria-label="Handoff home" className="block">
+          <Image src="/brand/lockup-light.webp" alt="Handoff" width={140} height={45} className="h-9 w-auto dark:hidden" priority />
+          <Image src="/brand/lockup-dark.webp" alt="Handoff" width={140} height={45} className="hidden h-9 w-auto dark:block" priority />
+        </Link>
+        <div className="flex items-center gap-6">
+          <nav className="hidden items-center gap-6 text-[13.5px] font-bold md:flex">
+            <a href="#how" className="hover:text-accent-text">How it works</a>
+            <a href="#how" className="hover:text-accent-text">Safety</a>
+            <Link href="/claim/abc123" className="hover:text-accent-text">For sellers</Link>
+          </nav>
+          <button onClick={() => toast("You're in as Kori R. · kori@crimson.ua.edu")} className="stk-btn label rounded-full bg-card px-3.5 py-1.5 text-[11.5px] border-2 !shadow-[3px_3px_0_var(--shadow)]">
+            {copy.cta.signin}
+          </button>
+        </div>
       </header>
 
       <section className="mt-8 grid items-center gap-12 lg:mt-14 lg:grid-cols-[1.1fr_1fr]">
