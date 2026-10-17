@@ -43,6 +43,8 @@ import { pushRoutes } from "./routes/push.js";
 import { tutoringRequestRoutes } from "./routes/tutoring-requests.js";
 import { ingestedPostsRoutes } from "./routes/ingested-posts.js";
 import { webhookRoutes } from "./routes/webhooks.js";
+import { internalRoutes } from "./routes/internal.js";
+import type { TickResult } from "./workers/order-timers.js";
 import type { InstagramPoller } from "./workers/instagram-poller.js";
 
 export interface AppDeps {
@@ -62,6 +64,8 @@ export interface AppDeps {
   webOrigin: string;
   /** GroupMe bot callback: shared secret (null rejects all) and the school its groups belong to. */
   groupme: { secret: string | null; schoolId: string };
+  /** POST|GET /internal/sweep: CRON_SECRET (null rejects all) and one pass of the order timers. */
+  sweep: { secret: string | null; run: () => Promise<TickResult> };
   log: boolean;
 }
 
@@ -81,6 +85,7 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     appName = "Campus Marketplace",
     webOrigin = "http://localhost:3000",
     groupme = { secret: null, schoolId: "00000000-0000-4000-a000-000000000001" },
+    sweep = { secret: null, run: async () => { throw new Error("sweep not wired"); } },
     log = true,
   } = deps;
 
@@ -109,6 +114,7 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     .route("/", pushRoutes(verify))
     .route("/", tutoringRequestRoutes(verify))
     .route("/", ingestedPostsRoutes(verify))
+    .route("/internal", internalRoutes({ cronSecret: sweep.secret, sweep: sweep.run }))
     .route("/webhooks", webhookRoutes({ identifier, groupmeSecret: groupme.secret, groupmeSchoolId: groupme.schoolId }))
     .route("/", ordersRoutes(verify, idempotency, payments))
     .route("/", stripeWebhookRoutes(stripeWebhooks))

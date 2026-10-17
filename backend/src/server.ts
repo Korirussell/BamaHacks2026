@@ -43,11 +43,13 @@ export function buildServer(config: Config = loadConfig()) {
     })
     : null;
 
-  const timers = config.ORDER_TIMERS === "on" ? orderTimers({
+  // Always built so /internal/sweep can run a pass on demand (Vercel Cron); only started when ORDER_TIMERS=on.
+  const sweeper = orderTimers({
     intervalMs: config.ORDER_TIMERS_INTERVAL_MS,
     // Meetups past their time: one side never showed → no-show + refund; nobody showed → reschedule.
     extraTasks: [{ name: "handoffs", run: (now) => sweepOverdueHandoffs(now) }],
-  }) : null;
+  });
+  const timers = config.ORDER_TIMERS === "on" ? sweeper : null;
   if (config.INSTAGRAM === "stories" && (!config.INSTAGRAM_ACCESS_TOKEN || !config.INSTAGRAM_SELLER_TOKEN)) {
     throw new Error("INSTAGRAM=stories needs INSTAGRAM_ACCESS_TOKEN (our account) and INSTAGRAM_SELLER_TOKEN (the seller account)");
   }
@@ -75,6 +77,7 @@ export function buildServer(config: Config = loadConfig()) {
     feeBps: config.PLATFORM_FEE_BPS,
     appName: config.APP_NAME,
     groupme: { secret: config.GROUPME_WEBHOOK_SECRET || null, schoolId: config.GROUPME_SCHOOL_ID },
+    sweep: { secret: config.CRON_SECRET || null, run: () => sweeper.tickOnce() },
   });
 
   const startWorkers = () => {
