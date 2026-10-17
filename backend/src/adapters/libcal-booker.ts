@@ -1,9 +1,13 @@
-import { chromium, type BrowserContext, type Page } from "playwright-core";
+import { chromium, type Page } from "playwright-core";
 import { localDate, localTime } from "../services/time.js";
 import type { RoomBooker } from "./ports.js";
 
 // ROOM_BOOKER=playwright: books a Gorgas Team Workroom on ua.libcal.com by driving the installed Chrome with a
-// persistent profile that a person signed into UA SSO once (`pnpm libcal login`). We never see or store a password.
+// profile that a person signed into UA SSO once. We never see or store a password.
+// Preferred: a long-running "booking Chrome" (`pnpm libcal browser`, LIBCAL_CDP_URL) that we attach to over CDP, so
+// the UA session (browser-session cookies) survives between bookings and nobody re-does Duo. Chrome won't expose
+// the everyday profile this way (136+), so it's a separate profile. Without LIBCAL_CDP_URL we launch the profile
+// ourselves, which loses session cookies on close.
 // The flow is mapped step by step in docs/LIBCAL_BOOKING_FLOW.md. LibCal allows one Team Workroom booking per
 // patron per day, and the patron is whoever signed into the profile.
 
@@ -19,6 +23,8 @@ export type BookAttempt =
 
 export interface LibcalBrowserOptions {
   profileDir: string;
+  /** e.g. http://127.0.0.1:9222: attach to the running booking Chrome instead of launching one. */
+  cdpUrl?: string | undefined;
   headless?: boolean;
   log?: (step: string) => void;
 }
@@ -39,8 +45,29 @@ export function checkoutError(body: string): string {
   return text || "LibCal didn't accept the booking";
 }
 
-const openProfile = (opts: LibcalBrowserOptions): Promise<BrowserContext> =>
-  chromium.launchPersistentContext(opts.profileDir, { channel: "chrome", headless: opts.headless ?? true, viewport: { width: 1400, height: 900 } });
+/** Runs `fn` in a fresh tab: in the running booking Chrome (CDP), or in a Chrome we launch on the profile. */
+async function withPage<T>(opts: LibcalBrowserOptions & { visible?: boolean }, fn: (page: Page) => Promise<T>): Promise<T> {
+  if (opts.cdpUrl) {
+    const browser = await chromium.connectOverCDP(opts.cdpUrl, { timeout: STEP_TIMEOUT_MS });
+    const context = browser.contexts()[0];
+    if (!context) throw new Error("The booking Chrome has no window open");
+    const page = await context.newPage();
+    try {
+      return await fn(page);
+    } finally {
+      await page.close().catch(() => undefined);
+      await browser.close().catch(() => undefined); // disconnects; the booking Chrome keeps running
+    }
+  }
+  const context = await chromium.launchPersistentContext(opts.profileDir, {
+    channel: "chrome", headless: !opts.visible && (opts.headless ?? true), viewport: { width: 1400, height: 900 },
+  });
+  try {
+    return await fn(context.pages()[0] ?? (await context.newPage()));
+  } finally {
+    await context.close().catch(() => undefined);
+  }
+}
 
 const onLibcal = (page: Page) => new URL(page.url()).host === new URL(BASE).host;
 
@@ -51,9 +78,8 @@ const onLibcal = (page: Page) => new URL(page.url()).host === new URL(BASE).host
  */
 export async function openLibcalLogin(opts: LibcalBrowserOptions & { timeoutMs?: number }): Promise<"signed_in" | "already_signed_in"> {
   const log = opts.log ?? (() => undefined);
-  const context = await openProfile({ ...opts, headless: false });
-  try {
-    const page = context.pages()[0] ?? (await context.newPage());
+  return withPage({ ...opts, visible: true }, async (page) => {
+    await page.bringToFront();
     await page.goto(GRID_URL);
     await page.waitForSelector("a.s-lc-eq-avail", { timeout: STEP_TIMEOUT_MS });
     const added = page.waitForResponse((r) => r.url().endsWith("/spaces/availability/booking/add"), { timeout: STEP_TIMEOUT_MS });
@@ -63,16 +89,14 @@ export async function openLibcalLogin(opts: LibcalBrowserOptions & { timeoutMs?:
     await page.waitForURL((url) => url.pathname === "/spaces/auth" || url.host !== new URL(BASE).host, { timeout: STEP_TIMEOUT_MS });
     const already = onLibcal(page);
     if (!already) {
-      log("Sign into UA in the Chrome window. It closes by itself once you're back on LibCal.");
+      log("Sign into UA in the Chrome window (tick Duo's \"remember me\"). It goes on by itself once you're back on LibCal.");
       await page.waitForURL((url) => url.host === new URL(BASE).host && url.pathname === "/spaces/auth", { timeout: opts.timeoutMs ?? 5 * 60_000 });
     }
     log("Signed in; releasing the slot held for sign-in");
     await page.getByRole("button", { name: "Remove" }).first().click({ timeout: STEP_TIMEOUT_MS }).catch(() => undefined);
     await page.waitForTimeout(1_000);
     return already ? "already_signed_in" : "signed_in";
-  } finally {
-    await context.close().catch(() => undefined);
-  }
+  });
 }
 
 /** Marks the free grid cell for `roomId` at `column` with data-bh-target. False when that cell isn't free. */
@@ -166,15 +190,10 @@ async function bookOnPage(page: Page, input: { roomId: string; start: string; en
 /** Books one room on LibCal. Never throws: a failure comes back as { ok: false, reason }. */
 export async function bookLibcalRoom(opts: LibcalBrowserOptions & { roomId: string; start: string; end: string; nick?: string }): Promise<BookAttempt> {
   const log = opts.log ?? (() => undefined);
-  let context: BrowserContext | undefined;
   try {
-    context = await openProfile(opts);
-    const page = context.pages()[0] ?? (await context.newPage());
-    return await bookOnPage(page, opts, log);
+    return await withPage(opts, (page) => bookOnPage(page, opts, log));
   } catch (err) {
     return { ok: false, reason: `Couldn't finish the LibCal booking: ${err instanceof Error ? err.message.split("\n")[0] : String(err)}` };
-  } finally {
-    await context?.close().catch(() => undefined);
   }
 }
 

@@ -32,6 +32,8 @@ const Env = z.object({
   ROOM_BOOKER: z.enum(["manual", "demo", "playwright"]).default("manual"),
   LIBCAL_PROFILE_DIR: z.string().min(1).default(".libcal-profile"),
   LIBCAL_HEADLESS: z.enum(["on", "off"]).default("on"),
+  // The running booking Chrome (`pnpm libcal browser`). Set it so bookings reuse its UA session.
+  LIBCAL_CDP_URL: optional,
   ROOM_BOOKING_URL: z.url().default("https://www.lib.ua.edu/"),
   // Live free Gorgas study rooms from UA's LibCal (read-only). "off" → no rooms are suggested.
   LIBCAL: z.enum(["on", "off"]).default("on"),

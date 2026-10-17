@@ -14,7 +14,7 @@ const manualRooms = manualRoomBooker(config.ROOM_BOOKING_URL);
 const rooms = config.ROOM_BOOKER === "demo"
   ? demoRoomBooker("Gorgas Library")
   : config.ROOM_BOOKER === "playwright"
-    ? libcalPlaywrightBooker({ profileDir: config.LIBCAL_PROFILE_DIR, headless: config.LIBCAL_HEADLESS === "on", fallback: manualRooms })
+    ? libcalPlaywrightBooker({ profileDir: config.LIBCAL_PROFILE_DIR, cdpUrl: config.LIBCAL_CDP_URL || undefined, headless: config.LIBCAL_HEADLESS === "on", fallback: manualRooms })
     : manualRooms;
 
 const useClaude = config.IDENTIFIER === "claude" || (config.IDENTIFIER === "auto" && !!config.ANTHROPIC_API_KEY);
