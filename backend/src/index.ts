@@ -6,6 +6,8 @@ import { libcalPlaywrightBooker } from "./adapters/libcal-booker.js";
 import { captionTextbookIdentifier, demoRoomBooker, manualRoomBooker, noRoomAvailability } from "./adapters/stubs.js";
 import { createApp } from "./app.js";
 import { loadConfig } from "./config.js";
+import { sweepOverdueHandoffs } from "./db/handoff-actions.js";
+import { orderTimers } from "./workers/order-timers.js";
 import { instagramPoller } from "./workers/instagram-poller.js";
 
 const config = loadConfig();
@@ -34,6 +36,12 @@ const instagram = config.INSTAGRAM === "graph" && config.INSTAGRAM_ACCESS_TOKEN
   })
   : null;
 
+const timers = config.ORDER_TIMERS === "on" ? orderTimers({
+  intervalMs: config.ORDER_TIMERS_INTERVAL_MS,
+  // Meetups past their time: one side never showed → no-show + refund; nobody showed → reschedule.
+  extraTasks: [{ name: "handoffs", run: (now) => sweepOverdueHandoffs(now) }],
+}) : null;
+
 const app = createApp({
   webOrigin: config.WEB_ORIGIN,
   rooms,
@@ -46,6 +54,7 @@ const app = createApp({
 });
 
 serve({ fetch: app.fetch, port: config.PORT }, (info) => {
-  console.log(`API listening on http://localhost:${info.port}/api/v1 (rooms: ${config.ROOM_BOOKER}, libcal: ${config.LIBCAL}, payments: ${config.PAYMENTS}, identifier: ${useClaude ? "claude" : "caption"}, instagram: ${config.INSTAGRAM})`);
+  console.log(`API listening on http://localhost:${info.port}/api/v1 (rooms: ${config.ROOM_BOOKER}, libcal: ${config.LIBCAL}, payments: ${config.PAYMENTS}, identifier: ${useClaude ? "claude" : "caption"}, instagram: ${config.INSTAGRAM}, timers: ${config.ORDER_TIMERS})`);
   instagram?.start();
+  timers?.start();
 });

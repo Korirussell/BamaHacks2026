@@ -1,13 +1,18 @@
 import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
 import type { TextbookIdentifier } from "../adapters/ports.js";
+import { OrderRow, loadViewer, orderOut, sellerPayoutsEnabled } from "../db/market.js";
 import { ApiError } from "../lib/errors.js";
+import { notify } from "../lib/notify.js";
 import { one, page } from "../lib/respond.js";
 import { adminClient, publicMediaUrl } from "../lib/supabase.js";
 import { parseBody, parseQuery } from "../lib/validate.js";
 import { requireUser, type AuthEnv, type TokenVerifier } from "../middleware/auth.js";
 import { AdminIngestPostReq, SellerInvite } from "../schemas/claims.js";
+import { ResolveReq } from "../schemas/orders.js";
 import { claimUrlIn } from "../services/claims.js";
+import { settleOrder } from "../services/escrow.js";
+import { nextOrderStatus } from "../services/orders.js";
 import { pipelineEvent } from "../services/instagram.js";
 import { runIngest } from "../workers/ingest.js";
 import type { InstagramPoller } from "../workers/instagram-poller.js";
@@ -166,4 +171,26 @@ export const adminRoutes = (verify: TokenVerifier, identifier: TextbookIdentifie
       .eq("id", invite.id).select("*").single();
     if (updated.error) throw updated.error;
     return c.json(one(toInvite(InviteRow.parse(updated.data))));
+  })
+
+  // Team decision on a disputed order: pay the seller out, or give the buyer their money back.
+  .post("/orders/:id/resolve", async (c) => {
+    const { outcome, note } = await parseBody(c, ResolveReq);
+    const { id: adminId, schoolId } = c.var.user;
+    const id = z.guid().safeParse(c.req.param("id"));
+    if (!id.success) throw new ApiError(404, "NOT_FOUND", "Order not found");
+    const found = await adminClient().from("orders").select("*").eq("id", id.data).eq("school_id", schoolId).maybeSingle();
+    if (found.error) throw found.error;
+    if (!found.data) throw new ApiError(404, "NOT_FOUND", "Order not found");
+    const row = OrderRow.parse(found.data);
+
+    const status = nextOrderStatus(row.status, outcome === "complete" ? "resolve_complete" : "resolve_refund");
+    const resolved = await settleOrder(row, status === "completed" ? "completed" : "refunded", {
+      reason: `dispute_resolved:${outcome}`, sellerPayoutsEnabled: outcome === "complete" ? await sellerPayoutsEnabled(row.seller_id, schoolId) : false,
+    });
+    const body = outcome === "complete" ? `The team released the payment to the seller. ${note}` : `The team refunded the buyer. ${note}`;
+    for (const userId of [row.buyer_id, row.seller_id]) {
+      await notify({ schoolId, userId, type: "order.updated", title: "Dispute resolved", body, deepLink: `/orders/${row.id}`, data: { order_id: row.id, status: resolved.status } });
+    }
+    return c.json(one(await orderOut(resolved, await loadViewer(adminId, schoolId))));
   });

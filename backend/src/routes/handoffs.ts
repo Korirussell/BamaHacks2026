@@ -1,9 +1,11 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { HANDOFF_SELECT, HandoffRow, SafeZoneRow, loadHandoffRow, toHandoff, toSafeZone } from "../db/fulfillment.js";
+import {
+  HANDOFF_SELECT, HandoffRow, SafeZoneRow, WIPE_POSITIONS, loadHandoffRow, loadSharing, saveHandoff, toSafeZone, trackingFor,
+} from "../db/fulfillment.js";
+import { announce, handoffOut, reportNoShow, sellerPayoutsEnabled } from "../db/handoff-actions.js";
 import { loadOrderRow, transitionOrder, type OrderRow } from "../db/market.js";
 import { loadMeetingInputs, loadSchool } from "../db/tutoring.js";
-import { loadUsersPublic } from "../db/users.js";
 import { ApiError } from "../lib/errors.js";
 import { notify } from "../lib/notify.js";
 import { one } from "../lib/respond.js";
@@ -11,13 +13,17 @@ import { adminClient } from "../lib/supabase.js";
 import { parseBody } from "../lib/validate.js";
 import { requireUser, type AuthEnv, type TokenVerifier } from "../middleware/auth.js";
 import { idempotent, type IdempotencyStore } from "../middleware/idempotency.js";
-import { AgreeReq, CodeReq, ConfirmReq, LocationReq, MeetupSuggestion, ProposeReq } from "../schemas/handoffs.js";
+import { AgreeReq, CodeReq, ConfirmReq, LocationReq, LocationRes, MeetupSuggestion, NoShowReq, ProposeReq, TapReq, TapRes } from "../schemas/handoffs.js";
 import { expandMeetings, freeBlocks, type BusyInterval } from "../services/availability.js";
 import { withinRadius } from "../services/geo.js";
 import { freeBusy } from "../services/google.js";
-import { agreeToProposal, confirmHandoff, handoffCode, handoffSecret, type HandoffStatus } from "../services/handoff.js";
+import { settleOrder } from "../services/escrow.js";
+import {
+  agreeToProposal, checkNoShow, confirmHandoff, decideTap, handoffCode, handoffSecret, presenceAfterPing, readZone, sharingWindow,
+  tapExpiresAt, tapStillValid, type HandoffStatus, type Party, type TapPoint,
+} from "../services/handoff.js";
 import { suggestMeetups } from "../services/meetups.js";
-import { nextOrderStatus, payoutFor, type OrderEvent } from "../services/orders.js";
+import { nextOrderStatus, type OrderEvent } from "../services/orders.js";
 import { DAY, MINUTE } from "../services/time.js";
 
 const MEETUP_MINUTES = 10;
@@ -42,16 +48,6 @@ function requireSecret() {
   }
 }
 
-/** Writes a handoff change only if nobody else changed it since we read it. */
-async function saveHandoff(handoff: HandoffRow, patch: Record<string, unknown>) {
-  const { data, error } = await adminClient().from("handoffs").update(patch)
-    .eq("id", handoff.id).eq("school_id", handoff.school_id).eq("updated_at", handoff.updated_at)
-    .select(HANDOFF_SELECT).maybeSingle();
-  if (error) throw error;
-  if (!data) throw new ApiError(409, "INVALID_STATE", "This handoff just changed; reload it");
-  return HandoffRow.parse(data);
-}
-
 async function checkZone(id: string, schoolId: string) {
   const { data, error } = await adminClient().from("safe_zones").select("id")
     .eq("id", id).eq("school_id", schoolId).eq("active", true).maybeSingle();
@@ -70,12 +66,20 @@ function orderNext(order: OrderRow | null, event: OrderEvent) {
   return order ? nextOrderStatus(order.status, event) : null;
 }
 
-async function handoffOut(handoff: HandoffRow) {
-  const users = await loadUsersPublic([handoff.giver_id, handoff.receiver_id], handoff.school_id);
-  return toHandoff(handoff, users);
+const otherParty = (handoff: HandoffRow, actorId: string) => (handoff.giver_id === actorId ? handoff.receiver_id : handoff.giver_id);
+
+/**
+ * Final money move for a finished handoff: completed → release via settleOrder; item rejected → disputed,
+ * money stays held. The status was already validated with orderNext before anything was written.
+ */
+async function settleHandoffOrder(order: OrderRow, itemOk: boolean, reason: string): Promise<OrderRow> {
+  if (!itemOk) return transitionOrder(order, { status: nextOrderStatus(order.status, "dispute") });
+  if (nextOrderStatus(order.status, "handoff_confirmed") !== "completed") throw new ApiError(409, "INVALID_STATE", "Order can't be completed");
+  return settleOrder(order, "completed", { reason, sellerPayoutsEnabled: await sellerPayoutsEnabled(order.seller_id, order.school_id) });
 }
 
-const otherParty = (handoff: HandoffRow, actorId: string) => (handoff.giver_id === actorId ? handoff.receiver_id : handoff.giver_id);
+const nowIso = (now: number) => new Date(now).toISOString();
+const sideOf = (h: HandoffRow, userId: string): Party => (userId === h.giver_id ? "giver" : "receiver");
 
 async function notifyOther(handoff: HandoffRow, actorId: string, title: string, body: string) {
   await notify({
@@ -97,7 +101,7 @@ export const handoffRoutes = (verify: TokenVerifier, idempotency: IdempotencySto
   app.get("/handoffs/:id", async (c) => {
     const { id: userId, schoolId } = c.var.user;
     const handoff = await loadHandoffRow(parseId(c.req.param("id")), userId, schoolId);
-    return c.json(one(await handoffOut(handoff)));
+    return c.json(one(await handoffOut(handoff, userId)));
   });
 
   app.post("/handoffs/:id/suggest", async (c) => {
@@ -164,7 +168,8 @@ export const handoffRoutes = (verify: TokenVerifier, idempotency: IdempotencySto
     // A new proposal replaces any earlier one; the other party has to agree to this exact one.
     const saved = await saveHandoff(handoff, { proposed_by: userId, proposed_start: input.start, proposed_zone_id: input.safe_zone_id });
     await notifyOther(saved, userId, "Meetup proposed", "Check the proposed time and safe spot.");
-    return c.json(one(await handoffOut(saved)));
+    await announce(saved.id, "handoff.updated", { id: saved.id, status: saved.status });
+    return c.json(one(await handoffOut(saved, userId)));
   });
 
   app.post("/handoffs/:id/agree", async (c) => {
@@ -178,7 +183,8 @@ export const handoffRoutes = (verify: TokenVerifier, idempotency: IdempotencySto
     );
     await checkZone(input.safe_zone_id, schoolId);
     const order = await orderFor(handoff, userId);
-    const orderStatus = orderNext(order, "meetup_agreed");
+    // After a missed meetup the order is already `scheduled` (no scheduled→paid edge), so only a `paid` order moves.
+    const orderStatus = order && order.status !== "scheduled" ? orderNext(order, "meetup_agreed") : null;
 
     const start = Date.parse(input.start);
     const saved = await saveHandoff(handoff, {
@@ -192,7 +198,8 @@ export const handoffRoutes = (verify: TokenVerifier, idempotency: IdempotencySto
       await notifyOrder(moved, userId, "Meetup set", "Your handoff time and safe spot are confirmed.");
     }
     await notifyOther(saved, userId, "Meetup agreed", "The handoff time and place are confirmed.");
-    return c.json(one(await handoffOut(saved)));
+    await announce(saved.id, "handoff.updated", { id: saved.id, status: saved.status });
+    return c.json(one(await handoffOut(saved, userId)));
   });
 
   app.post("/handoffs/:id/location", async (c) => {
@@ -200,19 +207,52 @@ export const handoffRoutes = (verify: TokenVerifier, idempotency: IdempotencySto
     const { id: userId, schoolId } = c.var.user;
     const handoff = await loadHandoffRow(parseId(c.req.param("id")), userId, schoolId);
     requireStatus(handoff, "agreed", "arriving");
-    if (!handoff.safe_zone) throw new ApiError(409, "INVALID_STATE", "Handoff has no agreed safe zone");
+    if (!handoff.safe_zone || !handoff.agreed_start || !handoff.agreed_end) throw new ApiError(409, "INVALID_STATE", "Handoff has no agreed safe zone");
 
-    const zone = { lat: handoff.safe_zone.lat, lng: handoff.safe_zone.lng };
-    const nearby = withinRadius(input.location, zone, handoff.safe_zone.radius_m, input.accuracy_m);
-    const field = userId === handoff.giver_id ? "giver_nearby" : "receiver_nearby";
-    // Both phones post here often, so this is a plain field update rather than a checked transition.
-    const { data, error } = await adminClient().from("handoffs").update({ [field]: nearby })
-      .eq("id", handoff.id).eq("school_id", schoolId).in("status", ["agreed", "arriving"])
-      .select("giver_nearby, receiver_nearby").maybeSingle();
+    const now = Date.now();
+    const zone = { location: { lat: handoff.safe_zone.lat, lng: handoff.safe_zone.lng }, radiusM: handoff.safe_zone.radius_m };
+    const reading = readZone({ location: input.location, accuracyM: input.accuracy_m }, zone);
+    const me = sideOf(handoff, userId);
+    const nearby = presenceAfterPing(me === "giver" ? handoff.giver_nearby : handoff.receiver_nearby, reading);
+    const arrivedAt = me === "giver" ? handoff.giver_arrived_at : handoff.receiver_arrived_at;
+    // Latest position only; poor fixes refresh last-seen but never change presence. Both phones post
+    // often, so this is a plain field update rather than a checked transition.
+    const { data, error } = await adminClient().from("handoffs").update({
+      [`${me}_lat`]: input.location.lat, [`${me}_lng`]: input.location.lng, [`${me}_accuracy_m`]: input.accuracy_m,
+      [`${me}_seen_at`]: nowIso(now), [`${me}_nearby`]: nearby,
+      ...(reading.inside && !arrivedAt ? { [`${me}_arrived_at`]: nowIso(now) } : {}),
+    }).eq("id", handoff.id).eq("school_id", schoolId).in("status", ["agreed", "arriving"]).select(HANDOFF_SELECT).maybeSingle();
     if (error) throw error;
     if (!data) throw new ApiError(409, "INVALID_STATE", "This handoff just changed; reload it");
-    const presence = z.object({ giver_nearby: z.boolean(), receiver_nearby: z.boolean() }).parse(data);
-    return c.json(one(presence));
+    let row = HandoffRow.parse(data);
+
+    if (row.giver_nearby && row.receiver_nearby && row.status === "agreed") {
+      const arriving = await adminClient().from("handoffs").update({ status: "arriving" })
+        .eq("id", row.id).eq("school_id", schoolId).eq("status", "agreed").select(HANDOFF_SELECT).maybeSingle();
+      if (arriving.error) throw arriving.error;
+      if (arriving.data) {
+        row = HandoffRow.parse(arriving.data);
+        try {
+          const order = await orderFor(row, userId);
+          if (order?.status === "scheduled") await transitionOrder(order, { status: nextOrderStatus(order.status, "both_nearby") });
+        } catch (e) {
+          console.error("both_nearby order step failed", e instanceof Error ? e.message : e); // the handoff can still finish from `scheduled`
+        }
+        await announce(row.id, "handoff.updated", { id: row.id, status: row.status });
+      }
+    }
+    if (nearby !== (me === "giver" ? handoff.giver_nearby : handoff.receiver_nearby)) {
+      await announce(row.id, "handoff.presence", { giver_nearby: row.giver_nearby, receiver_nearby: row.receiver_nearby });
+    }
+
+    const tracking = trackingFor(row, { id: userId, now, sharing: await loadSharing([row.giver_id, row.receiver_id], schoolId) });
+    const window = sharingWindow(Date.parse(handoff.agreed_start), Date.parse(handoff.agreed_end));
+    return c.json(one(LocationRes.parse({
+      giver_nearby: row.giver_nearby, receiver_nearby: row.receiver_nearby,
+      me: { inside_zone: reading.inside, distance_to_zone_m: reading.distanceToZoneM, accuracy_ok: reading.accuracyOk },
+      other: tracking.other,
+      sharing_window: { starts_at: nowIso(window.startsAt), ends_at: nowIso(window.endsAt) },
+    })));
   });
 
   app.post("/handoffs/:id/code", async (c) => {
@@ -254,30 +294,124 @@ export const handoffRoutes = (verify: TokenVerifier, idempotency: IdempotencySto
       itemOk: input.item_ok,
     });
     const order = await orderFor(handoff, userId);
-    const orderStatus = orderNext(order, input.item_ok ? "handoff_confirmed" : "dispute");
+    orderNext(order, input.item_ok ? "handoff_confirmed" : "dispute"); // reject before writing anything
 
     const saved = await saveHandoff(handoff, {
-      status: result.handoff, receiver_at: new Date().toISOString(), receiver_nearby: true, item_ok: input.item_ok,
+      status: result.handoff, receiver_at: nowIso(Date.now()), receiver_nearby: true, item_ok: input.item_ok, ...WIPE_POSITIONS,
     });
-    if (order && orderStatus) {
-      const seller = await adminClient().from("profiles").select("payouts_enabled")
-        .eq("id", order.seller_id).eq("school_id", schoolId).single();
-      if (seller.error) throw seller.error;
-      const { payouts_enabled } = z.object({ payouts_enabled: z.boolean() }).parse(seller.data);
-      const payout = payoutFor(orderStatus, payouts_enabled);
-      const moved = await transitionOrder(order, {
-        status: orderStatus, payout_status: payout, ...(payout === "released" ? { released_at: new Date().toISOString() } : {}),
-      });
-      if (moved.status === "completed") {
-        const sold = await adminClient().from("listings").update({ status: "sold" }).eq("id", order.listing_id).eq("school_id", schoolId);
-        if (sold.error) throw sold.error;
-      }
+    if (order) {
+      const moved = await settleHandoffOrder(order, input.item_ok, "handoff_confirmed");
       const title = moved.status === "completed" ? "Order completed" : "Order disputed";
       const body = moved.status === "completed" ? "The handoff is done." : "The buyer flagged a problem with the item.";
       await notifyOrder(moved, userId, title, body);
     }
     await notifyOther(saved, userId, "Handoff confirmed", input.item_ok ? "All done." : "They reported a problem with the item.");
-    return c.json(one(await handoffOut(saved)));
+    await announce(saved.id, "handoff.completed", await handoffOut(saved));
+    return c.json(one(await handoffOut(saved, userId)));
+  });
+
+  app.post("/handoffs/:id/tap", idempotent(idempotency), async (c) => {
+    const input = await parseBody(c, TapReq);
+    const { id: userId, schoolId } = c.var.user;
+    const id = parseId(c.req.param("id"));
+    let handoff = await loadHandoffRow(id, userId, schoolId);
+    const me = sideOf(handoff, userId);
+    const them: Party = me === "giver" ? "receiver" : "giver";
+    if (me === "receiver" && input.item_ok === undefined) {
+      throw new ApiError(400, "VALIDATION", "Invalid request", { item_ok: "The receiver must say whether the item is as described" });
+    }
+
+    for (let attempt = 0; ; attempt++) {
+      requireStatus(handoff, "agreed", "arriving");
+      if (!handoff.safe_zone) throw new ApiError(409, "INVALID_STATE", "Handoff has no agreed safe zone");
+      const now = Date.now();
+      const zone = { location: { lat: handoff.safe_zone.lat, lng: handoff.safe_zone.lng }, radiusM: handoff.safe_zone.radius_m };
+      const reading = readZone({ location: input.location, accuracyM: input.accuracy_m }, zone);
+      if (!reading.accuracyOk || !reading.inside) {
+        throw new ApiError(403, "NOT_NEARBY", reading.accuracyOk
+          ? "You need to be at the meetup spot to confirm. If your location is off, use the QR code instead."
+          : "Your location isn't accurate enough. Move outdoors, or use the QR code instead.");
+      }
+
+      const mine: TapPoint = { at: now, location: input.location, accuracyM: input.accuracy_m };
+      const otherAt = them === "giver" ? handoff.giver_tap_at : handoff.receiver_tap_at;
+      const otherLat = them === "giver" ? handoff.giver_tap_lat : handoff.receiver_tap_lat;
+      const otherLng = them === "giver" ? handoff.giver_tap_lng : handoff.receiver_tap_lng;
+      const otherAcc = them === "giver" ? handoff.giver_tap_accuracy_m : handoff.receiver_tap_accuracy_m;
+      const theirs: TapPoint | null = tapStillValid(otherAt ? Date.parse(otherAt) : null, now) && otherLat !== null && otherLng !== null && otherAcc !== null
+        ? { at: Date.parse(otherAt ?? ""), location: { lat: otherLat, lng: otherLng }, accuracyM: otherAcc }
+        : null;
+      const decision = decideTap(mine, theirs, zone);
+      const itemOk = me === "receiver" ? (input.item_ok ?? false) : (handoff.receiver_tap_item_ok ?? false);
+
+      const order = decision.outcome === "paired" ? await orderFor(handoff, userId) : null;
+      if (decision.outcome === "paired") orderNext(order, itemOk ? "handoff_confirmed" : "dispute"); // reject before writing anything
+
+      const patch = {
+        [`${me}_tap_at`]: nowIso(now), [`${me}_tap_lat`]: input.location.lat, [`${me}_tap_lng`]: input.location.lng,
+        [`${me}_tap_accuracy_m`]: input.accuracy_m, ...(me === "receiver" ? { receiver_tap_item_ok: input.item_ok ?? null } : {}),
+        [`${me}_nearby`]: true, [`${me}_seen_at`]: nowIso(now),
+        ...(me === "giver" ? { giver_arrived_at: handoff.giver_arrived_at ?? nowIso(now) } : { receiver_arrived_at: handoff.receiver_arrived_at ?? nowIso(now) }),
+      };
+      let saved: HandoffRow;
+      try {
+        saved = await saveHandoff(handoff, decision.outcome === "paired"
+          ? { ...patch, status: "completed", giver_at: nowIso(now), receiver_at: nowIso(now), giver_nearby: true, receiver_nearby: true, item_ok: itemOk, ...WIPE_POSITIONS }
+          : patch);
+      } catch (e) {
+        // Both phones tap at nearly the same moment, so lose the race gracefully: reload and decide again.
+        if (e instanceof ApiError && e.status === 409 && attempt < 2) {
+          handoff = await loadHandoffRow(id, userId, schoolId);
+          continue;
+        }
+        throw e;
+      }
+
+      const expires = nowIso(tapExpiresAt(now));
+      if (decision.outcome !== "paired") {
+        await announce(saved.id, "handoff.tap", { by: me, expires_at: expires });
+        await notifyOther(saved, userId, "Confirm the trade", "They tapped Confirm trade. Tap yours within a minute.");
+        return c.json(one(TapRes.parse({ handoff: await handoffOut(saved, userId), status: "waiting_for_other", tap_expires_at: expires })));
+      }
+      if (order) {
+        const moved = await settleHandoffOrder(order, itemOk, "handoff_tap_confirmed");
+        await notifyOrder(moved, userId, moved.status === "completed" ? "Order completed" : "Order disputed",
+          moved.status === "completed" ? "The handoff is done." : "The buyer flagged a problem with the item.");
+      }
+      await notifyOther(saved, userId, "Handoff confirmed", itemOk ? "All done." : "They reported a problem with the item.");
+      await announce(saved.id, "handoff.completed", await handoffOut(saved));
+      await announce(saved.id, "handoff.updated", { id: saved.id, status: saved.status });
+      return c.json(one(TapRes.parse({ handoff: await handoffOut(saved, userId), status: itemOk ? "completed" : "disputed", tap_expires_at: expires })));
+    }
+  });
+
+  app.post("/handoffs/:id/no-show", async (c) => {
+    const input = await parseBody(c, NoShowReq);
+    const { id: userId, schoolId } = c.var.user;
+    const handoff = await loadHandoffRow(parseId(c.req.param("id")), userId, schoolId);
+    requireStatus(handoff, "agreed", "arriving");
+    if (!handoff.safe_zone || !handoff.agreed_start) throw new ApiError(409, "INVALID_STATE", "Handoff has no agreed safe zone");
+    const me = sideOf(handoff, userId);
+    const absent: Party = me === "giver" ? "receiver" : "giver";
+
+    const check = checkNoShow({
+      status: handoff.status, now: Date.now(), agreedStart: Date.parse(handoff.agreed_start),
+      reporter: { location: input.location, accuracyM: input.accuracy_m },
+      zone: { location: { lat: handoff.safe_zone.lat, lng: handoff.safe_zone.lng }, radiusM: handoff.safe_zone.radius_m },
+      otherNearby: absent === "giver" ? handoff.giver_nearby : handoff.receiver_nearby,
+      otherTapped: (absent === "giver" ? handoff.giver_tap_at : handoff.receiver_tap_at) !== null,
+    });
+    if (!check.ok) {
+      switch (check.reason) {
+        case "too_early": throw new ApiError(409, "INVALID_STATE", "You can report a no-show 15 minutes after the meetup start");
+        case "bad_accuracy": throw new ApiError(403, "NOT_NEARBY", "Your location isn't accurate enough. Move outdoors and try again.");
+        case "not_in_zone": throw new ApiError(403, "NOT_NEARBY", "You need to be at the meetup spot to report a no-show");
+        case "other_arrived": throw new ApiError(409, "INVALID_STATE", "The other person has arrived");
+        default: throw new ApiError(409, "INVALID_STATE", `Handoff is ${handoff.status}`);
+      }
+    }
+    const saved = await reportNoShow(handoff, userId, absent, "reported");
+    return c.json(one(await handoffOut(saved, userId)));
   });
 
   return app;

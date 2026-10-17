@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { LatLng } from "../schemas/common.js";
 import { ApiError } from "../lib/errors.js";
-import { withinRadius } from "./geo.js";
+import { distanceM, withinRadius } from "./geo.js";
 
 // Sync-confirm rule from the contract: the giver's code rotates every 60 s; the receiver
 // must present a current code AND be inside the agreed safe zone.
@@ -94,4 +94,104 @@ export function confirmHandoff(secret: string, handoffId: string, now: number, i
     throw new ApiError(400, "VALIDATION", "That code is wrong or expired", { qr_token: "Ask for a fresh code" });
   }
   return { handoff: "completed" as const, order: input.itemOk ? ("completed" as const) : ("disputed" as const) };
+}
+
+// ---------------------------------------------------------------- live meetup safety (pure logic)
+
+export const MAX_ACCURACY_M = 100; // worse fixes update last-seen only
+export const TAP_WINDOW_MS = 60_000; // both "Confirm trade" taps must land within this
+export const TAP_MAX_SEPARATION_M = 50; // + min(accuracies, 50)
+export const SHARING_MARGIN_MS = 30 * 60_000; // location is visible from 30 min before start to 30 min after end
+export const NO_SHOW_GRACE_MS = 15 * 60_000;
+export const OVERDUE_MS = 60 * 60_000; // after agreed_end, the sweep steps in
+
+export type Party = "giver" | "receiver";
+export interface Zone { location: LatLng; radiusM: number }
+export interface Fix { location: LatLng; accuracyM: number }
+
+export const accuracyOk = (accuracyM: number) => accuracyM <= MAX_ACCURACY_M;
+/** Nearest 10 m. */
+export const roundDistance = (m: number) => Math.round(m / 10) * 10;
+
+export interface ZoneReading {
+  accuracyOk: boolean;
+  /** Inside the zone with a trustworthy fix. */
+  inside: boolean;
+  /** Metres to the zone's edge, rounded to 10 m; 0 only when inside. Null when the fix is too inaccurate. */
+  distanceToZoneM: number | null;
+}
+
+export function readZone(fix: Fix, zone: Zone): ZoneReading {
+  if (!accuracyOk(fix.accuracyM)) return { accuracyOk: false, inside: false, distanceToZoneM: null };
+  const inside = withinRadius(fix.location, zone.location, zone.radiusM, fix.accuracyM);
+  if (inside) return { accuracyOk: true, inside: true, distanceToZoneM: 0 };
+  const edge = Math.max(0, distanceM(fix.location, zone.location) - zone.radiusM);
+  return { accuracyOk: true, inside: false, distanceToZoneM: Math.max(10, roundDistance(edge)) };
+}
+
+export function sharingWindow(agreedStart: number, agreedEnd: number) {
+  return { startsAt: agreedStart - SHARING_MARGIN_MS, endsAt: agreedEnd + SHARING_MARGIN_MS };
+}
+
+/** Whether the other party may see this person's distance (arrival is always visible). */
+export function mayShareDistance(p: {
+  status: HandoffStatus; now: number; agreedStart: number | null; agreedEnd: number | null; sharerSetting: "off" | "during_handoffs";
+}): boolean {
+  if (p.status !== "agreed" && p.status !== "arriving") return false;
+  if (p.sharerSetting !== "during_handoffs" || p.agreedStart === null || p.agreedEnd === null) return false;
+  const w = sharingWindow(p.agreedStart, p.agreedEnd);
+  return p.now >= w.startsAt && p.now <= w.endsAt;
+}
+
+/** What a location ping changes: the nearby flag only moves on a trustworthy fix. */
+export function presenceAfterPing(previousNearby: boolean, reading: ZoneReading): boolean {
+  return reading.accuracyOk ? reading.inside : previousNearby;
+}
+
+export interface TapPoint { at: number; location: LatLng; accuracyM: number }
+export type TapDecision = { outcome: "paired" } | { outcome: "waiting"; reason: "no_other_tap" | "expired" | "far_apart" | "outside_zone" };
+
+/** `mine` is the tap that just landed; `theirs` the other party's stored tap, if any. */
+export function decideTap(mine: TapPoint, theirs: TapPoint | null, zone: Zone): TapDecision {
+  if (!theirs) return { outcome: "waiting", reason: "no_other_tap" };
+  if (Math.abs(mine.at - theirs.at) > TAP_WINDOW_MS) return { outcome: "waiting", reason: "expired" };
+  for (const t of [mine, theirs]) {
+    if (!accuracyOk(t.accuracyM) || !withinRadius(t.location, zone.location, zone.radiusM, t.accuracyM)) {
+      return { outcome: "waiting", reason: "outside_zone" };
+    }
+  }
+  const slack = TAP_MAX_SEPARATION_M + Math.min(mine.accuracyM, theirs.accuracyM, 50);
+  if (distanceM(mine.location, theirs.location) > slack) return { outcome: "waiting", reason: "far_apart" };
+  return { outcome: "paired" };
+}
+
+export const tapExpiresAt = (tapAt: number) => tapAt + TAP_WINDOW_MS;
+export const tapStillValid = (tapAt: number | null, now: number) => tapAt !== null && now - tapAt <= TAP_WINDOW_MS;
+
+export type NoShowCheck = { ok: true } | { ok: false; reason: "wrong_state" | "too_early" | "bad_accuracy" | "not_in_zone" | "other_arrived" };
+
+export function checkNoShow(p: {
+  status: HandoffStatus; now: number; agreedStart: number | null; reporter: Fix; zone: Zone; otherNearby: boolean; otherTapped: boolean;
+}): NoShowCheck {
+  if ((p.status !== "agreed" && p.status !== "arriving") || p.agreedStart === null) return { ok: false, reason: "wrong_state" };
+  if (p.now < p.agreedStart + NO_SHOW_GRACE_MS) return { ok: false, reason: "too_early" };
+  if (!accuracyOk(p.reporter.accuracyM)) return { ok: false, reason: "bad_accuracy" };
+  if (!withinRadius(p.reporter.location, p.zone.location, p.zone.radiusM, p.reporter.accuracyM)) return { ok: false, reason: "not_in_zone" };
+  if (p.otherNearby || p.otherTapped) return { ok: false, reason: "other_arrived" };
+  return { ok: true };
+}
+
+export type OverdueDecision =
+  | { action: "wait" }
+  | { action: "no_show"; absent: Party }
+  | { action: "reschedule" }
+  | { action: "notify_both" };
+
+/** For a handoff still agreed/arriving an hour after it should have ended. */
+export function decideOverdue(p: { now: number; agreedEnd: number; giverArrived: boolean; receiverArrived: boolean }): OverdueDecision {
+  if (p.now <= p.agreedEnd + OVERDUE_MS) return { action: "wait" };
+  if (p.giverArrived && p.receiverArrived) return { action: "notify_both" };
+  if (p.giverArrived) return { action: "no_show", absent: "receiver" };
+  if (p.receiverArrived) return { action: "no_show", absent: "giver" };
+  return { action: "reschedule" };
 }

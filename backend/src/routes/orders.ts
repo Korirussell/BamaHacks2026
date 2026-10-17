@@ -1,7 +1,8 @@
-import { randomUUID } from "node:crypto";
 import { Hono } from "hono";
 import { z } from "zod";
-import { OrderRow, loadListingRow, loadOrderRow, loadViewer, orderOut, ordersOut, transitionOrder as transition } from "../db/market.js";
+import {
+  OrderRow, heldCents, loadEscrowEntries, loadListingRow, loadOrderRow, loadViewer, orderOut, ordersOut, transitionOrder as transition,
+} from "../db/market.js";
 import { ApiError } from "../lib/errors.js";
 import { notify } from "../lib/notify.js";
 import { one, page } from "../lib/respond.js";
@@ -9,12 +10,17 @@ import { adminClient } from "../lib/supabase.js";
 import { parseBody, parseQuery } from "../lib/validate.js";
 import { requireUser, type AuthEnv, type TokenVerifier } from "../middleware/auth.js";
 import { idempotent, type IdempotencyStore } from "../middleware/idempotency.js";
-import { nextOrderStatus, payoutFor } from "../services/orders.js";
+import { DisputeReq } from "../schemas/orders.js";
+import { holdFunds, settleOrder, type SettleStatus } from "../services/escrow.js";
+import { nextOrderStatus } from "../services/orders.js";
 
 /** "demo" marks orders paid on the spot (no card); "stripe" is step 10 and isn't built yet. */
 export type PaymentsMode = "demo" | "stripe";
 
 const CancelReq = z.object({ reason: z.string().trim().min(1).max(500) });
+
+/** What we store in orders.dispute_reason: the category plus the buyer's or seller's words. */
+export const disputeText = (reason: string, details: string) => `${reason}: ${details}`.slice(0, 1000);
 
 const check = <T>(r: { data: T | null; error: unknown }): T => {
   if (r.error) throw r.error;
@@ -63,14 +69,11 @@ export const ordersRoutes = (verify: TokenVerifier, idempotency: IdempotencyStor
     const { id: userId, schoolId } = c.var.user;
     const row = await loadOrderRow(parseId(c.req.param("id")), userId, schoolId);
     if (row.buyer_id !== userId) throw new ApiError(403, "FORBIDDEN", "Only the buyer pays");
-    const status = nextOrderStatus(row.status, "payment_succeeded");
+    nextOrderStatus(row.status, "payment_succeeded");
     if (payments !== "demo") throw new ApiError(503, "INTERNAL", "Card payments aren't set up yet");
 
     // Demo: the payment "succeeds" at once and the money counts as held on the platform.
-    const paymentIntentId = `demo_pi_${randomUUID()}`;
-    let paid = await transition(row, {
-      status, payment_status: "succeeded", payment_intent_id: paymentIntentId, paid_at: new Date().toISOString(), payout_status: "held",
-    });
+    let paid = await holdFunds(row);
     if (paid.fulfillment === "in_person") paid = await openHandoff(paid);
 
     const listing = await loadListingRow(paid.listing_id, schoolId);
@@ -79,27 +82,23 @@ export const ordersRoutes = (verify: TokenVerifier, idempotency: IdempotencyStor
       schoolId, userId: paid.seller_id, type: "order.updated", title: "Payment received",
       body: `${listing.textbook_title ?? listing.title}: ${next}`, deepLink: `/orders/${paid.id}`, data: { order_id: paid.id },
     });
-    return c.json(one({ client_secret: null, payment_intent_id: paymentIntentId, demo: true, order: await orderOut(paid, await loadViewer(userId, schoolId)) }));
+    return c.json(one({ client_secret: null, payment_intent_id: paid.payment_intent_id, demo: true, order: await orderOut(paid, await loadViewer(userId, schoolId)) }));
   })
 
   .post("/orders/:id/cancel", async (c) => {
     const { reason } = await parseBody(c, CancelReq);
     const { id: userId, schoolId } = c.var.user;
     const row = await loadOrderRow(parseId(c.req.param("id")), userId, schoolId);
-    const status = nextOrderStatus(row.status, "cancel");
+    const status = nextOrderStatus(row.status, "cancel") as SettleStatus;
     const refunded = status === "refunded";
     const db = adminClient();
-    const cancelled = await transition(row, {
-      status, cancel_reason: reason, payout_status: payoutFor(status, false),
-      ...(refunded ? { payment_status: "refunded" } : {}),
+    const cancelled = await settleOrder(row, status, {
+      reason: `cancelled_by_${row.buyer_id === userId ? "buyer" : "seller"}: ${reason}`.slice(0, 500), patch: { cancel_reason: reason },
     });
     if (row.handoff_id) {
       const h = await db.from("handoffs").update({ status: "cancelled" }).eq("id", row.handoff_id).not("status", "in", "(completed,cancelled)");
       if (h.error) throw h.error;
     }
-    // Back on the market.
-    const relisted = await db.from("listings").update({ status: "active" }).eq("id", row.listing_id).eq("status", "pending");
-    if (relisted.error) throw relisted.error;
 
     const otherId = row.buyer_id === userId ? row.seller_id : row.buyer_id;
     await notify({
@@ -107,4 +106,39 @@ export const ordersRoutes = (verify: TokenVerifier, idempotency: IdempotencyStor
       body: refunded ? `Refunded. Reason: ${reason}` : `Reason: ${reason}`, deepLink: `/orders/${row.id}`, data: { order_id: row.id },
     });
     return c.json(one(await orderOut(cancelled, await loadViewer(userId, schoolId))));
+  })
+
+  .post("/orders/:id/dispute", idempotent(idempotency), async (c) => {
+    const input = await parseBody(c, DisputeReq);
+    const { id: userId, schoolId } = c.var.user;
+    const row = await loadOrderRow(parseId(c.req.param("id")), userId, schoolId);
+    const status = nextOrderStatus(row.status, "dispute");
+
+    const mediaIds = [...new Set(input.media_ids)];
+    if (mediaIds.length) {
+      const owned = await adminClient().from("media").select("id").in("id", mediaIds).eq("school_id", schoolId).eq("owner_id", userId);
+      if (owned.error) throw owned.error;
+      if (owned.data.length !== mediaIds.length) {
+        throw new ApiError(400, "VALIDATION", "Invalid request", { media_ids: "Every photo must be one you uploaded" });
+      }
+    }
+
+    // The money stays held until the team resolves it.
+    const disputed = await transition(row, { status, dispute_reason: disputeText(input.reason, input.details) });
+    const otherId = row.buyer_id === userId ? row.seller_id : row.buyer_id;
+    await notify({
+      schoolId, userId: otherId, type: "order.updated", title: "Order disputed",
+      body: `The ${row.buyer_id === userId ? "buyer" : "seller"} opened a dispute. The team will review it.`, deepLink: `/orders/${row.id}`, data: { order_id: row.id, status },
+    });
+    return c.json(one(await orderOut(disputed, await loadViewer(userId, schoolId))));
+  })
+
+  .get("/orders/:id/escrow", async (c) => {
+    const { id: userId, schoolId } = c.var.user;
+    const row = await loadOrderRow(parseId(c.req.param("id")), userId, schoolId);
+    const entries = await loadEscrowEntries(row.id, schoolId);
+    return c.json(one({
+      entries: entries.map((e) => ({ kind: e.kind, amount_cents: e.amount_cents, provider: e.provider, created_at: new Date(e.created_at).toISOString(), reason: e.reason })),
+      held_cents: heldCents(entries),
+    }));
   });
