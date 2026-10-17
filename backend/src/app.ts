@@ -83,7 +83,9 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     log = true,
   } = deps;
 
-  const market: MarketConfig = { feeBps, appUrl: webOrigin, appName, ...(instagram ? { outreach: instagram.outreach } : {}) };
+  // WEB_ORIGIN may list several origins (comma-separated, e.g. localhost and the Vercel deploy); the first is the app URL in links.
+  const origins = webOrigin.split(",").map((o) => o.trim()).filter(Boolean);
+  const market: MarketConfig = { feeBps, appUrl: origins[0] ?? webOrigin, appName, ...(instagram ? { outreach: instagram.outreach } : {}) };
 
   const api = new Hono()
     .get("/health", (c) => c.json({ data: { ok: true } }))
@@ -125,7 +127,7 @@ export function createApp(deps: Partial<AppDeps> = {}) {
 
   const app = new Hono();
   if (log) app.use(logger());
-  app.use("/api/*", cors({ origin: webOrigin }));
+  app.use("/api/*", cors({ origin: origins }));
   app.route("/api/v1", api);
 
   app.notFound((c) => errorResponse(c, new ApiError(404, "NOT_FOUND", "Route not found")));
