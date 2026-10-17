@@ -12,13 +12,25 @@ import { mediaRoutes } from "./routes/media.js";
 import { meRoutes } from "./routes/me.js";
 import { scheduleRoutes } from "./routes/schedule.js";
 import { tutoringRoutes } from "./routes/tutoring.js";
-import type { RoomBooker } from "./adapters/ports.js";
-import { manualRoomBooker } from "./adapters/stubs.js";
+import { adminRoutes } from "./routes/admin.js";
+import { claimsRoutes } from "./routes/claims.js";
+import { listingsRoutes } from "./routes/listings.js";
+import { offersRoutes } from "./routes/offers.js";
+import { ordersRoutes, type PaymentsMode } from "./routes/orders.js";
+import type { RoomBooker, TextbookIdentifier } from "./adapters/ports.js";
+import { captionTextbookIdentifier, manualRoomBooker } from "./adapters/stubs.js";
+import type { MarketConfig } from "./db/market-actions.js";
+import { supabaseIdempotencyStore, type IdempotencyStore } from "./middleware/idempotency.js";
 
 export interface AppDeps {
   verify: TokenVerifier;
   findSchool: SchoolLookup;
   rooms: RoomBooker;
+  identifier: TextbookIdentifier;
+  idempotency: IdempotencyStore;
+  payments: PaymentsMode;
+  feeBps: number;
+  appName: string;
   webOrigin: string;
   log: boolean;
 }
@@ -29,9 +41,16 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     verify = supabaseVerifier,
     findSchool = supabaseSchoolLookup,
     rooms = manualRoomBooker("https://www.lib.ua.edu/"),
+    identifier = captionTextbookIdentifier,
+    idempotency = supabaseIdempotencyStore(),
+    payments = "demo",
+    feeBps = 500,
+    appName = "Campus Marketplace",
     webOrigin = "http://localhost:3000",
     log = true,
   } = deps;
+
+  const market: MarketConfig = { feeBps, appUrl: webOrigin, appName };
 
   const api = new Hono()
     .get("/health", (c) => c.json({ data: { ok: true } }))
@@ -43,7 +62,12 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     .route("/", scheduleRoutes(verify))
     .route("/", scheduleImportRoutes(verify))
     .route("/", jobsRoutes(verify))
-    .route("/", tutoringRoutes(verify, rooms));
+    .route("/", tutoringRoutes(verify, rooms))
+    .route("/admin", adminRoutes(verify, identifier))
+    .route("/claims", claimsRoutes(verify))
+    .route("/", listingsRoutes(verify))
+    .route("/", offersRoutes(verify, market))
+    .route("/", ordersRoutes(verify, idempotency, payments));
 
   const app = new Hono();
   if (log) app.use(logger());

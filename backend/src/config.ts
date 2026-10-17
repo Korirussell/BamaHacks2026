@@ -29,6 +29,10 @@ const Env = z.object({
   // Library rooms: "manual" sends people to ROOM_BOOKING_URL; "demo" fakes a booked room for the pitch.
   ROOM_BOOKER: z.enum(["manual", "demo"]).default("manual"),
   ROOM_BOOKING_URL: z.url().default("https://www.lib.ua.edu/"),
+  // Marketplace: "demo" marks orders paid without a card until Stripe (step 10) lands.
+  PAYMENTS: z.enum(["demo", "stripe"]).default("demo"),
+  // Name used in the claim DM we send to Instagram sellers.
+  APP_NAME: z.string().min(1).default("Campus Marketplace"),
 });
 
 export type Config = z.infer<typeof Env>;
