@@ -228,3 +228,28 @@ export async function orderOut(row: OrderRow, viewer: Viewer | null) {
   if (!order) throw new Error(`Order ${row.id} could not be built`);
   return order;
 }
+
+// ---------------------------------------------------------------- escrow ledger (read side)
+
+export const EscrowEntryRow = z.object({
+  kind: z.enum(["hold", "release", "refund"]), amount_cents: z.number().int(), provider: z.enum(["demo", "stripe"]), created_at: z.string(), reason: z.string().nullable(),
+});
+export type EscrowEntryRow = z.infer<typeof EscrowEntryRow>;
+
+/** Money still held on the platform: holds minus releases and refunds, never negative. */
+export function heldCents(entries: { kind: "hold" | "release" | "refund"; amount_cents: number }[]): number {
+  const net = entries.reduce((sum, e) => sum + (e.kind === "hold" ? e.amount_cents : -e.amount_cents), 0);
+  return Math.max(0, net);
+}
+
+export async function loadEscrowEntries(orderId: string, schoolId: string): Promise<EscrowEntryRow[]> {
+  const data = check(await adminClient().from("escrow_entries").select("kind, amount_cents, provider, created_at, reason")
+    .eq("order_id", orderId).eq("school_id", schoolId).order("created_at", { ascending: true }));
+  return z.array(EscrowEntryRow).parse(data);
+}
+
+/** Whether the seller can be paid out right now (decides released vs awaiting_onboarding). */
+export async function sellerPayoutsEnabled(sellerId: string, schoolId: string): Promise<boolean> {
+  const data = check(await adminClient().from("profiles").select("payouts_enabled").eq("id", sellerId).eq("school_id", schoolId).maybeSingle());
+  return z.object({ payouts_enabled: z.boolean() }).nullable().parse(data)?.payouts_enabled ?? false;
+}

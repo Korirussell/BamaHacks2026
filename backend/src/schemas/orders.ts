@@ -21,6 +21,16 @@ export const Order = z.object({
 export const CreateShipmentReq = z.object({ drop_off_point_id: Uuid.optional() });
 export const DroppedOffReq = z.object({ location: LatLng, accuracy_m: z.number().int(), photo_media_id: Uuid });
 export const ReceivedReq = z.object({ label_code: z.string(), item_ok: z.boolean() });
+export const DisputeReq = z.object({
+  reason: z.enum(["not_as_described", "no_show", "never_received", "other"]),
+  details: z.string().trim().min(1).max(1000),
+  media_ids: z.array(Uuid).max(10).default([]),
+});
+export const ResolveReq = z.object({ outcome: z.enum(["complete", "refund"]), note: z.string().trim().min(1).max(1000) });
+export const EscrowEntry = z.object({
+  kind: z.enum(["hold", "release", "refund"]), amount_cents: Cents, provider: z.enum(["demo", "stripe"]), created_at: Timestamp, reason: z.string().nullable(),
+});
+export const EscrowRes = z.object({ entries: z.array(EscrowEntry), held_cents: Cents });
 export const ReceivedRes = z.object({ shipment: Shipment, order: Order });
 
 export type OpeningHours = z.infer<typeof OpeningHours>;
@@ -31,3 +41,7 @@ export type CreateShipmentReq = z.infer<typeof CreateShipmentReq>;
 export type DroppedOffReq = z.infer<typeof DroppedOffReq>;
 export type ReceivedReq = z.infer<typeof ReceivedReq>;
 export type ReceivedRes = z.infer<typeof ReceivedRes>;
+export type DisputeReq = z.infer<typeof DisputeReq>;
+export type ResolveReq = z.infer<typeof ResolveReq>;
+export type EscrowEntry = z.infer<typeof EscrowEntry>;
+export type EscrowRes = z.infer<typeof EscrowRes>;

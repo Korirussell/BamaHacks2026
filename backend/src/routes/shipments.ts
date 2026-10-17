@@ -11,7 +11,8 @@ import { parseBody } from "../lib/validate.js";
 import { requireUser, type AuthEnv, type TokenVerifier } from "../middleware/auth.js";
 import { idempotent, type IdempotencyStore } from "../middleware/idempotency.js";
 import { CreateShipmentReq, DroppedOffReq, ReceivedReq } from "../schemas/orders.js";
-import { nextOrderStatus, payoutFor } from "../services/orders.js";
+import { settleOrder } from "../services/escrow.js";
+import { nextOrderStatus } from "../services/orders.js";
 import { buildLabel, verifyDropOff, verifyReceived } from "../services/shipping.js";
 
 const UNIQUE_VIOLATION = "23505";
@@ -159,15 +160,10 @@ export const shipmentRoutes = (verify: TokenVerifier, idempotency: IdempotencySt
     if (!updated.data) throw new ApiError(409, "INVALID_STATE", "This shipment just changed; reload it");
     const saved = ShipmentRow.parse(updated.data);
 
-    const { seller } = await loadParties(order);
-    const payout = payoutFor(status, seller.payouts_enabled);
-    const moved = await transitionOrder(order, {
-      status, payout_status: payout, ...(payout === "released" ? { released_at: new Date().toISOString() } : {}),
-    });
-    if (moved.status === "completed") {
-      const sold = await adminClient().from("listings").update({ status: "sold" }).eq("id", order.listing_id).eq("school_id", schoolId);
-      if (sold.error) throw sold.error;
-    }
+    const moved = input.item_ok
+      ? await settleOrder(order, "completed", { reason: "campus_mail_received", sellerPayoutsEnabled: (await loadParties(order)).seller.payouts_enabled })
+      // A problem: the money stays held until the dispute is resolved.
+      : await transitionOrder(order, { status, dispute_reason: "not_as_described: the buyer flagged a problem when the package arrived" });
     const body = moved.status === "completed" ? "The buyer got the package." : "The buyer flagged a problem with the item.";
     await notifyBoth(moved, saved, userId, moved.status === "completed" ? "Order completed" : "Order disputed", body);
     return c.json(one({ shipment: toShipment(saved), order: await orderOut(moved, await loadViewer(userId, schoolId)) }));
