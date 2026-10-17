@@ -25,6 +25,12 @@ struct SellView: View {
     @State private var condition = ""
     @State private var descriptionText = ""
 
+    // JEV listing check (POST /ai/listing-review), run before anything is published.
+    @State private var review: ListingReview?
+    @State private var reviewedKey: String?
+    @State private var reviewing = false
+    @State private var reviewNote: String?
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -244,8 +250,15 @@ struct SellView: View {
 
                 Text(r.modelNote).font(.system(size: 11.5, weight: .bold)).foregroundStyle(Color.hoSoft)
 
-                Button(Copy.sellPost) { postPhoto(r) }
-                    .buttonStyle(.pill(.primary, full: true))
+                let key = "photo|\(r.title)|\(fast)"
+                reviewCard(for: key)
+
+                Button(postLabel(Copy.sellPost, key: key)) {
+                    checkThenPublish(key: key, title: r.title, description: r.description, category: r.category,
+                                     priceCents: fast ? r.priceModel.fastCents : r.priceModel.maxCents) { postPhoto(r) }
+                }
+                .buttonStyle(.pill(.primary, full: true))
+                .disabled(postBlocked(key))
             }
         }
     }
@@ -318,6 +331,11 @@ struct SellView: View {
                 Text("Fair price \(Money.format(fair.lowCents))–\(Money.format(fair.highCents))")
                     .font(.system(size: 12.5, weight: .bold)).foregroundStyle(Color.hoSoft)
             }
+            if let line = result?.priceSourceLine {
+                Label(line, systemImage: "sparkles")
+                    .font(.system(size: 12.5, weight: .bold)).foregroundStyle(Color.hoAccentText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("CONDITION").font(.system(size: 11, weight: .heavy)).foregroundStyle(Color.hoSoft)
@@ -350,9 +368,94 @@ struct SellView: View {
                     .lineLimit(2...5).font(.system(size: 15))
             }
 
-            Button("Post") { post() }
-                .buttonStyle(.pill(.primary, full: true))
-                .disabled(title.isEmpty)
+            let key = "form|\(title)|\(price)|\(descriptionText)"
+            reviewCard(for: key)
+
+            Button(postLabel("Post", key: key)) {
+                checkThenPublish(key: key, title: title, description: descriptionText,
+                                 category: result?.category ?? "other", priceCents: price) { post() }
+            }
+            .buttonStyle(.pill(.primary, full: true))
+            .disabled(title.isEmpty || postBlocked(key))
+        }
+    }
+
+    // MARK: listing check (JEV gate)
+
+    /// The check that passed or failed belongs to the exact title/price/description it saw; editing re-runs it.
+    private func current(_ key: String) -> ListingReview? { reviewedKey == key ? review : nil }
+
+    private func postBlocked(_ key: String) -> Bool { reviewing || current(key)?.allowed == false }
+
+    private func postLabel(_ base: String, key: String) -> String {
+        if reviewing { return "Checking listing…" }
+        guard let r = current(key) else { return base }
+        if !r.allowed { return "Can't post this" }
+        return r.warnings.isEmpty ? base : "Post anyway"
+    }
+
+    /// Runs POST /ai/listing-review, then publishes when it's clean. With warnings the user taps again
+    /// ("Post anyway"); when it isn't allowed, publishing stays blocked until the listing changes.
+    private func checkThenPublish(key: String, title: String, description: String, category: String,
+                                  priceCents: Int, publish: @escaping () -> Void) {
+        if let r = current(key) {
+            if r.allowed { publish() }
+            return
+        }
+        reviewing = true
+        Task { @MainActor in
+            let r: ListingReview
+            do {
+                r = try await AIAPI.listingReview(title: title, description: description, category: category, priceCents: priceCents)
+                reviewNote = nil
+            } catch {
+                reviewNote = error.localizedDescription
+                r = OfflineAI.listingReview(title: title, priceCents: priceCents)
+            }
+            reviewing = false
+            withAnimation(.snappy) { review = r; reviewedKey = key }
+            if r.allowed && r.warnings.isEmpty { publish() } else { Haptics.soft() }
+        }
+    }
+
+    @ViewBuilder private func reviewCard(for key: String) -> some View {
+        if reviewing {
+            HStack(spacing: 10) {
+                ProgressView().tint(Color.hoInk)
+                Text("JEV is checking your listing…").font(.system(size: 13, weight: .semibold)).foregroundStyle(Color.hoSoft)
+            }
+        } else if let r = current(key), !r.allowed || !r.warnings.isEmpty {
+            let blocked = !r.allowed
+            let ink: Color = blocked ? .white : .hoInkOnLight
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Label(blocked ? "Can't post this" : "Heads up before you post",
+                          systemImage: blocked ? "xmark.octagon.fill" : "exclamationmark.triangle.fill")
+                        .font(.system(size: 14, weight: .heavy))
+                    Spacer()
+                    Text(r.engine == "jev" ? "JEV-9B on-device" : "rules")
+                        .font(.system(size: 10.5, weight: .heavy)).opacity(0.8)
+                }
+                ForEach(r.blockedReasons + r.warnings, id: \.self) { line in
+                    HStack(alignment: .top, spacing: 6) {
+                        Text("•")
+                        Text(line).fixedSize(horizontal: false, vertical: true)
+                    }
+                    .font(.system(size: 13, weight: .semibold))
+                }
+                if let cat = r.suggestedCategory {
+                    Text("Suggested category: \(cat.replacingOccurrences(of: "_", with: " ").capitalized)")
+                        .font(.system(size: 12.5, weight: .bold))
+                }
+                if let reviewNote {
+                    Text("Live check unavailable (\(reviewNote)). Basic checks only.")
+                        .font(.system(size: 11.5, weight: .medium)).opacity(0.8)
+                }
+            }
+            .foregroundStyle(ink)
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .sticker(radius: 16, shadow: 3, fill: blocked ? .hoAccent : .hoButter)
         }
     }
 

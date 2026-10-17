@@ -1,3 +1,4 @@
 { "is_sale_post": true, "category": "dorm", "title": "Desk lamp + storage cubes", "condition": "good", "price_cents": 2500,
   "fair_price": { "low_cents": 1800, "high_cents": 3000 }, "description": "IKEA desk lamp and 3 fabric storage cubes. Pickup near Tutwiler.",
-  "author_handle": "@sarah.sells", "confidence": 0.91, "missing_fields": ["condition"] }
+  "author_handle": "@sarah.sells", "confidence": 0.91, "missing_fields": ["condition"],
+  "price_source": "ai_estimate", "price_reason": "used IKEA lamps and cube sets go for $20-30 on campus" }
