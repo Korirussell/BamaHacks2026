@@ -19,6 +19,7 @@ import { listingsRoutes } from "./routes/listings.js";
 import { notificationsRoutes } from "./routes/notifications.js";
 import { offersRoutes } from "./routes/offers.js";
 import { ordersRoutes, type PaymentsMode } from "./routes/orders.js";
+import { webhookRoutes, type WebhookDeps } from "./routes/webhooks.js";
 import type { RoomAvailability, RoomBooker, TextbookIdentifier } from "./adapters/ports.js";
 import { captionTextbookIdentifier, manualRoomBooker, noRoomAvailability } from "./adapters/stubs.js";
 import { libraryRoutes } from "./routes/library.js";
@@ -27,6 +28,7 @@ import { supabaseIdempotencyStore, type IdempotencyStore } from "./middleware/id
 import { handoffRoutes } from "./routes/handoffs.js";
 import { shipmentRoutes } from "./routes/shipments.js";
 import { reviewsRoutes } from "./routes/reviews.js";
+import { paymentsRoutes } from "./routes/payments.js";
 import type { InstagramPoller } from "./workers/instagram-poller.js";
 
 export interface AppDeps {
@@ -39,6 +41,8 @@ export interface AppDeps {
   instagram: InstagramPoller | null;
   idempotency: IdempotencyStore;
   payments: PaymentsMode;
+  /** Stripe webhook collaborators; tests inject fakes. */
+  webhooks: Partial<WebhookDeps>;
   feeBps: number;
   appName: string;
   webOrigin: string;
@@ -56,6 +60,7 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     instagram = null,
     idempotency = supabaseIdempotencyStore(),
     payments = "demo",
+    webhooks = {},
     feeBps = 500,
     appName = "Campus Marketplace",
     webOrigin = "http://localhost:3000",
@@ -82,9 +87,11 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     .route("/", listingsRoutes(verify))
     .route("/", offersRoutes(verify, market))
     .route("/", ordersRoutes(verify, idempotency, payments))
+    .route("/", webhookRoutes(webhooks))
     .route("/", handoffRoutes(verify, idempotency))
     .route("/", shipmentRoutes(verify, idempotency))
     .route("/", reviewsRoutes(verify))
+    .route("/", paymentsRoutes(verify))
     .route("/", notificationsRoutes(verify));
 
   const app = new Hono();

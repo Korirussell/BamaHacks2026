@@ -11,10 +11,10 @@ import { parseBody, parseQuery } from "../lib/validate.js";
 import { requireUser, type AuthEnv, type TokenVerifier } from "../middleware/auth.js";
 import { idempotent, type IdempotencyStore } from "../middleware/idempotency.js";
 import { DisputeReq } from "../schemas/orders.js";
-import { holdFunds, settleOrder, type SettleStatus } from "../services/escrow.js";
+import { beginPayment, settleOrder, type SettleStatus } from "../services/escrow.js";
 import { nextOrderStatus } from "../services/orders.js";
 
-/** "demo" marks orders paid on the spot (no card); "stripe" is step 10 and isn't built yet. */
+/** "demo" marks orders paid on the spot (no card); "stripe" creates a PaymentIntent and waits for the webhook. */
 export type PaymentsMode = "demo" | "stripe";
 
 const CancelReq = z.object({ reason: z.string().trim().min(1).max(500) });
@@ -46,6 +46,18 @@ async function openHandoff(order: OrderRow) {
   return OrderRow.parse(linked.data);
 }
 
+/** Side effects once an order is paid (demo pay route and the Stripe webhook): open the handoff, tell the seller. */
+export async function afterPaid(order: OrderRow): Promise<OrderRow> {
+  const paid = order.fulfillment === "in_person" ? await openHandoff(order) : order;
+  const listing = await loadListingRow(paid.listing_id, paid.school_id);
+  const next = paid.fulfillment === "in_person" ? "Pick a time and safe spot to meet." : "Print the campus-mail label and drop it off.";
+  await notify({
+    schoolId: paid.school_id, userId: paid.seller_id, type: "order.updated", title: "Payment received",
+    body: `${listing.textbook_title ?? listing.title}: ${next}`, deepLink: `/orders/${paid.id}`, data: { order_id: paid.id },
+  });
+  return paid;
+}
+
 export const ordersRoutes = (verify: TokenVerifier, idempotency: IdempotencyStore, payments: PaymentsMode) => new Hono<AuthEnv>()
   .use("/orders/*", requireUser(verify))
   .use("/me/orders/*", requireUser(verify))
@@ -70,19 +82,16 @@ export const ordersRoutes = (verify: TokenVerifier, idempotency: IdempotencyStor
     const row = await loadOrderRow(parseId(c.req.param("id")), userId, schoolId);
     if (row.buyer_id !== userId) throw new ApiError(403, "FORBIDDEN", "Only the buyer pays");
     nextOrderStatus(row.status, "payment_succeeded");
-    if (payments !== "demo") throw new ApiError(503, "INTERNAL", "Card payments aren't set up yet");
 
-    // Demo: the payment "succeeds" at once and the money counts as held on the platform.
-    let paid = await holdFunds(row);
-    if (paid.fulfillment === "in_person") paid = await openHandoff(paid);
-
-    const listing = await loadListingRow(paid.listing_id, schoolId);
-    const next = paid.fulfillment === "in_person" ? "Pick a time and safe spot to meet." : "Print the campus-mail label and drop it off.";
-    await notify({
-      schoolId, userId: paid.seller_id, type: "order.updated", title: "Payment received",
-      body: `${listing.textbook_title ?? listing.title}: ${next}`, deepLink: `/orders/${paid.id}`, data: { order_id: paid.id },
-    });
-    return c.json(one({ client_secret: null, payment_intent_id: paid.payment_intent_id, demo: true, order: await orderOut(paid, await loadViewer(userId, schoolId)) }));
+    // Demo: held at once. Stripe: a PaymentIntent is created and the order stays awaiting_payment
+    // until the payment_intent.succeeded webhook (or a retry that finds it already succeeded).
+    const key = c.req.header("Idempotency-Key") ?? `pay:${row.id}`;
+    const begun = await beginPayment(row, key);
+    const order = begun.order.status === "awaiting_payment" ? begun.order : await afterPaid(begun.order);
+    return c.json(one({
+      client_secret: begun.clientSecret, payment_intent_id: order.payment_intent_id, demo: payments === "demo",
+      order: await orderOut(order, await loadViewer(userId, schoolId)),
+    }));
   })
 
   .post("/orders/:id/cancel", async (c) => {

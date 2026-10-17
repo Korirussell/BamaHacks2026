@@ -37,7 +37,7 @@ const Env = z.object({
   ROOM_BOOKING_URL: z.url().default("https://www.lib.ua.edu/"),
   // Live free Gorgas study rooms from UA's LibCal (read-only). "off" → no rooms are suggested.
   LIBCAL: z.enum(["on", "off"]).default("on"),
-  // Marketplace: "demo" marks orders paid without a card until Stripe (step 10) lands.
+  // Marketplace: "demo" marks orders paid without a card; "stripe" charges cards (needs STRIPE_SECRET_KEY + STRIPE_WEBHOOK_SECRET).
   PAYMENTS: z.enum(["demo", "stripe"]).default("demo"),
   // Instagram: "graph" polls the posts that tag our business account and lists them automatically.
   // "stories" polls the seller account's own stories (its token) and DMs the seller from ours.
@@ -66,6 +66,13 @@ const Env = z.object({
 });
 
 export type Config = z.infer<typeof Env>;
+
+/** PAYMENTS=stripe can't run without its keys; fail at boot with a clear message (demo needs none). */
+export function assertPaymentsConfig(config: Config) {
+  if (config.PAYMENTS !== "stripe") return;
+  const missing = (["STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET"] as const).filter((k) => !config[k]);
+  if (missing.length) throw new Error(`PAYMENTS=stripe needs ${missing.join(" and ")}`);
+}
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const result = Env.safeParse(env);
