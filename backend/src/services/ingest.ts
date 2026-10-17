@@ -40,7 +40,7 @@ const PROFILE_URL: Record<ExternalPost["channel"], ((h: string) => string) | nul
 /**
  * Turns an external post + what the identifier saw into a listing draft. The bookstore record
  * (course_materials) wins over the guess for title/authors/edition, since it's the canonical book.
- * Only a known ISBN with a price goes live; anything else waits as a draft for a human.
+ * Anything with a price goes live on the feed (an ISBN only adds course matching); no price waits as a draft.
  */
 export function draftFromPost(
   post: Pick<ExternalPost, "channel" | "authorHandle" | "caption">,
@@ -55,7 +55,7 @@ export function draftFromPost(
   const title = known?.title ?? guess.title;
   return {
     category: isbn ? "textbook" : "other",
-    status: missing.length ? "draft" : "active",
+    status: guess.priceCents === null ? "draft" : "active",
     title: known?.edition ? `${known.title} (${known.edition} ed.)` : title,
     description: post.caption.trim(),
     priceCents: guess.priceCents ?? 0,
