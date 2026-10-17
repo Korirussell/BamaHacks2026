@@ -53,6 +53,31 @@ export interface ConfirmInput {
   itemOk: boolean;
 }
 
+export interface ProposalState {
+  status: HandoffStatus;
+  proposedBy: string | null;
+  proposedStart: string | null;
+  proposedZoneId: string | null;
+}
+
+export function handoffSecret(env: NodeJS.ProcessEnv = process.env): string {
+  const secret = env.HANDOFF_SECRET;
+  if (!secret || secret.length < 32) throw new ApiError(500, "INTERNAL", "Handoff service is not configured");
+  return secret;
+}
+
+/** Ensures that only the other party can accept the exact proposal on a handoff. */
+export function agreeToProposal(proposal: ProposalState, actorId: string, input: { start: string; safeZoneId: string }): void {
+  if (proposal.status !== "proposing") throw new ApiError(409, "INVALID_STATE", `Handoff is ${proposal.status}`);
+  if (!proposal.proposedBy || !proposal.proposedStart || !proposal.proposedZoneId) {
+    throw new ApiError(409, "INVALID_STATE", "Handoff has no proposal to accept");
+  }
+  if (proposal.proposedBy === actorId) throw new ApiError(409, "INVALID_STATE", "The other party must accept this proposal");
+  if (proposal.proposedStart !== input.start || proposal.proposedZoneId !== input.safeZoneId) {
+    throw new ApiError(409, "INVALID_STATE", "Agreement must match the current proposal");
+  }
+}
+
 /**
  * Decide what a receiver's confirm does. `completed` releases the payout; `item_ok: false`
  * means the meetup happened but the buyer rejects the item, so the order goes to dispute.
