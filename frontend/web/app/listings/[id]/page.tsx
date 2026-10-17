@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import { use, useState } from 'react';
+import { use, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, ExternalLink, Heart, Share2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -8,6 +8,7 @@ import { copy, copy2 } from '@/lib/copy';
 import { money } from '@/lib/money';
 import { userById } from '@/lib/data';
 import { useDemo, useMockLoad } from '@/lib/store';
+import { USE_MOCKS, getListing, makeOffer, payOrder } from '@/lib/api';
 import { BidBubbles } from '@/components/BidBubbles';
 import { InterestSheet } from '@/components/InterestSheet';
 import { PaySheet } from '@/components/PaySheet';
@@ -21,10 +22,17 @@ export default function ListingDetail({ params }: { params: Promise<{ id: string
   const router = useRouter();
   const { listings, bids, set } = useDemo();
   const [pay, setPay] = useState(false);
+  const [liveOrderId, setLiveOrderId] = useState<string | null>(null);
   const { status, retry } = useMockLoad([id]);
   const [want, setWant] = useState(false);
   const [saved, setSaved] = useState(false);
   const listing = listings.find(l => l.id === id);
+  useEffect(() => {
+    if (USE_MOCKS) return;
+    void getListing(id).then((fresh) => {
+      if (fresh) set(s => ({ ...s, listings: [fresh, ...s.listings.filter((item) => item.id !== fresh.id)] }));
+    }).catch(() => undefined);
+  }, [id, set]);
 
   if (status === 'error') return <ErrorState onRetry={retry} />;
   if (status === 'loading')
@@ -45,9 +53,21 @@ export default function ListingDetail({ params }: { params: Promise<{ id: string
     else toast('Link copied');
   };
 
+  const beginPurchase = async () => {
+    if (!listing) return;
+    if (USE_MOCKS) { setPay(true); return; }
+    try {
+      const result = await makeOffer(listing.id, listing.price_cents, '');
+      const order = result.order;
+      if (!order) { toast('Offer sent. Switch to the seller demo login to accept it.'); return; }
+      set(s => ({ ...s, order }));
+      setLiveOrderId(order.id);
+      setPay(true);
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'Could not start checkout'); }
+  };
   const buyBar = (
     <div className="flex flex-col gap-3 sm:flex-row">
-      <Pill className="flex-1" onClick={() => setPay(true)}>
+      <Pill className="flex-1" onClick={() => void beginPurchase()}>
         {listing.id === 'l_owala' ? copy2.buy.cta : `Buy · ${money(listing.price_cents)}`}
       </Pill>
       {listing.id === 'l_fridge' ? (
@@ -166,7 +186,8 @@ export default function ListingDetail({ params }: { params: Promise<{ id: string
         open={pay}
         amount={listing.price_cents}
         onClose={() => setPay(false)}
-        onPaid={() => {
+        onPaid={async () => {
+          if (liveOrderId) await payOrder(liveOrderId);
           setPay(false);
           toast(`${money(listing.price_cents)} held 🔒`);
           if (listing.id === 'l_owala') {

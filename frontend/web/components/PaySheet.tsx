@@ -6,12 +6,14 @@ import { money } from '@/lib/money';
 import { Pill } from './ui';
 
 /** Fake checkout (1.2 s processing). Fee = 5%. */
-export function PaySheet({ open, amount, onClose, onPaid }: { open: boolean; amount: number; onClose: () => void; onPaid: () => void }) {
+export function PaySheet({ open, amount, onClose, onPaid }: { open: boolean; amount: number; onClose: () => void; onPaid: () => void | Promise<void> }) {
   const [paying, setPaying] = useState(false);
   const fee = Math.round(amount * 0.05);
-  const pay = () => {
+  const pay = async () => {
     setPaying(true);
-    setTimeout(() => { setPaying(false); onPaid(); }, 1200);
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    await onPaid();
+    setPaying(false);
   };
   return (
     <AnimatePresence>
@@ -26,10 +28,10 @@ export function PaySheet({ open, amount, onClose, onPaid }: { open: boolean; amo
               <div className="flex justify-between border-t-2 border-dashed border-ink/40 pt-2 text-[17px] font-extrabold"><dt>Total</dt><dd>{money(amount + fee, true)}</dd></div>
             </dl>
             <p className="mt-4 flex items-center gap-2 rounded-[14px] bg-mint px-3 py-2 text-[13px] font-bold text-dark-ink"><Lock size={14} /> Held until it&apos;s in your hands.</p>
-            <button onClick={pay} disabled={paying} className="stk-btn mt-5 flex w-full items-center justify-center gap-2 rounded-full bg-[#1A1414] px-5 py-3.5 text-[15px] font-extrabold text-white dark:border-white">
+            <button onClick={() => void pay()} disabled={paying} className="stk-btn mt-5 flex w-full items-center justify-center gap-2 rounded-full bg-[#1A1414] px-5 py-3.5 text-[15px] font-extrabold text-white dark:border-white">
               {paying ? <Loader2 size={18} className="animate-spin" /> : <>Pay with  Pay</>}
             </button>
-            <Pill variant="neutral" className="mt-3 w-full" onClick={pay} disabled={paying}>Pay with card</Pill>
+            <Pill variant="neutral" className="mt-3 w-full" onClick={() => void pay()} disabled={paying}>Pay with card</Pill>
           </motion.div>
         </motion.div>
       )}

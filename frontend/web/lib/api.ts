@@ -56,7 +56,10 @@ export async function getBids(id: string) { if (USE_MOCKS) { await delay(); retu
 export async function getClaim(token: string) { if (USE_MOCKS) { await delay(); return token === claim.token ? claim : null; } return request<unknown>(`/claims/${token}`); }
 export async function getMeetups(orderId: string) { if (USE_MOCKS) { await delay(); return meetups; } return request<unknown>(`/orders/${orderId}/meetup-suggestions`); }
 export async function getNotifications(): Promise<Notification[]> { if (USE_MOCKS) { await delay(); return notifications; } return (await request<ApiNotification[]>('/me/notifications')).map(adaptNotification); }
-export async function makeOffer(listingId: string, amountCents: number, message: string) { return request<{ offer: { id: string }; order: ApiOrder | null }>(`/listings/${listingId}/offers`, { method: 'POST', body: JSON.stringify({ kind: 'cash', amount_cents: amountCents, trade_listing_ids: [], fulfillment: 'in_person', message: message || undefined }) }); }
+export async function makeOffer(listingId: string, amountCents: number, message: string) {
+  const data = await request<{ offer: { id: string }; order: ApiOrder | null }>(`/listings/${listingId}/offers`, { method: 'POST', body: JSON.stringify({ kind: 'cash', amount_cents: amountCents, trade_listing_ids: [], fulfillment: 'in_person', message: message || undefined }) });
+  return { offerId: data.offer.id, order: data.order ? adaptOrder(data.order) : null };
+}
 export async function acceptOffer(offerId: string): Promise<Order> { const data = await request<{ order: ApiOrder }>(`/offers/${offerId}/accept`, { method: 'POST' }); return adaptOrder(data.order); }
 export async function payOrder(orderId: string): Promise<void> { await request<{ client_secret?: string }>(`/orders/${orderId}/pay`, { method: 'POST', headers: { 'Idempotency-Key': crypto.randomUUID() } }); }
 export async function getAdminIngestionFeed(): Promise<IngestionPost[]> { return request<IngestionPost[]>('/admin/ingestion/feed'); }
