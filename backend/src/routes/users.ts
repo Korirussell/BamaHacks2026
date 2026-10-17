@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { LISTING_SELECT, ListingRow, listingsOut, loadViewer } from "../db/market.js";
+import { mutualFriendIds } from "../db/social.js";
 import { loadUsersPublic } from "../db/users.js";
 import { ApiError } from "../lib/errors.js";
 import { one, page } from "../lib/respond.js";
@@ -11,7 +12,6 @@ import { REVIEW_SELECT, ReviewRow, toReview } from "./reviews.js";
 import { tutorProfileFor } from "./tutoring.js";
 
 // Other students' public profiles (module 2). Everything is scoped to the viewer's school.
-// mutual_friends stays [] until the social graph (module 14) exists.
 
 const SEARCH_LIMIT = 20;
 const SearchQuery = z.object({ q: z.string().trim().min(1).max(100), course_id: z.guid().optional() });
@@ -59,26 +59,28 @@ export const usersRoutes = (verify: TokenVerifier) => new Hono<AuthEnv>()
       query = query.in("id", ids);
     }
     const ids = z.array(z.object({ id: z.guid() })).parse(check(await query.order("display_name").limit(SEARCH_LIMIT))).map((r) => r.id);
-    const users = await loadUsersPublic(ids, schoolId);
+    const users = await loadUsersPublic(ids, schoolId, me);
     return c.json(page(ids.flatMap((id) => users.get(id) ?? [])));
   })
 
   .get("/users/:id", async (c) => {
     const { id: me, schoolId } = c.var.user;
     const userId = parseId(c.req.param("id"));
-    const user = (await loadUsersPublic([userId], schoolId)).get(userId);
+    const user = (await loadUsersPublic([userId], schoolId, me)).get(userId);
     if (!user) throw new ApiError(404, "NOT_FOUND", "User not found");
-    const [listingData, reviews, tutor, viewer] = await Promise.all([
+    const [listingData, reviews, tutor, viewer, mutualIds] = await Promise.all([
       adminClient().from("listings").select(LISTING_SELECT).eq("school_id", schoolId).eq("seller_id", userId).eq("status", "active")
         .order("created_at", { ascending: false }).limit(50),
       receivedReviews(userId, schoolId),
       tutorProfileFor(userId, schoolId),
       loadViewer(me, schoolId),
+      mutualFriendIds(me, userId, schoolId),
     ]);
+    const mutuals = await loadUsersPublic(mutualIds, schoolId, me);
     const rows = z.array(ListingRow).parse(check(listingData));
     return c.json(one({
       user,
-      mutual_friends: [],
+      mutual_friends: [...mutuals.values()].sort((a, b) => a.display_name.localeCompare(b.display_name)),
       active_listings: await listingsOut(rows, schoolId, viewer),
       tutor_profile: tutor?.enabled ? tutor : null,
       review_summary: reviewSummary(reviews.map((r) => r.stars)),
