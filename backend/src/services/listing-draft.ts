@@ -43,7 +43,7 @@ export function draftFromScreenshot(guess: TextbookGuess, materials: KnownMateri
     draft: {
       category: isbn ? "textbook" : guess.category && guess.category !== "textbook" ? guess.category : "other",
       title,
-      description: guess.evidence ?? "",
+      description: (guess.evidence ?? "").replace(/^(Gemma|Claude): /, ""),
       price_cents: price.cents ?? 0,
       negotiable: true,
       condition: guess.condition ?? "good",
