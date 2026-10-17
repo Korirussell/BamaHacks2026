@@ -76,12 +76,13 @@ export function buildServer(config: Config = loadConfig()) {
     appName: config.APP_NAME,
     groupme: { secret: config.GROUPME_WEBHOOK_SECRET || null, schoolId: config.GROUPME_SCHOOL_ID },
     instagramWebhookToken: config.INSTAGRAM_WEBHOOK_VERIFY_TOKEN || null,
+    demoAuth: config.DEMO_AUTH === "on",
   });
 
   const startWorkers = () => {
     (instagram ?? stories)?.start();
     timers?.start();
   };
-  const summary = `rooms: ${config.ROOM_BOOKER}, libcal: ${config.LIBCAL}, payments: ${config.PAYMENTS}, identifier: ${useClaude ? "claude" : "caption"}, instagram: ${config.INSTAGRAM}, timers: ${config.ORDER_TIMERS}`;
+  const summary = `rooms: ${config.ROOM_BOOKER}, libcal: ${config.LIBCAL}, payments: ${config.PAYMENTS}, identifier: ${useClaude ? "claude" : "caption"}, instagram: ${config.INSTAGRAM}, timers: ${config.ORDER_TIMERS}, demo auth: ${config.DEMO_AUTH}`;
   return { app, config, startWorkers, summary };
 }

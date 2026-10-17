@@ -131,3 +131,11 @@ Shapes: [API_CONTRACT.md](API_CONTRACT.md) → `POST /tutoring/sessions/{id}/pay
 - Paid **virtual**: after the start time the student taps **Mark as done** → `POST /tutoring/sessions/{id}/complete`, which pays the tutor. Hide that button for the tutor on paid sessions (it's FORBIDDEN for them).
 - Cancelling a paid session refunds the student: show *"You'll be refunded $X"* in the confirm dialog.
 - Tutor side: `session.payout.status` `held` → *"You'll be paid $Y after the session"* (`payout.tutor_payout_cents`); `awaiting_onboarding` → **Set up payouts** (same flow as sellers); `released` → *"Paid out"*.
+
+## Demo sign-in and no-login claims (`DEMO_AUTH=on` only)
+
+Until real sign-in is wired, the API can hand out sessions directly. Both return a Supabase session; send `access_token` as `Authorization: Bearer …`.
+
+- **Buyer (or anyone) signs in:** `POST /demo/login { "email": "bamahacks.buyer@crimson.ua.edu" }` → `{ data: { access_token, refresh_token, expires_at, user_id } }`. The account must already exist (`pnpm seed:demo`).
+- **Seller claims from the Instagram DM link:** the DM links to `/claim/{token}` on the web app. Show the preview from `GET /claims/{token}` (no login), and the "Claim it" button calls `POST /claims/{token}/demo` (no login, no body). That creates the seller an account for their handle, hands them the listing and its offers, and returns `{ data: { session, listings, pending_offers } }`. Keep `session` and use it for `POST /offers/{id}/accept` → order `awaiting_payment` → buyer `POST /orders/{id}/pay`.
+- The link is single use: a second claim is `410 CLAIM_INVALID`. With `DEMO_AUTH=off` both routes are `404`.

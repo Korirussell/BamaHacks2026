@@ -16,6 +16,7 @@ import { scheduleRoutes } from "./routes/schedule.js";
 import { tutoringRoutes, type TutoringPayments } from "./routes/tutoring.js";
 import { adminRoutes } from "./routes/admin.js";
 import { claimsRoutes } from "./routes/claims.js";
+import { demoRoutes } from "./routes/demo.js";
 import { listingsRoutes } from "./routes/listings.js";
 import { notificationsRoutes } from "./routes/notifications.js";
 import { offersRoutes } from "./routes/offers.js";
@@ -65,6 +66,8 @@ export interface AppDeps {
   /** GroupMe bot callback: shared secret (null rejects all) and the school its groups belong to. */
   groupme: { secret: string | null; schoolId: string };
   instagramWebhookToken: string | null;
+  /** DEMO_AUTH=on: /demo/login and /claims/{token}/demo hand out sessions with no sign-in. */
+  demoAuth: boolean;
   log: boolean;
 }
 
@@ -86,6 +89,7 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     webOrigin = "http://localhost:3000",
     groupme = { secret: null, schoolId: "00000000-0000-4000-a000-000000000001" },
     instagramWebhookToken = null,
+    demoAuth = false,
     log = true,
   } = deps;
 
@@ -106,7 +110,7 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     .route("/", tutoringRoutes(verify, rooms, roomAvailability, { idempotency, mode: payments, feeBps, ...tutoringPayments }))
     .route("/", libraryRoutes(verify, roomAvailability))
     .route("/admin", adminRoutes(verify, identifier, instagram))
-    .route("/claims", claimsRoutes(verify))
+    .route("/claims", claimsRoutes(verify, demoAuth))
     .route("/", listingsRoutes(verify, identifier))
     .route("/", offersRoutes(verify, market))
     .route("/", bargainRoutes(verify, market))
@@ -129,6 +133,8 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     .route("/", syllabiRoutes(verify))
     .route("/", studyGroupsRoutes(verify))
     .route("/", notificationsRoutes(verify));
+
+  if (demoAuth) api.route("/demo", demoRoutes());
 
   const app = new Hono();
   if (log) app.use(logger());

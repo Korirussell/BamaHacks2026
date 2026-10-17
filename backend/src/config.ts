@@ -67,6 +67,8 @@ const Env = z.object({
   CLAUDE_VISION_MODEL: z.string().min(1).default("claude-sonnet-5-5"),
   // Background timers: unpaid orders cancel, campus-mail orders auto-complete, offers expire.
   ORDER_TIMERS: z.enum(["on", "off"]).default("on"),
+  // Demo only: sign in by email with no code, and claim a seller link with no sign-in. Never on anywhere real.
+  DEMO_AUTH: z.enum(["on", "off"]).default("off"),
   ORDER_TIMERS_INTERVAL_MS: z.coerce.number().int().min(1000).default(60_000),
   // Name used in the claim DM we send to Instagram sellers.
   APP_NAME: z.string().min(1).default("Campus Marketplace"),
