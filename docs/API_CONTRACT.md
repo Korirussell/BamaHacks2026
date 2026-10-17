@@ -15,7 +15,7 @@ Build on Supabase plus a TypeScript API and Stripe Connect in test mode; ship **
 |---|---|---|
 | Frontend | Swift iOS app + website (frontend dev owns both) | Two clients, so the backend is a standalone API that knows nothing about either |
 | API layer | Standalone TypeScript API (Hono on Node) on Fly.io or Railway; Zod schemas generate an OpenAPI spec | Swift (`swift-openapi-generator`) and web both generate typed clients from the spec; the JSON below maps 1:1 to it |
-| DB, auth, files, realtime | Supabase (Postgres + PostGIS, Auth, Storage, Realtime) | RLS gives per-school isolation for free |
+| DB, auth, files, realtime | Supabase (Postgres, Auth, Storage, Realtime); locations are plain lat/lng columns and distances are computed in the API | RLS gives per-school isolation for free; no PostGIS needed at campus scale |
 | Payments | Stripe Connect Express, separate charges and transfers | Charge buyer up front, release to seller only after handoff confirm |
 | AI parsing | Claude API with vision and structured JSON output | One integration covers transcript, syllabus, screenshot-to-listing and textbook photo |
 | Multi-tenancy | One `school` row per `.edu` domain; every row carries `school_id` | College-by-college routing without separate deployments |
@@ -198,7 +198,7 @@ Sign-in: the frontend calls `/auth/check-email`, then Supabase `signInWithOtp`. 
 
 Schedule import is also **review-then-confirm**: upload the `.ics` file or screenshot via `/media/upload-url` (`purpose: schedule`), call `/me/class-schedule/import`, wait for `job.finished`, let the user fix the drafts (and anything in `unmatched`), then save with `PUT /me/class-schedule`. Nothing is written to the schedule until that PUT.
 
-> **Walk-time rule:** meetup suggestions (`MeetupSuggestion.walk_minutes`) and tutor slot suggestions use the `Building.location` of each person's class right **before** and right **after** a free block to estimate walk time to the safe zone or tutoring spot (PostGIS distance, server-side). If there is no class next to the block, or the class has no building, fall back to the school's `center`.
+> **Walk-time rule:** meetup suggestions (`MeetupSuggestion.walk_minutes`) and tutor slot suggestions use the `Building.location` of each person's class right **before** and right **after** a free block to estimate walk time to the safe zone or tutoring spot (haversine distance in the API, `services/geo.ts`). If there is no class next to the block, or the class has no building, fall back to the school's `center`.
 
 Transcript parsing is **review-then-confirm**: grades only count as `grade_verified` after the user confirms the parsed result from an uploaded transcript, and only verified grades unlock tutoring.
 
@@ -429,7 +429,7 @@ Twenty modules, but the demo rides on six: **Platform, Identity, Media, Listings
 | 3 | Media | Storage buckets, media | 1, 2 | `/media` |
 | 4 | Listings & search | listings, listing_media, search index (Postgres full-text) | 2, 3 | `/listings`, `/explore`, `/feed` |
 | 5 | Orders & payments | orders, payments, stripe_accounts, payouts, order state machine | 2, 4, Stripe | `/orders`, `/payments`, Stripe webhook |
-| 6 | Handoff & safety | safe_zones, handoffs, handoff_events (PostGIS) | 5 | `/handoffs`, `/safe-zones` |
+| 6 | Handoff & safety | safe_zones, handoffs, handoff_events | 5 | `/handoffs`, `/safe-zones` |
 | 7 | AI parsing | jobs; prompts + JSON schemas per job kind | 1, 3, Claude API | `/jobs`, used by 4, 8, 9, 17, 20 |
 | 8 | Academics | courses, class_records, transcripts, course_materials | 2, 7 | `/transcripts`, `/me/classes`, `/courses` |
 | 9 | Schedule & availability | buildings (seeded per school), class_meetings, calendar_connections, busy_cache; slot-finder + walk-time estimator | 2, 7, 8, Google | `/me/class-schedule`, `/buildings`, `/me/availability`, `/integrations/google` |
@@ -477,7 +477,7 @@ Set up **Supabase, the API host, Stripe, the Claude API and an Apple Developer a
 
 | Service | Used for | Setup checklist |
 |---|---|---|
-| Supabase | Postgres + PostGIS, Auth, Storage, Realtime | Create project · enable `postgis` + `pg_trgm` · Auth: email OTP (6-digit code, easier than magic links in a Swift app) · auth hook or trigger that rejects non-.edu domains and sets `school_id` · Storage buckets `public-media` (listing photos) and `private-docs` (transcripts, syllabi; signed URLs only) · enable Realtime on notifications, offers, orders, handoffs · custom SMTP so OTP emails aren't rate-limited |
+| Supabase | Postgres, Auth, Storage, Realtime | Create project · apply `supabase/migrations` (enables `pg_trgm`) · Auth: email OTP (6-digit code, easier than magic links in a Swift app) · auth hook or trigger that rejects non-.edu domains and sets `school_id` · Storage buckets `public-media` (listing photos) and `private-docs` (transcripts, syllabi; signed URLs only) · enable Realtime on notifications, offers, orders, handoffs · custom SMTP so OTP emails aren't rate-limited |
 | API host | Runs the Hono API + job workers | Fly.io or Railway app · env vars (below) · HTTPS domain, e.g. `api.<yourapp>.com` · CORS allow-list for the website origin |
 | Stripe | Buyer payments, seller payouts, platform fee | Test mode · enable Connect, Express accounts · separate charges and transfers so funds wait until handoff · webhook endpoint for `payment_intent.*`, `charge.refunded`, `charge.dispute.created`, `account.updated` · iOS: Stripe iOS SDK PaymentSheet; web: Stripe Elements · optional Apple Pay merchant ID |
 | Claude API | Screenshot → listing, transcript, syllabus, textbook photo, GroupMe post classification | API key · one prompt + JSON schema per job kind · run as background jobs, never inline in a request |
@@ -490,7 +490,7 @@ Set up **Supabase, the API host, Stripe, the Claude API and an Apple Developer a
 |---|---|---|
 | Google Cloud | Calendar free/busy | OAuth client (web type, redirect to `/integrations/google/callback`) · scope `calendar.readonly` (or `calendar.freebusy`) · consent screen in Testing mode, add team + demo users as test users · iOS opens the backend's `auth_url` in `ASWebAuthenticationSession` |
 | Push delivery | iOS + web notifications | APNs from the API (token-based .p8) · Web Push with VAPID keys |
-| Maps | Campus map, safe zones, distance | MapKit on iOS · Mapbox or Leaflet + OSM on web · distance checks done **server-side with PostGIS**, not in clients |
+| Maps | Campus map, safe zones, distance | MapKit on iOS · Mapbox or Leaflet + OSM on web · distance and geofence checks done **server-side in the API**, not in clients |
 | Book metadata | ISBN → title, cover, edition | Open Library or Google Books API |
 | GroupMe | Ingest Joyride + marketplace group posts | Developer token · bot with callback URL `/webhooks/groupme` · a group member has to add the bot to each group |
 | Library rooms | Auto-book tutoring rooms | Depends on what UA uses; fallback is a deep link (`manual_required`) |

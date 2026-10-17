@@ -11,6 +11,7 @@ Each step ends with something you can check with `curl` or the app, and is small
 | ✅ | API contract covering both demos | `docs/API_CONTRACT.md` |
 | ✅ | Hono server, error format, `/health`, `/auth/check-email` (.edu check only) | `backend/src/index.ts`, `routes/auth.ts` |
 | ✅ | Domain logic, unit tested: schedules → free time, walk-time slots, tutor matching, session counter/accept, meetup suggestions, rotating handoff codes + geofence, order state machine + fees/payout, offers + auto-accept, claim tokens + DM text, course-material matching, ISBN, campus-mail label/drop-off/receipt | `backend/src/services/*` (`pnpm test`) |
+| ✅ | Database schema + UA seed (migrations checked locally) | `supabase/` |
 | ✅ | Interfaces + stubs for everything external (scraper, Claude vision, course materials, DMs, UA directory, library booking, label PDF) | `backend/src/adapters/*` |
 
 The services are **pure functions**: they take plain data in and return decisions, and they never touch the database. Each route loads rows from Supabase, calls a service, and writes the result back. That keeps the hard logic testable now, before Supabase exists.
@@ -18,15 +19,15 @@ The services are **pure functions**: they take plain data in and return decision
 ## Steps
 
 ### 1. Supabase project + database schema 🧑
-- 🧑 Create the Supabase project (free tier is fine) and put `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_JWT_SECRET` in `backend/.env`.
-- Add `supabase/migrations/0001_core.sql`: `schools`, `profiles`, `buildings`, `courses`, `course_materials`, `class_records`, `class_meetings`, `safe_zones`, `drop_off_points`, `media`, `jobs`. Turn on `postgis`, `pg_trgm`, and RLS by `school_id`.
-- Add `0002_market.sql`: `listings`, `listing_media`, `ingested_posts`, `seller_invites`, `offers`, `orders`, `handoffs`, `shipments`, `notifications`.
-- Add `0003_tutoring.sql`: `tutor_profiles`, `tutoring_sessions`, `reviews` (rating only, for the demo).
-- **Done when:** `supabase db push` applies cleanly and the tables show up in the dashboard.
+- ✅ `supabase/migrations/0001_core.sql` (schools, profiles, buildings, safe zones, drop-off points, courses, course materials, class records, class meetings, media, jobs, idempotency keys), `0002_market.sql` (ingested posts, listings, listing courses/media, seller invites, offers, orders, handoffs, shipments, notifications), `0003_tutoring.sql` (tutor profiles/courses, sessions, reviews, `tutor_stats` view). RLS on every table. Locations are lat/lng columns (no PostGIS); distances are computed in `services/geo.ts`.
+- ✅ Checked against a local Postgres (PGlite): migrations apply, the seed re-runs cleanly, constraints reject bad states, and RLS scopes rows to their parties.
+- 🧑 Create the hosted project and apply the migrations: [`supabase/README.md`](../supabase/README.md).
+- **Done when:** the tables show up in the dashboard's Table Editor.
 
 ### 2. Seed data for UA
-- `supabase/seed.sql`: UA school (`ua.edu` + `crimson.ua.edu`, `America/Chicago`, `tutor_min_grade: A-`), around 15 real buildings with coordinates, around 5 safe zones (UAPD, Ferguson, Gorgas, Rodgers Library, Student Rec), the campus mail drop-off point, demo courses (CS 101, CH 101, MATH 125…), and textbook ISBN ↔ course rows for the demo books.
-- Demo personas: a tutoring student, two or three tutors with verified past grades and schedules, a buyer in CH 101, and an Instagram seller handle.
+- ✅ `supabase/seed.sql`: UA (`ua.edu` + `crimson.ua.edu`, `America/Chicago`, `tutor_min_grade: A-`), 15 buildings, 5 safe zones with opening hours, the campus-mail drop-off, 10 courses, and ISBN ↔ course rows (the Demo 2 chem book is used by CH 101 *and* CH 102). Fixed UUIDs.
+- 🧑 Check the coordinates on a map (they're approximate; the safe-zone and drop-off radii are what the geofence enforces) and confirm the real campus-mail drop.
+- Demo personas (a tutoring student, 2–3 tutors with verified grades and schedules, a CH 101 buyer, the Instagram seller) go in `pnpm seed:demo` after step 3, because users have to be created through the Supabase admin API.
 - **Done when:** `GET /safe-zones` and `GET /buildings` return seed rows (after step 4).
 
 ### 3. Server foundations
