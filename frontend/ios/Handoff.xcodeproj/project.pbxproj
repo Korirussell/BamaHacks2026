@@ -9,24 +9,29 @@
 /* Begin PBXBuildFile section */
 		00A59ACDD760823D5442C220 /* notifications.json in Resources */ = {isa = PBXBuildFile; fileRef = DFA63CC62459575846794063 /* notifications.json */; };
 		06D14ED268E7C511B12FC20E /* ActivityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35561DF5E61065900DD04393 /* ActivityView.swift */; };
+		0AADB239514E026A7C0D8088 /* PaySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C924220C9F75DA5EEBE338C9 /* PaySheet.swift */; };
 		0E16FE4FB0864376D50DC933 /* me.json in Resources */ = {isa = PBXBuildFile; fileRef = 0FB3212567ECFD276F3BD167 /* me.json */; };
 		1338A2C6CD6F398B7D9F0FEB /* HandoffApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8988D6E549870C14F869ECF2 /* HandoffApp.swift */; };
 		19044E3FA66DA5A8C7819CCE /* FeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DF2D1A567521CE0353A4CCB /* FeedView.swift */; };
 		1C787E0505236859A90A0909 /* listings.json in Resources */ = {isa = PBXBuildFile; fileRef = 9063E6AF7FD449DC0F36CD1B /* listings.json */; };
+		1E001CC070EAF6C248D2D64D /* HaggleThreadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96F49CA00030FC3D934C7EA3 /* HaggleThreadView.swift */; };
 		21232BBF27F250542FCABA75 /* order.json in Resources */ = {isa = PBXBuildFile; fileRef = AE7BE03E536C956525984302 /* order.json */; };
 		236C70334C27CA5B8D59F880 /* bids.json in Resources */ = {isa = PBXBuildFile; fileRef = C7CA0B4937F14B4E3CCA166A /* bids.json */; };
 		396783794E6CB75D68749C25 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A1F7248391547DCF066997B /* Models.swift */; };
 		47A2A868F9BDC306A965A165 /* ListingDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5885AC4411311CB37477248A /* ListingDetailView.swift */; };
 		4C6ACF67B577AD80DFEC81D0 /* places.json in Resources */ = {isa = PBXBuildFile; fileRef = 2AF551362DC41F7A16EEDFA2 /* places.json */; };
+		5FD6882C7253888A52D0CD12 /* CelebrationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF29F761A5FB27A720459F76 /* CelebrationView.swift */; };
 		62079A322DDAE11E115979F9 /* SellView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58FA3D0A994BFE059B8998C5 /* SellView.swift */; };
 		6C9597F394CCCB8DDFB33A5F /* RootTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03832C4380CCC471B0B4888D /* RootTabView.swift */; };
 		6F9E49EF06CED000C824FD60 /* screenshot_result.json in Resources */ = {isa = PBXBuildFile; fileRef = 7F407736D8A6E7C1520D8973 /* screenshot_result.json */; };
 		836E051639659D45BE97BAAD /* ExploreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD43131C85D9E8762FF4D265 /* ExploreView.swift */; };
 		97AD90F6AEAAA444C9DA03C4 /* extras.json in Resources */ = {isa = PBXBuildFile; fileRef = 549A17D74651EF9186109F20 /* extras.json */; };
+		9E58D9614C5759EE5CBC9864 /* MeetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18CCD2564456CB55E5365252 /* MeetupView.swift */; };
 		AAA9870F66516CDED4DF6576 /* AppStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8F0225AEEC829478ECFC7AF /* AppStore.swift */; };
 		B403BF5274DE13FE8B8AFF04 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7927C3C8DEE8E6C14CA7D850 /* Theme.swift */; };
 		BCAA3FA9608DA2495D7C7A20 /* users.json in Resources */ = {isa = PBXBuildFile; fileRef = 0EF927E2CF6871E401224965 /* users.json */; };
 		BDF1900E9F3B4508A9064E24 /* NotificationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EF5C15E55EDAB5604AD6CC7 /* NotificationsView.swift */; };
+		C2B1BB19C0A707A015B16D1A /* HandoffView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBBC1EE224C9D8F31554E42B /* HandoffView.swift */; };
 		C4713F8116EE629E87C02230 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91473AF9F2C6B41D79F65D7B /* APIClient.swift */; };
 		D0DADCA2AF25F8A612FF78B9 /* Copy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 381362DD1AF755756A1B88CA /* Copy.swift */; };
 		DDD45AF67DE62437DB436F3D /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B995A9C372361F4007746EE6 /* ProfileView.swift */; };
@@ -44,6 +49,7 @@
 		0EF927E2CF6871E401224965 /* users.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = users.json; sourceTree = "<group>"; };
 		0FB3212567ECFD276F3BD167 /* me.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = me.json; sourceTree = "<group>"; };
 		1448EF6F52399F5FDF7504E9 /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
+		18CCD2564456CB55E5365252 /* MeetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetupView.swift; sourceTree = "<group>"; };
 		2AF551362DC41F7A16EEDFA2 /* places.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = places.json; sourceTree = "<group>"; };
 		35561DF5E61065900DD04393 /* ActivityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityView.swift; sourceTree = "<group>"; };
 		381362DD1AF755756A1B88CA /* Copy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Copy.swift; sourceTree = "<group>"; };
@@ -62,11 +68,15 @@
 		8EF5C15E55EDAB5604AD6CC7 /* NotificationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationsView.swift; sourceTree = "<group>"; };
 		9063E6AF7FD449DC0F36CD1B /* listings.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = listings.json; sourceTree = "<group>"; };
 		91473AF9F2C6B41D79F65D7B /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
+		96F49CA00030FC3D934C7EA3 /* HaggleThreadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaggleThreadView.swift; sourceTree = "<group>"; };
 		AE7BE03E536C956525984302 /* order.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = order.json; sourceTree = "<group>"; };
+		AF29F761A5FB27A720459F76 /* CelebrationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CelebrationView.swift; sourceTree = "<group>"; };
 		B995A9C372361F4007746EE6 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
+		BBBC1EE224C9D8F31554E42B /* HandoffView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandoffView.swift; sourceTree = "<group>"; };
 		C265768E6429BB5B3747D39E /* Sticker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sticker.swift; sourceTree = "<group>"; };
 		C30A34AD383E768DA0FACB78 /* meetups.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = meetups.json; sourceTree = "<group>"; };
 		C7CA0B4937F14B4E3CCA166A /* bids.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = bids.json; sourceTree = "<group>"; };
+		C924220C9F75DA5EEBE338C9 /* PaySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaySheet.swift; sourceTree = "<group>"; };
 		DFA63CC62459575846794063 /* notifications.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = notifications.json; sourceTree = "<group>"; };
 		E64CDE56D63A3C5A96B0E768 /* school.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = school.json; sourceTree = "<group>"; };
 		E8F0225AEEC829478ECFC7AF /* AppStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStore.swift; sourceTree = "<group>"; };
@@ -96,6 +106,14 @@
 				5A1F7248391547DCF066997B /* Models.swift */,
 			);
 			path = Models;
+			sourceTree = "<group>";
+		};
+		27231EC2A34BEF6D26444B9E /* Celebration */ = {
+			isa = PBXGroup;
+			children = (
+				AF29F761A5FB27A720459F76 /* CelebrationView.swift */,
+			);
+			path = Celebration;
 			sourceTree = "<group>";
 		};
 		3A754EEFD24D34D3E5F020E5 /* Data */ = {
@@ -130,12 +148,28 @@
 			);
 			sourceTree = "<group>";
 		};
+		4DFD47BC2A4E8B53F48111BF /* Meetup */ = {
+			isa = PBXGroup;
+			children = (
+				18CCD2564456CB55E5365252 /* MeetupView.swift */,
+			);
+			path = Meetup;
+			sourceTree = "<group>";
+		};
 		5AA2BB3DB76D0DC0EA0CCD1C /* Store */ = {
 			isa = PBXGroup;
 			children = (
 				E8F0225AEEC829478ECFC7AF /* AppStore.swift */,
 			);
 			path = Store;
+			sourceTree = "<group>";
+		};
+		67D9D0FCD10B2D017167BC85 /* Handoff */ = {
+			isa = PBXGroup;
+			children = (
+				BBBC1EE224C9D8F31554E42B /* HandoffView.swift */,
+			);
+			path = Handoff;
 			sourceTree = "<group>";
 		};
 		82E71A2DBA04401816AE7009 /* App */ = {
@@ -196,6 +230,14 @@
 			path = Handoff;
 			sourceTree = "<group>";
 		};
+		A6E5BFA44EC37A63B3A12B9F /* Haggle */ = {
+			isa = PBXGroup;
+			children = (
+				96F49CA00030FC3D934C7EA3 /* HaggleThreadView.swift */,
+			);
+			path = Haggle;
+			sourceTree = "<group>";
+		};
 		BECEA6A3EF03F5AFF72B2BA5 /* Mocks */ = {
 			isa = PBXGroup;
 			children = (
@@ -217,14 +259,27 @@
 			path = Mocks;
 			sourceTree = "<group>";
 		};
+		CBCB29876AFC5B7C0C94AE98 /* Pay */ = {
+			isa = PBXGroup;
+			children = (
+				C924220C9F75DA5EEBE338C9 /* PaySheet.swift */,
+			);
+			path = Pay;
+			sourceTree = "<group>";
+		};
 		DBE6CA5C85B14499F2F271DE /* Features */ = {
 			isa = PBXGroup;
 			children = (
 				4809F5F794D5C259C5EB04C9 /* Activity */,
+				27231EC2A34BEF6D26444B9E /* Celebration */,
 				FE1CF0DA6377BF92A34F6D0C /* Explore */,
 				907D42B0867753090556B234 /* Feed */,
+				A6E5BFA44EC37A63B3A12B9F /* Haggle */,
+				67D9D0FCD10B2D017167BC85 /* Handoff */,
 				8706549E00CED51D0D99AC7B /* Listing */,
+				4DFD47BC2A4E8B53F48111BF /* Meetup */,
 				0821F83DC0057AA1C02CC1A0 /* Notifications */,
+				CBCB29876AFC5B7C0C94AE98 /* Pay */,
 				3D2FA82E5CD09B48A6ADA867 /* Profile */,
 				8889E4C39500DFA4674A129D /* Sell */,
 			);
@@ -326,14 +381,19 @@
 				C4713F8116EE629E87C02230 /* APIClient.swift in Sources */,
 				06D14ED268E7C511B12FC20E /* ActivityView.swift in Sources */,
 				AAA9870F66516CDED4DF6576 /* AppStore.swift in Sources */,
+				5FD6882C7253888A52D0CD12 /* CelebrationView.swift in Sources */,
 				E2EE3DCA71A43BC1D8C2E533 /* Components.swift in Sources */,
 				D0DADCA2AF25F8A612FF78B9 /* Copy.swift in Sources */,
 				836E051639659D45BE97BAAD /* ExploreView.swift in Sources */,
 				19044E3FA66DA5A8C7819CCE /* FeedView.swift in Sources */,
+				1E001CC070EAF6C248D2D64D /* HaggleThreadView.swift in Sources */,
 				1338A2C6CD6F398B7D9F0FEB /* HandoffApp.swift in Sources */,
+				C2B1BB19C0A707A015B16D1A /* HandoffView.swift in Sources */,
 				47A2A868F9BDC306A965A165 /* ListingDetailView.swift in Sources */,
+				9E58D9614C5759EE5CBC9864 /* MeetupView.swift in Sources */,
 				396783794E6CB75D68749C25 /* Models.swift in Sources */,
 				BDF1900E9F3B4508A9064E24 /* NotificationsView.swift in Sources */,
+				0AADB239514E026A7C0D8088 /* PaySheet.swift in Sources */,
 				DDD45AF67DE62437DB436F3D /* ProfileView.swift in Sources */,
 				6C9597F394CCCB8DDFB33A5F /* RootTabView.swift in Sources */,
 				62079A322DDAE11E115979F9 /* SellView.swift in Sources */,

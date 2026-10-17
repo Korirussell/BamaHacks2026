@@ -15,9 +15,11 @@ struct RootTabView: View {
                 case .sell: NavigationStack { FeedView() }
                 }
             }
-            .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 64) }
+            .safeAreaInset(edge: .bottom) { if store.tabBarHiders.isEmpty { Color.clear.frame(height: 64) } }
 
-            StickerTabBar()
+            if store.tabBarHiders.isEmpty {
+                StickerTabBar().transition(.move(edge: .bottom))
+            }
         }
         .background(Color.hoBg.ignoresSafeArea())
         .overlay(alignment: .top) { ToastView() }
@@ -93,4 +95,18 @@ struct ToastView: View {
                 .onTapGesture { store.toast = nil }
         }
     }
+}
+
+private struct HidesTabBar: ViewModifier {
+    @Environment(AppStore.self) private var store
+    @State private var id = UUID().uuidString
+    func body(content: Content) -> some View {
+        content
+            .onAppear { withAnimation(.easeOut(duration: 0.2)) { _ = store.tabBarHiders.insert(id) } }
+            .onDisappear { withAnimation(.easeOut(duration: 0.2)) { _ = store.tabBarHiders.remove(id) } }
+    }
+}
+
+extension View {
+    func hidesTabBar() -> some View { modifier(HidesTabBar()) }
 }

@@ -33,6 +33,7 @@ final class AppStore {
     var toast: String?
     var selectedTab: Tab = .feed
     var showSell = false
+    var tabBarHiders: Set<String> = []
 
     enum Tab: Hashable { case feed, explore, sell, activity, profile }
 
@@ -93,7 +94,16 @@ final class AppStore {
         }
     }
 
-    func markPaid() { order?.status = "paid" }
+    var agreedCents: Int?
+
+    func agree(_ cents: Int) { agreedCents = cents }
+
+    func startOrder(listing: Listing?, amountCents: Int) {
+        let fee = Int((Double(amountCents) * 0.05).rounded())
+        order = Order(id: "o_\(listing?.id.dropFirst(2) ?? "fridge")", listingId: listing?.id ?? "l_fridge",
+                      amountCents: amountCents, feeCents: fee, totalCents: amountCents + fee, status: "paid")
+        lockedMeetup = nil
+    }
 
     func lock(_ meetup: MeetupSuggestion) {
         lockedMeetup = meetup
