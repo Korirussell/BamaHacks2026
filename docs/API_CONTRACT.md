@@ -44,7 +44,7 @@ All traffic is **JSON REST under `/api/v1`**, authenticated with the Supabase ac
 - **Idempotency:** any call that moves money or advances an order or handoff takes an `Idempotency-Key` header.
 - **AI jobs:** return `202 { "job_id" }`; the frontend listens on its user channel or polls `GET /jobs/{id}`.
 
-**Notation in the schemas:** `"uuid"`, `"string"`, `"int"`, `"number"`, `"bool"`, `"ts"` (timestamp), `"cents"`, `"a|b|c"` = enum, `[T]` = array, trailing `?` = optional or nullable, a Capitalised name = a shared object below.
+**Notation in the schemas:** `"uuid"`, `"string"`, `"int"`, `"number"`, `"bool"`, `"ts"` (timestamp), `"date"` (`YYYY-MM-DD`, no time), `"HH:MM"` (24-hour local wall-clock time), `"cents"`, `"a|b|c"` = enum, `[T]` = array, trailing `?` = optional or nullable, a Capitalised name = a shared object below.
 
 ### Shared objects
 
@@ -73,7 +73,22 @@ All traffic is **JSON REST under `/api/v1`**, authenticated with the Supabase ac
     "id": "uuid", "course": "Course", "term": "string", "status": "current|past|planned",
     "grade": "string?", "grade_source": "transcript|self_reported", "grade_verified": "bool"
   },
-  "ClassMeeting": { "course_id": "uuid", "days": ["mon|tue|wed|thu|fri|sat|sun"], "start": "HH:MM", "end": "HH:MM", "place": "Place?" },
+  "Building":     { "id": "uuid", "school_id": "uuid", "name": "string", "code": "string (e.g. NERC)", "location": "LatLng" },
+  "ClassMeeting": {
+    "id": "uuid", "course": "Course", "section": "string?",
+    "days": ["mon|tue|wed|thu|fri|sat|sun"], "start": "HH:MM", "end": "HH:MM",
+    "timezone": "string (IANA, e.g. America/Chicago)",
+    "term": "string", "term_start": "date", "term_end": "date",
+    "building": "Building?", "room": "string?",
+    "source": "manual|ics|screenshot|google"
+  },
+  "ClassMeetingInput": {
+    "course_id": "uuid", "section": "string?",
+    "days": ["mon|tue|wed|thu|fri|sat|sun"], "start": "HH:MM", "end": "HH:MM",
+    "timezone": "string?", "term": "string", "term_start": "date", "term_end": "date",
+    "building_id": "uuid?", "room": "string?",
+    "source": "manual|ics|screenshot|google"
+  },
   "TimeBlock":    { "start": "ts", "end": "ts", "kind": "free|busy|class" },
   "SafeZone":     { "id": "uuid", "name": "string", "kind": "police|student_center|library|other", "location": "LatLng", "radius_m": "int", "hours": "string?" },
   "MeetupSuggestion": { "start": "ts", "end": "ts", "safe_zone": "SafeZone", "walk_minutes": { "me": "int", "them": "int" }, "reason": "string" },
@@ -116,12 +131,15 @@ All traffic is **JSON REST under `/api/v1`**, authenticated with the Supabase ac
   "Shipment":     { "id": "uuid", "label_pdf_url": "string", "to": { "name": "string", "mail_stop_code": "string" }, "status": "label_created|dropped_off|received", "dropped_off_at": "ts?" },
   "Review":       { "id": "uuid", "from": "UserPublic", "to_user_id": "uuid", "context": { "type": "order|tutoring_session|ride", "id": "uuid" }, "stars": "int", "on_time": "bool", "as_described": "bool", "comment": "string?", "created_at": "ts" },
   "Notification": { "id": "uuid", "type": "string", "title": "string", "body": "string", "deep_link": "string", "read_at": "ts?", "created_at": "ts" },
-  "Job":          { "id": "uuid", "kind": "transcript_parse|syllabus_parse|screenshot_to_listing|textbook_identify", "status": "queued|running|succeeded|failed", "result": "object?", "error": "string?" }
+  "Job":          { "id": "uuid", "kind": "transcript_parse|syllabus_parse|schedule_import|screenshot_to_listing|textbook_identify", "status": "queued|running|succeeded|failed", "result": "object?", "error": "string?" }
 }
 ```
 
 - `floor_price_cents` is returned **only to the seller** and is what auto-bargaining negotiates against.
 - `ticket` and `textbook` are present only for those categories.
+- `Building` rows are **seeded per school** (name, short code, lat/lng); clients never create them.
+- `ClassMeeting.start`/`end` are wall-clock times in `timezone` (defaults to the school's timezone, `America/Chicago` for UA). The meeting repeats on `days` between `term_start` and `term_end` inclusive.
+- `ClassMeetingInput` is the write shape: it takes `course_id` / `building_id` instead of nested objects.
 
 ### Endpoints — identity, profile, academics, schedule
 
@@ -136,7 +154,7 @@ Sign-in: the frontend calls `/auth/check-email`, then Supabase `signInWithOtp`. 
   "GET /users/{id}":          { "res": { "user": "UserPublic", "mutual_friends": ["UserPublic"], "active_listings": ["Listing"], "tutor_profile": "TutorProfile?", "review_summary": { "avg_stars": "number", "count": "int" } } },
   "GET /users/search":        { "query": { "q": "string", "course_id": "uuid?" }, "res": ["UserPublic"] },
 
-  "POST /media/upload-url":   { "req": { "purpose": "listing|avatar|transcript|syllabus|screenshot", "content_type": "string", "bytes": "int" }, "res": { "media_id": "uuid", "upload_url": "string", "expires_at": "ts" } },
+  "POST /media/upload-url":   { "req": { "purpose": "listing|avatar|transcript|syllabus|schedule|screenshot", "content_type": "string", "bytes": "int" }, "res": { "media_id": "uuid", "upload_url": "string", "expires_at": "ts" } },
   "GET /jobs/{id}":           { "res": "Job" },
 
   "POST /transcripts":        { "req": { "media_id": "uuid" }, "res": { "job_id": "uuid", "transcript_id": "uuid" } },
@@ -149,13 +167,20 @@ Sign-in: the frontend calls `/auth/check-email`, then Supabase `signInWithOtp`. 
   "GET /courses":             { "query": { "q": "string" }, "res": ["Course"] },
   "GET /courses/{id}/materials": { "query": { "term": "string?" }, "res": [{ "isbn": "string", "title": "string", "required": "bool", "active_listings": "int", "lowest_price_cents": "cents?" }] },
 
-  "PUT /me/class-schedule":   { "req": { "meetings": ["ClassMeeting"] }, "res": { "meetings": ["ClassMeeting"] } },
+  "GET /buildings":           { "query": { "q": "string?" }, "res": ["Building"] },
+  "GET /me/class-schedule":   { "query": { "term": "string?" }, "res": ["ClassMeeting"] },
+  "PUT /me/class-schedule":   { "note": "replaces all meetings for every term present in the request", "req": { "meetings": ["ClassMeetingInput"] }, "res": ["ClassMeeting"] },
+  "POST /me/class-schedule/import": { "note": "202, AI job kind schedule_import", "req": { "kind": "ics|screenshot", "media_id": "uuid" }, "res": { "job_id": "uuid" }, "job_result": { "drafts": ["ClassMeetingInput"], "unmatched": [{ "raw_text": "string", "reason": "course_not_found|building_not_found|unreadable" }], "confidence": "number" } },
   "POST /integrations/google/connect": { "res": { "auth_url": "string" } },
   "GET /integrations/google/callback": { "note": "server-side OAuth redirect, stores refresh token, redirects to /settings" },
   "DELETE /integrations/google":       { "res": "204" },
   "GET /me/availability":     { "query": { "from": "ts", "to": "ts" }, "res": { "blocks": ["TimeBlock"] } }
 }
 ```
+
+Schedule import is also **review-then-confirm**: upload the `.ics` file or screenshot via `/media/upload-url` (`purpose: schedule`), call `/me/class-schedule/import`, wait for `job.finished`, let the user fix the drafts (and anything in `unmatched`), then save with `PUT /me/class-schedule`. Nothing is written to the schedule until that PUT.
+
+> **Walk-time rule:** meetup suggestions (`MeetupSuggestion.walk_minutes`) and tutor slot suggestions use the `Building.location` of each person's class right **before** and right **after** a free block to estimate walk time to the safe zone or tutoring spot (PostGIS distance, server-side). If there is no class next to the block, or the class has no building, fall back to the school's `center`.
 
 Transcript parsing is **review-then-confirm**: grades only count as `grade_verified` after the user confirms the parsed result from an uploaded transcript, and only verified grades unlock tutoring.
 
@@ -335,9 +360,9 @@ Twenty modules, but the demo rides on six: **Platform, Identity, Media, Listings
 | 4 | Listings & search | listings, listing_media, search index (Postgres full-text) | 2, 3 | `/listings`, `/explore`, `/feed` |
 | 5 | Orders & payments | orders, payments, stripe_accounts, payouts, order state machine | 2, 4, Stripe | `/orders`, `/payments`, Stripe webhook |
 | 6 | Handoff & safety | safe_zones, handoffs, handoff_events (PostGIS) | 5 | `/handoffs`, `/safe-zones` |
-| 7 | AI parsing | jobs; prompts + JSON schemas per job kind | 1, 3, Claude API | `/jobs`, used by 4, 8, 17, 20 |
+| 7 | AI parsing | jobs; prompts + JSON schemas per job kind | 1, 3, Claude API | `/jobs`, used by 4, 8, 9, 17, 20 |
 | 8 | Academics | courses, class_records, transcripts, course_materials | 2, 7 | `/transcripts`, `/me/classes`, `/courses` |
-| 9 | Schedule & availability | class_meetings, calendar_connections, busy_cache; slot-finder | 2, 8, Google | `/me/availability`, `/integrations/google` |
+| 9 | Schedule & availability | buildings (seeded per school), class_meetings, calendar_connections, busy_cache; slot-finder + walk-time estimator | 2, 7, 8, Google | `/me/class-schedule`, `/buildings`, `/me/availability`, `/integrations/google` |
 | 10 | Offers & negotiation | offers, bargain_sessions | 4, 5 | `/offers`, `/auto-bargain` |
 | 11 | Wishlist & matching | wishlist_items, matches; trade suggester | 4, 8 | `/me/wishlist`, `/suggested-trades` |
 | 12 | Notifications | notifications, push_subscriptions; realtime fan-out | 2 | `/me/notifications`, realtime |
