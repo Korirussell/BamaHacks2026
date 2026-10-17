@@ -17,18 +17,6 @@ struct ItemTile: View {
     }
 }
 
-struct GhostBadge: View {
-    let handle: String
-    var body: some View {
-        Text(handle)
-            .font(.system(size: 11, weight: .heavy))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 9).padding(.vertical, 4)
-            .background(Capsule().fill(Color.igGradient))
-            .overlay(Capsule().strokeBorder(Color.hoInkOnLight, lineWidth: 1.5))
-    }
-}
-
 struct TagPill: View {
     let text: String
     var body: some View {
@@ -42,28 +30,7 @@ struct TagPill: View {
     }
 }
 
-struct ReasonChip: View {
-    let reason: String?
-    var label: String? {
-        switch reason {
-        case "your_class": return Copy.reasonYourClass
-        case "wishlist_match": return Copy.reasonWishlist
-        case "nearby": return Copy.reasonNearby
-        default: return nil
-        }
-    }
-    var body: some View {
-        if let label {
-            Text(label)
-                .font(.system(size: 10.5, weight: .heavy))
-                .foregroundStyle(Color.hoInkOnLight)
-                .padding(.horizontal, 8).padding(.vertical, 3)
-                .background(Capsule().fill(Color.hoMint))
-                .overlay(Capsule().strokeBorder(Color.hoInk, lineWidth: 1.5))
-        }
-    }
-}
-
+/// Cards-v3 §5: height 34, radius 999, bg img-bg, text title 13/500; selected = title bg + page-bg text. No outlines.
 struct ChipRow: View {
     let chips: [String]
     @Binding var selected: String
@@ -74,11 +41,11 @@ struct ChipRow: View {
                     let on = chip == selected
                     Button { selected = chip } label: {
                         Text(chip)
-                            .font(.system(size: 13, weight: .heavy))
+                            .font(.system(size: 13, weight: .medium))
                             .foregroundStyle(on ? Color.hoBg : Color.hoInk)
-                            .padding(.horizontal, 14).padding(.vertical, 8)
-                            .background(Capsule().fill(on ? Color.hoInk : Color.hoCard))
-                            .overlay(Capsule().strokeBorder(Color.hoInk, lineWidth: 2))
+                            .padding(.horizontal, 14)
+                            .frame(height: 34)
+                            .background(Capsule().fill(on ? Color.hoInk : Color.cardImgBg))
                     }
                     .buttonStyle(.plain)
                 }
@@ -97,28 +64,10 @@ struct ReliabilityBadge: View {
         default: ("New", .hoPeach)
         }
         Text(label)
-            .font(.system(size: 10.5, weight: .heavy))
+            .font(.system(size: 10.5, weight: .semibold))
             .foregroundStyle(reliability.badge == "new" ? Color.hoInk : Color.hoInkOnLight)
             .padding(.horizontal, 8).padding(.vertical, 3)
             .background(Capsule().fill(fill))
-            .overlay(Capsule().strokeBorder(Color.hoInk, lineWidth: 1.5))
-    }
-}
-
-struct PriceTag: View {
-    let listing: Listing
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(Money.format(listing.priceCents))
-                .font(.display(34))
-                .foregroundStyle(Color.hoInk)
-            if let fair = listing.fairPrice {
-                let good = listing.priceCents <= fair.highCents
-                Text("Fair price \(Money.format(fair.lowCents))–\(Money.format(fair.highCents))\(good ? " · Good deal ✅" : "")")
-                    .font(.system(size: 12.5, weight: .bold))
-                    .foregroundStyle(Color.hoSoft)
-            }
-        }
     }
 }
 
@@ -186,21 +135,6 @@ struct BidBubbles: View {
                 }
             }
         }
-    }
-}
-
-struct SkeletonCard: View {
-    @State private var pulse = false
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Color.hoSunk.frame(height: 120)
-            RoundedRectangle(cornerRadius: 4).fill(Color.hoSunk).frame(height: 12).padding(.horizontal, 10)
-            RoundedRectangle(cornerRadius: 4).fill(Color.hoSunk).frame(width: 60, height: 12).padding(.horizontal, 10).padding(.bottom, 12)
-        }
-        .sticker(radius: 18, shadow: 3)
-        .opacity(pulse ? 0.55 : 1)
-        .animation(.easeInOut(duration: 0.8).repeatForever(), value: pulse)
-        .onAppear { pulse = true }
     }
 }
 

@@ -25,6 +25,8 @@ final class AppStore {
     var me: MeRecord?
     var bids: [String: [Bid]] = [:]
     var myInterests: Set<String> = []
+    /// Cards-v3 §2: heart (wishlist/save) toggle on listing cards, independent of ghost `myInterests`.
+    var savedListingIds: Set<String> = []
     var places: [Place] = []
     var meetups: [MeetupSuggestion] = []
     var notifications: [AppNotification] = []
@@ -107,6 +109,11 @@ final class AppStore {
         Haptics.success()
     }
 
+    func toggleSaved(_ listingId: String) {
+        if savedListingIds.contains(listingId) { savedListingIds.remove(listingId) } else { savedListingIds.insert(listingId) }
+        Haptics.soft()
+    }
+
     func show(toast text: String) {
         withAnimation(.spring(duration: 0.35)) { toast = text }
         Task { @MainActor in
@@ -141,6 +148,12 @@ final class AppStore {
     }
 
     func place(_ id: String) -> Place? { places.first { $0.id == id } }
+
+    /// Listings only carry a free-text `locationLabel` (e.g. "Paty Hall"); match it to a real
+    /// place for the "Pick up at" map. No match (e.g. "Off-campus") just skips the map section.
+    func place(matchingLabel label: String) -> Place? {
+        places.first { $0.name.caseInsensitiveCompare(label) == .orderedSame }
+    }
 
     func markNotificationsRead() {
         for i in notifications.indices { notifications[i].read = true }

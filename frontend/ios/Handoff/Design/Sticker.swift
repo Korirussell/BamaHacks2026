@@ -35,29 +35,30 @@ extension View {
     }
 }
 
+/// Cards-v3 §5 clean button spec: radius 12, no outline, no offset shadow. Used app-wide
+/// ("Buttons go clean everywhere in the app UI") — landing/celebration pieces don't exist on iOS.
 struct PillButtonStyle: ButtonStyle {
-    enum Kind { case primary, neutral, butter, dark }
+    enum Kind { case primary, neutral, butter, dark, outline }
     var kind: Kind = .primary
     var small = false
     var fullWidth = false
 
     func makeBody(configuration: Configuration) -> some View {
         let pressed = configuration.isPressed
-        let shadow: CGFloat = small ? 3 : 4
         configuration.label
-            .font(.label(small ? 12 : 13))
-            .textCase(.uppercase)
-            .tracking(0.26)
+            .font(.system(size: small ? 13 : 15, weight: .semibold))
             .lineLimit(1)
             .minimumScaleFactor(0.7)
-            .padding(.horizontal, small ? 12 : 18)
-            .padding(.vertical, small ? 8 : 14)
+            .padding(.horizontal, small ? 14 : 18)
+            .padding(.vertical, small ? 10 : 14)
             .frame(maxWidth: fullWidth ? .infinity : nil)
             .foregroundStyle(foreground)
-            .background(Capsule().fill(background))
-            .overlay(Capsule().strokeBorder(Color.hoInk, lineWidth: 2))
-            .background(Capsule().fill(Color.hoShadow).offset(x: pressed ? 2 : shadow, y: pressed ? 2 : shadow))
-            .offset(x: pressed ? 2 : 0, y: pressed ? 2 : 0)
+            .background(RoundedRectangle(cornerRadius: 12).fill(background))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(Color.hoInk, lineWidth: kind == .outline ? 1.5 : 0)
+            )
+            .scaleEffect(pressed ? 0.98 : 1)
             .animation(.easeOut(duration: 0.12), value: pressed)
     }
 
@@ -65,7 +66,7 @@ struct PillButtonStyle: ButtonStyle {
         switch kind {
         case .primary, .dark: return .white
         case .butter: return .hoInkOnLight
-        case .neutral: return .hoInk
+        case .neutral, .outline: return .hoInk
         }
     }
     private var background: Color {
@@ -74,6 +75,7 @@ struct PillButtonStyle: ButtonStyle {
         case .butter: return .hoButter
         case .neutral: return .hoCard
         case .dark: return .black
+        case .outline: return .clear
         }
     }
 }

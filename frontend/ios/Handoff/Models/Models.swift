@@ -49,6 +49,7 @@ struct Listing: Codable, Identifiable, Hashable {
     var description: String
     let category: String
     var priceCents: Int
+    let originalPriceCents: Int?
     let negotiable: Bool
     var condition: String
     let emoji: String
@@ -62,8 +63,15 @@ struct Listing: Codable, Identifiable, Hashable {
     var interest: Interest?
     let reason: String?
     let createdAt: String
+    /// Web-style paths from the mock JSON, e.g. "/listings/l_owala-1.webp" (cards-v3 §4.3).
+    let images: [String]
     /// Local-only: photo picked in the Sell flow (not in the mock JSON).
     var localImageData: Data? = nil
+
+    /// Cards-v3 §4.3: "/listings/l_owala-1.webp" -> asset catalog name "l_owala-1".
+    var imageAssetNames: [String] {
+        images.map { ($0 as NSString).lastPathComponent.replacingOccurrences(of: ".webp", with: "") }
+    }
 
     struct Source: Codable, Hashable {
         let channel: String
@@ -82,9 +90,68 @@ struct Listing: Codable, Identifiable, Hashable {
         condition.replacingOccurrences(of: "_", with: " ").capitalized
     }
 
+    /// Cards-v3 §2 meta line: `{condition} · {place} · {time ago}`, skipping empty parts.
+    var metaLine: String {
+        if isGhost { return "🔥 \(interest?.count ?? 0) want this · Not on Handoff yet" }
+        return [conditionLabel, locationLabel, source.postedAgo]
+            .compactMap { $0?.isEmpty == false ? $0 : nil }
+            .joined(separator: " · ")
+    }
+
+    /// Cards-v3 §4.4: category line icon shown when a listing has no photo. Never emoji.
+    var fallbackSymbol: String {
+        if id.hasPrefix("l_bike") { return "bicycle" }
+        if id.hasPrefix("l_fridge") { return "refrigerator" }
+        if id.hasPrefix("l_ti84") { return "function" }
+        if id.hasPrefix("l_cs201") { return "book.closed" }
+        if id.hasPrefix("l_ticket") { return "ticket" }
+        if id.hasPrefix("l_goggles") { return "eyeglasses" }
+        if id.hasPrefix("l_owala") || id.hasPrefix("l_hydro") { return "waterbottle" }
+        if id.hasPrefix("l_lamp") { return "lamp.desk" }
+        if id.hasPrefix("l_mouse") { return "computermouse" }
+        return "photo"
+    }
+
     enum CodingKeys: String, CodingKey {
-        case id, title, description, category, priceCents, negotiable, condition, emoji, tile, tag,
-             locationLabel, status, sellerId, source, fairPrice, interest, reason, createdAt
+        case id, title, description, category, priceCents, originalPriceCents, negotiable, condition, emoji, tile, tag,
+             locationLabel, status, sellerId, source, fairPrice, interest, reason, createdAt, images
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        title = try c.decode(String.self, forKey: .title)
+        description = try c.decode(String.self, forKey: .description)
+        category = try c.decode(String.self, forKey: .category)
+        priceCents = try c.decode(Int.self, forKey: .priceCents)
+        originalPriceCents = try c.decodeIfPresent(Int.self, forKey: .originalPriceCents)
+        negotiable = try c.decode(Bool.self, forKey: .negotiable)
+        condition = try c.decode(String.self, forKey: .condition)
+        emoji = try c.decode(String.self, forKey: .emoji)
+        tile = try c.decode(String.self, forKey: .tile)
+        tag = try c.decodeIfPresent(String.self, forKey: .tag)
+        locationLabel = try c.decodeIfPresent(String.self, forKey: .locationLabel)
+        status = try c.decode(String.self, forKey: .status)
+        sellerId = try c.decodeIfPresent(String.self, forKey: .sellerId)
+        source = try c.decode(Source.self, forKey: .source)
+        fairPrice = try c.decodeIfPresent(FairPrice.self, forKey: .fairPrice)
+        interest = try c.decodeIfPresent(Interest.self, forKey: .interest)
+        reason = try c.decodeIfPresent(String.self, forKey: .reason)
+        createdAt = try c.decode(String.self, forKey: .createdAt)
+        images = try c.decodeIfPresent([String].self, forKey: .images) ?? []
+    }
+
+    init(id: String, title: String, description: String, category: String, priceCents: Int,
+         originalPriceCents: Int? = nil, negotiable: Bool, condition: String, emoji: String, tile: String,
+         tag: String?, locationLabel: String?, status: String, sellerId: String?, source: Source,
+         fairPrice: FairPrice?, interest: Interest?, reason: String?, createdAt: String,
+         images: [String] = [], localImageData: Data? = nil) {
+        self.id = id; self.title = title; self.description = description; self.category = category
+        self.priceCents = priceCents; self.originalPriceCents = originalPriceCents; self.negotiable = negotiable
+        self.condition = condition; self.emoji = emoji; self.tile = tile; self.tag = tag
+        self.locationLabel = locationLabel; self.status = status; self.sellerId = sellerId; self.source = source
+        self.fairPrice = fairPrice; self.interest = interest; self.reason = reason; self.createdAt = createdAt
+        self.images = images; self.localImageData = localImageData
     }
 }
 

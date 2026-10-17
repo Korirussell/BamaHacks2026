@@ -31,7 +31,7 @@ struct ExploreView: View {
 
                 if !query.isEmpty {
                     if results.isEmpty { EmptyState(text: "No matches. Try “CS 201” or “fridge”.") }
-                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)], spacing: 16) {
+                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 20) {
                         ForEach(results) { l in
                             NavigationLink(value: l) { ListingCard(listing: l) }.buttonStyle(PressableStyle())
                         }

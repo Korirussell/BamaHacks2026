@@ -122,14 +122,14 @@ struct FeedView: View {
     }
 
     @ViewBuilder private var forYouContent: some View {
-        let columns = [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)]
+        let columns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
         if store.feedState != .loaded {
-            LazyVGrid(columns: columns, spacing: 16) { ForEach(0..<4, id: \.self) { _ in SkeletonCard() } }
+            LazyVGrid(columns: columns, spacing: 20) { ForEach(0..<4, id: \.self) { _ in GridSkeletonCard() } }
                 .padding(.horizontal, 16)
         } else if store.forYouListings.isEmpty {
             EmptyState(text: "Add something to your wishlist and we'll find it.")
         } else {
-            LazyVGrid(columns: columns, spacing: 16) {
+            LazyVGrid(columns: columns, spacing: 20) {
                 ForEach(store.forYouListings, id: \.0.id) { listing, reason in
                     NavigationLink(value: listing) { ListingCard(listing: listing, reasonText: reason) }
                         .buttonStyle(PressableStyle())
@@ -140,11 +140,11 @@ struct FeedView: View {
     }
 
     @ViewBuilder private var content: some View {
-        let columns = [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)]
+        let columns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
         switch store.feedState {
         case .idle, .loading:
-            LazyVGrid(columns: columns, spacing: 16) {
-                ForEach(0..<6, id: \.self) { _ in SkeletonCard() }
+            LazyVGrid(columns: columns, spacing: 20) {
+                ForEach(0..<6, id: \.self) { _ in GridSkeletonCard() }
             }
             .padding(.horizontal, 16)
         case .failed:
@@ -153,7 +153,7 @@ struct FeedView: View {
             if filtered.isEmpty {
                 EmptyState()
             } else {
-                LazyVGrid(columns: columns, spacing: 16) {
+                LazyVGrid(columns: columns, spacing: 20) {
                     ForEach(filtered) { listing in
                         NavigationLink(value: listing) { ListingCard(listing: listing) }
                             .buttonStyle(PressableStyle())
@@ -165,76 +165,19 @@ struct FeedView: View {
     }
 }
 
+/// Cards-v3 §5: 44px, radius 12, bg img-bg, icon left, no border.
 struct SearchPill: View {
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass").font(.system(size: 14, weight: .bold))
+            Image(systemName: "magnifyingglass").font(.system(size: 14, weight: .semibold))
             Text(Copy.searchPlaceholder).font(.system(size: 14, weight: .medium))
             Spacer()
         }
         .foregroundStyle(Color.hoSoft)
-        .padding(.horizontal, 16).padding(.vertical, 12)
-        .capsuleSticker()
+        .padding(.horizontal, 16)
+        .frame(height: 44)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color.cardImgBg))
     }
 }
 
-struct ListingCard: View {
-    let listing: Listing
-    var reasonText: String? = nil
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ItemTile(listing: listing, emojiSize: 50)
-                .frame(height: 118)
-                .frame(maxWidth: .infinity)
-                .overlay(alignment: .bottom) { Rectangle().fill(Color.hoInk).frame(height: 2) }
-                .overlay(alignment: .topLeading) {
-                    Group {
-                        if listing.isGhost, let handle = listing.source.authorHandle {
-                            GhostBadge(handle: handle)
-                        } else if let tag = listing.tag {
-                            TagPill(text: tag)
-                        }
-                    }
-                    .padding(8)
-                }
-
-            VStack(alignment: .leading, spacing: 6) {
-                if listing.isGhost {
-                    Text("🔥 \(listing.interest?.count ?? 0) want this")
-                        .font(.system(size: 10.5, weight: .heavy))
-                        .foregroundStyle(Color.hoAccentText)
-                } else if let reasonText {
-                    Text(reasonText)
-                        .font(.system(size: 10.5, weight: .heavy)).foregroundStyle(Color.hoInkOnLight)
-                        .lineLimit(2).minimumScaleFactor(0.8)
-                        .padding(.horizontal, 8).padding(.vertical, 3)
-                        .background(RoundedRectangle(cornerRadius: 10).fill(Color.hoMint))
-                        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.hoInk, lineWidth: 1.5))
-                } else {
-                    ReasonChip(reason: listing.reason)
-                }
-                Text(listing.title)
-                    .font(.display(14, weight: .semibold))
-                    .foregroundStyle(Color.hoInk)
-                    .lineLimit(2, reservesSpace: true)
-                    .multilineTextAlignment(.leading)
-                HStack {
-                    Text(Money.format(listing.priceCents))
-                        .font(.display(17)).foregroundStyle(Color.hoInk)
-                    Spacer(minLength: 4)
-                    Text(listing.isGhost ? "I want this" : listing.sellerId == "u_kori" ? "Yours" : (listing.negotiable ? "Offer" : "Buy"))
-                        .font(.system(size: 10, weight: .heavy)).textCase(.uppercase)
-                        .foregroundStyle(listing.isGhost ? Color.hoInkOnLight : (listing.negotiable ? Color.hoInk : .white))
-                        .padding(.horizontal, 9).padding(.vertical, 5)
-                        .background(Capsule().fill(listing.isGhost ? Color.hoButter : (listing.negotiable ? Color.hoCard : Color.hoAccent)))
-                        .overlay(Capsule().strokeBorder(Color.hoInk, lineWidth: 1.5))
-                }
-            }
-            .padding(10)
-        }
-        .sticker(radius: 18, shadow: 3,
-                 shadowColor: listing.isGhost ? .igPink : .hoShadow,
-                 dashed: listing.isGhost)
-    }
-}
+// ListingCard now lives in Design/ListingCardV3.swift (cards-v3 §2/§6).

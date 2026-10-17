@@ -33,6 +33,10 @@ extension Color {
     static let hoMapRoad = dyn(0xFFFFFF, 0x2D3A32)
     /// Text on butter / mint is always dark ink in both modes.
     static let hoInkOnLight = Color(hex: 0x1A1414)
+    // Cards v3 (§1) — clean marketplace tokens, used by ListingCard/grid/detail only.
+    static let cardMeta = dyn(0x7A6F6A, 0xA89D97)
+    static let cardImgBg = dyn(0xEFEAE3, 0x2A2425)
+    static let cardDivider = dyn(0x1A1414, 0xFFFFFF).opacity(0.08)
     static let igPink = Color(hex: 0xDD2A7B)
     static let igGradient = LinearGradient(colors: [Color(hex: 0xF58529), Color(hex: 0xDD2A7B), Color(hex: 0x8134AF)],
                                            startPoint: .leading, endPoint: .trailing)
