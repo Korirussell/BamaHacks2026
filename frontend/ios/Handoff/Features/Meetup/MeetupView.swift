@@ -184,6 +184,7 @@ struct StickerMapView: View {
                     y: sel.map { (35 - ($0.map.y + $0.map.h / 2)) / 100 * h * 0.12 } ?? 0)
             .animation(.spring(duration: 0.5), value: selected)
         }
+        .background(Color.hoMapGround)
         .clipped()
     }
 

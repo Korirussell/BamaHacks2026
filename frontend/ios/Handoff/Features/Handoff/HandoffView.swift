@@ -16,11 +16,24 @@ struct HandoffView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
-                    Picker("Role", selection: $role) {
-                        Text("I'm the buyer").tag("buyer")
-                        Text("I'm the seller").tag("seller")
+                    HStack(spacing: 0) {
+                        ForEach([("buyer", "I'm the buyer"), ("seller", "I'm the seller")], id: \.0) { key, label in
+                            Button {
+                                Haptics.tap()
+                                withAnimation(.snappy) { role = key }
+                            } label: {
+                                Text(label)
+                                    .font(.system(size: 13, weight: .heavy)).textCase(.uppercase)
+                                    .foregroundStyle(role == key ? Color.hoBg : Color.hoInk)
+                                    .frame(maxWidth: .infinity).padding(.vertical, 11)
+                                    .background(Capsule().fill(role == key ? Color.hoInk : Color.clear))
+                                    .contentShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
-                    .pickerStyle(.segmented)
+                    .padding(4)
+                    .capsuleSticker()
 
                     if let m = store.lockedMeetup {
                         Text("\(store.place(m.placeId)?.name ?? "") · \(m.startLabel)")

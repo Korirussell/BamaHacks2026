@@ -15,7 +15,10 @@ struct FeedView: View {
         default: all
         }
         // Ghost listings lead the feed.
-        return list.filter(\.isGhost) + list.filter { !$0.isGhost }
+        // Fresh local posts first, then ghost listings, then everything else.
+        let local = list.filter { $0.source.channel == "screenshot_local" }
+        let rest = list.filter { $0.source.channel != "screenshot_local" }
+        return local + rest.filter(\.isGhost) + rest.filter { !$0.isGhost }
     }
 
     var body: some View {
