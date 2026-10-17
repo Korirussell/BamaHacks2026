@@ -6,6 +6,7 @@ import { supabaseVerifier, type TokenVerifier } from "./middleware/auth.js";
 import { integrationsRoutes } from "./routes/integrations.js";
 import { jobsRoutes } from "./routes/jobs.js";
 import { scheduleImportRoutes } from "./routes/schedule-import.js";
+import { transcriptRoutes } from "./routes/transcripts.js";
 import { authRoutes, supabaseSchoolLookup, type SchoolLookup } from "./routes/auth.js";
 import { academicsRoutes } from "./routes/academics.js";
 import { mediaRoutes } from "./routes/media.js";
@@ -62,6 +63,7 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     .route("/", mediaRoutes(verify))
     .route("/", scheduleRoutes(verify))
     .route("/", scheduleImportRoutes(verify))
+    .route("/", transcriptRoutes(verify))
     .route("/", jobsRoutes(verify))
     .route("/", tutoringRoutes(verify, rooms))
     .route("/admin", adminRoutes(verify, identifier))
