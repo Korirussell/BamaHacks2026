@@ -75,8 +75,8 @@ const TABLES: TableSpec[] = [
   { table: "tutor_stats", migration: "0003_tutoring.sql (view)", columns: ["user_id", "rating", "review_count", "sessions_completed"] },
   { table: "reviews", migration: "0003_tutoring.sql", columns: ["id", "school_id", "from_id", "to_id", "context_type", "context_id", "stars"] },
   { table: "calendar_connections", migration: "0005_calendar.sql", columns: ["user_id", "school_id", "provider", "refresh_token_enc", "scope", "timezone", "connected_at"] },
-  // Added by a separate open branch (0007); not a failure until that merges and is applied.
-  { table: "transcripts", migration: "0007 (open branch)", columns: ["id"], optional: true },
+  { table: "transcripts", migration: "0007_transcripts.sql", columns: ["id", "school_id", "user_id", "media_id", "job_id", "status", "parsed", "error", "confirmed_at"] },
+  { table: "profiles", migration: "0008_mail_name.sql", columns: ["mail_name"] },
 ];
 
 const isMissingTable = (err: { code?: string; message: string }) =>
