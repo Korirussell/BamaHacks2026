@@ -90,6 +90,8 @@ All traffic is **JSON REST under `/api/v1`**, authenticated with the Supabase ac
     "source": "manual|ics|screenshot|google"
   },
   "TimeBlock":    { "start": "ts", "end": "ts", "kind": "free|busy|class" },
+  "LibraryRoom":  { "room_id": "string (LibCal space id)", "name": "string", "capacity": "int", "book_url": "string (the room's LibCal booking page)" },
+  "FreeRoomSlot": { "room_id": "string", "name": "string", "capacity": "int", "start": "ts", "end": "ts", "book_url": "string" },
   "OpeningHours": { "days": ["mon|tue|wed|thu|fri|sat|sun"], "open": "HH:MM", "close": "HH:MM" },
   "SafeZone":     { "id": "uuid", "name": "string", "kind": "police|student_center|library|other", "location": "LatLng", "radius_m": "int", "hours": ["OpeningHours"], "hours_note": "string?" },
   "MeetupSuggestion": {
@@ -289,10 +291,11 @@ Transcript parsing is **review-then-confirm**: grades only count as `grade_verif
   "GET /tutoring/sessions":     { "query": { "role": "tutor|student?", "status": "string?" }, "res": ["TutoringSession"] },
   "GET /tutoring/sessions/{id}":{ "note": "parties only; 404 otherwise", "res": "TutoringSession" },
   "POST /tutoring/sessions/{id}/counter":  { "note": "either side proposes a different time; flips waiting_on", "req": { "start": "ts", "end": "ts", "message": "string?" }, "res": "TutoringSession" },
-  "POST /tutoring/sessions/{id}/accept":   { "note": "only the party in waiting_on; library_room triggers room booking", "res": "TutoringSession" },
+  "POST /tutoring/sessions/{id}/accept":   { "note": "only the party in waiting_on; library_room triggers room booking (picks the first LibCal room free for the whole session)", "res": "TutoringSession" },
   "POST /tutoring/sessions/{id}/decline":  { "res": "TutoringSession" },
   "POST /tutoring/sessions/{id}/pay":      { "res": { "client_secret": "string" } },
-  "POST /tutoring/sessions/{id}/book-room":{ "res": { "status": "booked|manual_required", "room": "string?", "booking_url": "string?" } },
+  "POST /tutoring/sessions/{id}/book-room":{ "note": "retries booking; returns the session's room_booking", "res": "RoomBooking" },
+  "GET /library/rooms":         { "note": "free Gorgas study rooms on a library-local day, for a 'rooms free now' card; [] when LibCal is off or unreachable", "query": { "date": "date" }, "res": ["FreeRoomSlot"] },
   "POST /tutoring/sessions/{id}/complete": { "res": "TutoringSession" },
   "POST /tutoring/sessions/{id}/cancel":   { "req": { "reason": "string" }, "res": "TutoringSession" },
 
@@ -325,17 +328,18 @@ Transcript parsing is **review-then-confirm**: grades only count as `grade_verif
     "tutor": "UserPublic", "profile": "TutorProfile",
     "grade": "string", "grade_verified": "bool", "term_taken": "string",
     "rating": "number", "review_count": "int", "hourly_rate_cents": "cents",
-    "open_slots": ["TimeBlock"], "mutual_slots": ["TimeBlock (both free, fits duration_min)"],
+    "open_slots": ["TimeBlock"], "mutual_slots": [{ "start": "ts", "end": "ts", "kind": "free", "library_room": "LibraryRoom? (first room free for the whole slot; null if none or the tutor is online-only)" }],
     "match": { "score": "number", "mutual_minutes": "int", "reasons": ["string"] }
   },
   "TutoringSession": {
     "id": "uuid", "tutor": "UserPublic", "student": "UserPublic", "course": "Course", "start": "ts", "end": "ts", "price_cents": "cents",
     "location": { "kind": "library_room|safe_zone|virtual", "name": "string?", "meeting_url": "string?" },
-    "room_booking": { "status": "not_needed|pending|booked|manual_required", "room": "string?", "booking_url": "string?" },
+    "room_booking": "RoomBooking",
     "status": "requested|accepted|paid|completed|cancelled|no_show",
     "waiting_on": "tutor|student?", "history": [{ "by": "tutor|student", "action": "propose|counter|accept|decline", "start": "ts", "end": "ts", "at": "ts" }],
     "handoff_id": "uuid?"
   },
+  "RoomBooking":     { "status": "not_needed|pending|booked|manual_required", "room": "{ id: string, name: string }?", "booking_url": "string? (manual_required: the room's LibCal page, or the library site when no room was free)" },
   "Ride":            { "id": "uuid", "driver": "UserPublic", "origin": "Place", "destination": "Place", "depart_at": "ts", "seats_total": "int", "seats_left": "int", "price_per_seat_cents": "cents", "riders": ["UserPublic"], "status": "open|full|en_route|completed|cancelled", "driver_location": "LatLng?" },
   "RideRequest":     { "id": "uuid", "rider": "UserPublic", "pickup": "Place", "dropoff": "Place", "depart_at": "ts", "seats": "int", "max_price_cents": "cents?", "status": "open|matched|cancelled", "ride_id": "uuid?" },
   "CourseEvent":     { "id": "uuid", "course_id": "uuid", "kind": "string", "title": "string", "due_at": "ts", "source": "syllabus|manual", "confirmations": "int" },
@@ -344,6 +348,8 @@ Transcript parsing is **review-then-confirm**: grades only count as `grade_verif
 ```
 
 > **Tutor eligibility rule:** a user shows up in `/tutors` for a course when they have a `past` `ClassRecord` for it with a grade ≥ `School.tutor_min_grade` (verified only, unless `include_unverified=true`), and an enabled `TutorProfile` that lists the course. `mutual_slots` apply the walk-time rule to the tutor and student, using the library (or chosen safe zone) as the meeting spot.
+
+> **Library room rule:** each mutual slot gets `library_room`: the first Gorgas Team Workroom (smallest first) that UA's LibCal shows free for the **whole** slot. Consecutive free LibCal slots of one room are merged; any taken part disqualifies it. Each slot with a room adds +1.5 to `match.score` (counted for at most 3 slots, so at most +4.5), and the reasons say "Library room free at …". Availability is read-only from the public booking page, cached 60 s, and turned off with `LIBCAL=off`; if LibCal is down every `library_room` is `null`. Nothing is booked automatically: on accept, `room_booking` stays `manual_required` with `booking_url` = that room's LibCal page, unless a room booker that can really book is configured.
 
 Tickets reuse Listings, Offers and Orders (`category: ticket`); only the transfer confirmation is new. Funds for tickets stay held until the buyer confirms receipt or the event starts with no dispute.
 
@@ -408,7 +414,7 @@ These are the two P0 demo moments, end to end. If a step here can't be done with
 2. Server: users with a past grade in A ≥ `tutor_min_grade` and an enabled `TutorProfile` → expands both schedules into free time → `mutual_slots` (with walk time to the library) → ranked `TutorMatch[]` with grade, rating, rate, slots.
 3. Student picks a tutor + slot → `POST /tutoring/sessions` (`waiting_on: tutor`). Tutor gets `tutoring.updated`.
 4. Tutor `accept`s, or `counter`s with another time (then the student accepts).
-5. On accept with `library_room`: room booking runs → `room_booking.status` = `booked`, or `manual_required` with a `booking_url` (stub for now).
+5. On accept with `library_room`: room booking runs → `room_booking.status` = `booked`, or `manual_required` with `room` = the real free Gorgas room and `booking_url` = its LibCal page (library site if none was free). `GET /library/rooms?date=…` powers a "rooms free now" card.
 6. Payment + in-person check-in reuse the order/handoff pieces (stretch for the demo).
 
 **Demo 2 — Instagram post → matched buyer → claim → fulfil**
@@ -498,7 +504,7 @@ Set up **Supabase, the API host, Stripe, the Claude API and an Apple Developer a
 | Maps | Campus map, safe zones, distance | MapKit on iOS · Mapbox or Leaflet + OSM on web · distance and geofence checks done **server-side in the API**, not in clients |
 | Book metadata | ISBN → title, cover, edition | Open Library or Google Books API |
 | GroupMe | Ingest Joyride + marketplace group posts | Developer token · bot with callback URL `/webhooks/groupme` · a group member has to add the bot to each group |
-| Library rooms | Auto-book tutoring rooms | Depends on what UA uses; fallback is a deep link (`manual_required`) |
+| Library rooms | Free rooms + auto-book tutoring rooms | UA uses Springshare LibCal (`ua.libcal.com`, Gorgas `lid=214`, Team Workrooms `gid=436`). Free rooms come read-only from its public availability grid (`LIBCAL=on`); booking stays a deep link to the room (`manual_required`) until a booker that signs in exists |
 | Campus mail | Async delivery labels | Generated PDF only (no carrier API); needs UA mail stop format confirmed |
 
 ### Channels without a usable API
@@ -517,6 +523,7 @@ GOOGLE_CLIENT_ID  GOOGLE_CLIENT_SECRET  GOOGLE_REDIRECT_URI  TOKEN_ENCRYPTION_KE
 APNS_KEY_ID  APNS_TEAM_ID  APNS_PRIVATE_KEY  APNS_BUNDLE_ID
 VAPID_PUBLIC_KEY  VAPID_PRIVATE_KEY
 GROUPME_BOT_TOKEN  RESEND_API_KEY  WEB_ORIGIN  APP_URL_SCHEME
+ROOM_BOOKER  ROOM_BOOKING_URL  LIBCAL (on|off, live free library rooms)
 ```
 
 > **Never ship the Supabase service-role key or Stripe secret key to either client**; only the anon key and Stripe publishable key go in the app and website.
@@ -537,7 +544,7 @@ The first four change what gets built for the demo; the rest can be answered as 
 - [ ] **Tickets:** how are UA student tickets transferred today (in-app transfer vs. physical/ID)?
 - [ ] **Course materials:** is there a source for required textbooks per course (bookstore list), or crowdsource from listings?
 - [ ] **Campus mail:** what's the UA mail stop format, and how many days after drop-off should a mail order auto-complete?
-- [ ] **Library booking:** which system does UA use for study rooms, and does it allow automated booking?
+- [ ] **Library booking:** UA uses LibCal (availability is public; booking needs a UA sign-in). Is automated booking allowed?
 - [ ] **GroupMe:** can we get the Joyride group admins to add our bot?
 - [ ] **Instagram:** scraping and cold DMs are against Instagram's terms. For the demo, use posts from consenting team accounts fed in through `/admin/ingested-posts`, and send the claim DM by hand. Long-term: the share-sheet / screenshot flow, or sellers tagging us.
 - [ ] **Payout before onboarding:** OK that a claimed seller can accept and the buyer can pay before the seller sets up Stripe (payout waits as `awaiting_onboarding`)?

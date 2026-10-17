@@ -46,13 +46,16 @@ export interface CampusDirectory {
 
 export interface RoomBookingResult {
   status: "booked" | "manual_required";
-  room: string | null;
+  room: { id: string; name: string } | null;
   bookingUrl: string | null;
 }
 
-/** Library study-room booking. */
+/**
+ * Library study-room booking. `room` is the free room picked from RoomAvailability (null when none was free
+ * or availability is off). A real booker (e.g. a future Playwright one) books that room; the manual one links to it.
+ */
 export interface RoomBooker {
-  book(input: { schoolId: string; start: string; end: string; partySize: number }): Promise<RoomBookingResult>;
+  book(input: { schoolId: string; start: string; end: string; partySize: number; room: LibraryRoom | null }): Promise<RoomBookingResult>;
 }
 
 /** A bookable library study room. `room_id` is the booking system's id (LibCal "eid"). */

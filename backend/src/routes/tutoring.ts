@@ -1,11 +1,12 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import type { RoomBooker } from "../adapters/ports.js";
+import type { RoomAvailability, RoomBooker } from "../adapters/ports.js";
 import { toCourse } from "../db/academics.js";
 import {
   SESSION_SELECT, SessionRow, loadClassRecords, loadLibrary, loadMeetingInputs, loadSchool, loadSessionBusy,
-  loadTutorProfiles, toGradeRecord, toSession, toTutorProfile, type HistoryEntry,
+  loadTutorProfiles, toGradeRecord, toRoomBooking, toSession, toTutorProfile, type HistoryEntry,
 } from "../db/tutoring.js";
+import { freeRoomFor } from "../services/library-rooms.js";
 import { loadUsersPublic } from "../db/users.js";
 import { ApiError } from "../lib/errors.js";
 import { notify } from "../lib/notify.js";
@@ -16,7 +17,7 @@ import { requireUser, type AuthEnv, type TokenVerifier } from "../middleware/aut
 import { CounterSessionReq, CreateSessionReq, PutTutorProfileReq, TutorAvailability, TutorsQuery } from "../schemas/tutoring.js";
 import { expandMeetings, freeBlocks, intersect, type BusyInterval, type FreeBlock, type Interval } from "../services/availability.js";
 import { freeBusy } from "../services/google.js";
-import { DAY, MINUTE, iso, localDatesBetween, weekdayOf, zonedToUtc } from "../services/time.js";
+import { DAY, MINUTE, iso, localDate, localDatesBetween, weekdayOf, zonedToUtc } from "../services/time.js";
 import {
   acceptSession, cancelSession, completeSession, counterSession, declineSession, findTutorMatches, priceFor,
   tutorEligibility, type Side, type SessionState, type TutorCandidate,
@@ -144,7 +145,7 @@ const SessionsQuery = z.object({
 });
 const CancelReq = z.object({ reason: z.string().trim().min(1).max(500) });
 
-export const tutoringRoutes = (verify: TokenVerifier, rooms: RoomBooker) => {
+export const tutoringRoutes = (verify: TokenVerifier, rooms: RoomBooker, availability: RoomAvailability) => {
   const app = new Hono<AuthEnv>()
     .use("/me/tutor-eligibility/*", requireUser(verify))
     .use("/me/tutor-profile/*", requireUser(verify))
@@ -249,14 +250,18 @@ export const tutoringRoutes = (verify: TokenVerifier, rooms: RoomBooker) => {
         userId: t, enabled: p.enabled && p.open_to_requests, courseIds: (tp.courses.get(t) ?? []).map((x) => x.id),
         hourlyRateCents: p.hourly_rate_cents, rating: stats?.rating ?? 0, reviewCount: stats?.review_count ?? 0, sessionsCompleted: stats?.sessions_completed ?? 0,
         record: e ? { grade: e.grade, verified: e.verified, term: e.term } : null,
-        party: { free: free.get(t) ?? [], fallback },
+        party: { free: free.get(t) ?? [], fallback }, meetsInPerson: p.modes.includes("in_person"),
       });
     }
-    const matches = findTutorMatches({
+    const matchInput = {
       courseId: q.course_id, student: { userId: studentId, free: free.get(studentId) ?? [], fallback }, candidates,
       minGrade: school.tutor_min_grade, meetingPlace: place, durationMin: q.duration_min, now: Date.now(),
       includeUnverified: q.include_unverified, sort: q.sort, ...(q.max_rate_cents !== undefined ? { maxRateCents: q.max_rate_cents } : {}),
-    });
+    };
+    // Two passes: the first finds which days have mutual slots, so we only ask LibCal about those days.
+    const days = [...new Set(findTutorMatches(matchInput).flatMap((m) => m.mutual_slots.map((s) => localDate(Date.parse(s.start), school.timezone))))];
+    const freeRooms = (await Promise.all(days.map((day) => availability.freeRooms(day)))).flat();
+    const matches = findTutorMatches({ ...matchInput, roomFor: (start, end) => freeRoomFor(freeRooms, start, end) });
     return c.json(one(matches.map((m) => {
       const profile = toTutorProfile(tp.profiles.get(m.user_id)!, tp.courses.get(m.user_id) ?? [], eligibility.get(m.user_id)!, tp.stats.get(m.user_id));
       const { user_id: _id, ...rest } = m;
@@ -345,7 +350,7 @@ export const tutoringRoutes = (verify: TokenVerifier, rooms: RoomBooker) => {
     let saved = await saveTransition(row, {
       status: next.status, waiting_on: next.waitingOn, history: [...row.history, historyEntry(by, "accept", row.start_at, row.end_at)],
     });
-    if (saved.location_kind === "library_room") saved = await bookRoom(saved, rooms);
+    if (saved.location_kind === "library_room") saved = await bookRoom(saved, rooms, availability);
     await tellOtherSide(saved, me, "Tutoring session confirmed", `${saved.course.code}${saved.room ? ` · ${saved.room}` : ""}`);
     return c.json(one(await sessionOut(saved)));
   });
@@ -386,18 +391,23 @@ export const tutoringRoutes = (verify: TokenVerifier, rooms: RoomBooker) => {
     const row = await loadSessionRow(c.req.param("id"), c.var.user.id);
     if (row.location_kind !== "library_room") throw new ApiError(409, "INVALID_STATE", "This session isn't in a library room");
     if (row.status !== "accepted" && row.status !== "paid") throw new ApiError(409, "INVALID_STATE", "Accept the session first");
-    const saved = row.room_booking_status === "booked" ? row : await bookRoom(row, rooms);
-    return c.json(one({ status: saved.room_booking_status, room: saved.room, booking_url: saved.booking_url }));
+    const saved = row.room_booking_status === "booked" ? row : await bookRoom(row, rooms, availability);
+    return c.json(one(toRoomBooking(saved)));
   });
 
   return app;
 };
 
-async function bookRoom(row: SessionRow, rooms: RoomBooker): Promise<SessionRow> {
-  const result = await rooms.book({ schoolId: row.school_id, start: row.start_at, end: row.end_at, partySize: 2 });
+/** Picks the first library room free for the whole session (live availability), then hands it to the booker. */
+async function bookRoom(row: SessionRow, rooms: RoomBooker, availability: RoomAvailability): Promise<SessionRow> {
+  const school = await loadSchool(row.school_id);
+  const start = Date.parse(row.start_at);
+  const end = Date.parse(row.end_at);
+  const room = freeRoomFor(await availability.freeRooms(localDate(start, school.timezone)), start, end);
+  const result = await rooms.book({ schoolId: row.school_id, start: row.start_at, end: row.end_at, partySize: 2, room });
   const data = check(
     await adminClient().from("tutoring_sessions")
-      .update({ room_booking_status: result.status, room: result.room, booking_url: result.bookingUrl })
+      .update({ room_booking_status: result.status, room: result.room?.name ?? null, booking_url: result.bookingUrl })
       .eq("id", row.id).select(SESSION_SELECT).single(),
   );
   return SessionRow.parse(data);
