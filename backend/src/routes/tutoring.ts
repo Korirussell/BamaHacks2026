@@ -43,7 +43,8 @@ async function eligibilityFor(userId: string, schoolId: string, minGrade: string
   return { records, eligibility: tutorEligibility(records.map(toGradeRecord), minGrade) };
 }
 
-async function myTutorProfile(userId: string, schoolId: string) {
+/** A user's TutorProfile, or null when they never set one up. */
+export async function tutorProfileFor(userId: string, schoolId: string) {
   const school = await loadSchool(schoolId);
   const [{ eligibility }, tp] = await Promise.all([eligibilityFor(userId, schoolId, school.tutor_min_grade), loadTutorProfiles([userId])]);
   const row = tp.profiles.get(userId);
@@ -190,7 +191,7 @@ export const tutoringRoutes = (
     return c.json(one(items));
   });
 
-  app.get("/me/tutor-profile", async (c) => c.json(one(await myTutorProfile(c.var.user.id, c.var.user.schoolId))));
+  app.get("/me/tutor-profile", async (c) => c.json(one(await tutorProfileFor(c.var.user.id, c.var.user.schoolId))));
 
   app.get("/me/tutor-availability/suggested", async (c) => {
     const { week_of } = parseQuery(c, z.object({ week_of: z.iso.datetime() }));
@@ -209,7 +210,7 @@ export const tutoringRoutes = (
     if (!profile.data) throw new ApiError(400, "VALIDATION", "Invalid request", { tutor_profile: "Set up your tutor profile first" });
     const saved = await db.from("tutor_profiles").update({ availability }).eq("user_id", id).eq("school_id", schoolId);
     if (saved.error) throw saved.error;
-    return c.json(one(await myTutorProfile(id, schoolId)));
+    return c.json(one(await tutorProfileFor(id, schoolId)));
   });
 
   app.put("/me/tutor-profile", async (c) => {
@@ -235,7 +236,7 @@ export const tutoringRoutes = (
     check(await db.from("tutor_courses").delete().eq("user_id", id));
     if (courseIds.length) check(await db.from("tutor_courses").insert(courseIds.map((course_id) => ({ user_id: id, course_id }))));
     check(await db.from("profiles").update({ tutor_opt_in: input.enabled }).eq("id", id));
-    return c.json(one(await myTutorProfile(id, schoolId)));
+    return c.json(one(await tutorProfileFor(id, schoolId)));
   });
 
   app.get("/tutors", async (c) => {
