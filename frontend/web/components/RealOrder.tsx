@@ -77,6 +77,7 @@ export function RealOrder({ params }: { params: Promise<{ id: string }> }) {
   if (status === 'loading' || !order) return <div className="mx-auto max-w-md space-y-4 py-8"><Skeleton className="h-10 w-2/3" /><Skeleton className="h-40 w-full rounded-2xl" /></div>;
 
   const isBuyer = !!data && order.buyer.id === data.me;
+  const isSeller = !!data && order.seller.id === data.me;
   const startPay = async () => {
     key.current ||= crypto.randomUUID(); // reused on retry so a double-click can't double-charge
     setStarting(true); setPayErr('');
@@ -93,6 +94,12 @@ export function RealOrder({ params }: { params: Promise<{ id: string }> }) {
       <StickerCard className="p-6">
         <h1 className="font-display text-[22px] font-bold">{order.listing.title}</h1>
         <p className="mt-1 text-[28px] font-extrabold tabular-nums">{money(order.amount_cents, true)}</p>
+        {isSeller && order.payout?.status === 'awaiting_onboarding' && (
+          <div role="status" className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-[14px] border-2 border-ink bg-butter px-3 py-2 text-dark-ink">
+            <p className="text-[13px] font-bold">Finish payout setup to get paid.</p>
+            <PillLink href="/settings/payments" size="sm">Set up payouts</PillLink>
+          </div>
+        )}
         {order.status === 'awaiting_payment' ? (
           isBuyer ? (
             <div className="mt-5 space-y-4">
