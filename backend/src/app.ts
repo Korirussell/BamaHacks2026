@@ -4,7 +4,9 @@ import { logger } from "hono/logger";
 import { ApiError, errorResponse } from "./lib/errors.js";
 import { supabaseVerifier, type TokenVerifier } from "./middleware/auth.js";
 import { auth } from "./routes/auth.js";
+import { academicsRoutes } from "./routes/academics.js";
 import { meRoutes } from "./routes/me.js";
+import { scheduleRoutes } from "./routes/schedule.js";
 
 export interface AppDeps {
   verify: TokenVerifier;
@@ -19,7 +21,9 @@ export function createApp(deps: Partial<AppDeps> = {}) {
   const api = new Hono()
     .get("/health", (c) => c.json({ data: { ok: true } }))
     .route("/auth", auth)
-    .route("/me", meRoutes(verify));
+    .route("/me", meRoutes(verify))
+    .route("/", academicsRoutes(verify))
+    .route("/", scheduleRoutes(verify));
 
   const app = new Hono();
   if (log) app.use(logger());
