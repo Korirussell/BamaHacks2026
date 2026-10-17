@@ -15,6 +15,7 @@ import { parseBody, parseQuery } from "../lib/validate.js";
 import { requireUser, type AuthEnv, type TokenVerifier } from "../middleware/auth.js";
 import { CounterSessionReq, CreateSessionReq, PutTutorProfileReq, TutorsQuery } from "../schemas/tutoring.js";
 import { expandMeetings, freeBlocks, type BusyInterval } from "../services/availability.js";
+import { freeBusy } from "../services/google.js";
 import { DAY, MINUTE, iso } from "../services/time.js";
 import {
   acceptSession, cancelSession, completeSession, counterSession, declineSession, findTutorMatches, priceFor,
@@ -43,11 +44,16 @@ async function myTutorProfile(userId: string, schoolId: string) {
   return row ? toTutorProfile(row, tp.courses.get(userId) ?? [], eligibility, tp.stats.get(userId)) : null;
 }
 
-/** Each person's free time in [from, to): class schedule plus sessions already on the books. */
+/** Each person's free time in [from, to): class schedule, Google Calendar busy time and sessions already on the books. */
 async function freeTimeFor(userIds: string[], schoolId: string, tz: string, from: number, to: number) {
-  const [meetings, sessions] = await Promise.all([loadMeetingInputs(userIds, schoolId), loadSessionBusy(userIds, from, to)]);
-  return new Map(userIds.map((id) => {
-    const busy: BusyInterval[] = [...expandMeetings(meetings.get(id) ?? [], from, to), ...(sessions.get(id) ?? [])];
+  const [meetings, sessions, calendars] = await Promise.all([
+    loadMeetingInputs(userIds, schoolId),
+    loadSessionBusy(userIds, from, to),
+    Promise.all(userIds.map((id) => freeBusy(id, from, to))),
+  ]);
+  return new Map(userIds.map((id, i) => {
+    const google: BusyInterval[] = (calendars[i] ?? []).map((b) => ({ ...b, kind: "busy" }));
+    const busy: BusyInterval[] = [...expandMeetings(meetings.get(id) ?? [], from, to), ...(sessions.get(id) ?? []), ...google];
     return [id, freeBlocks(busy, from, to, tz)];
   }));
 }

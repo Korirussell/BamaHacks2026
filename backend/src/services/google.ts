@@ -197,8 +197,9 @@ export async function freeBusy(userId: string, from: number, to: number): Promis
     busyCache.set(userId, { key, at: Date.now(), busy });
     return busy;
   } catch (err) {
-    if (err instanceof GoogleAuthRevoked) return [];
-    throw err;
+    // Calendar busy time is a nice-to-have on top of the class schedule: never fail the request over it.
+    if (!(err instanceof GoogleAuthRevoked)) console.error("Google freeBusy skipped", err);
+    return [];
   }
 }
 
