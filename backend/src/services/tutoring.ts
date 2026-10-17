@@ -1,3 +1,4 @@
+import type { LibraryRoom } from "../adapters/ports.js";
 import type { LatLng } from "../schemas/common.js";
 import { totalMinutes } from "./availability.js";
 import { gradePoints, meetsThreshold } from "./grades.js";
@@ -16,7 +17,16 @@ export interface TutorCandidate {
   /** The tutor's past record for the requested course. */
   record: { grade: string | null; verified: boolean; term: string } | null;
   party: Party;
+  /** False for online-only tutors: they never get a library room. Defaults to true. */
+  meetsInPerson?: boolean;
 }
+
+/**
+ * Score bonus per mutual slot that has a free library room, counted for at most ROOM_SLOTS_COUNTED slots
+ * (max +4.5). Small next to the +4 per mutual slot, so it only breaks near-ties toward a room you can walk into.
+ */
+export const ROOM_SLOT_BONUS = 1.5;
+export const ROOM_SLOTS_COUNTED = 3;
 
 export interface TutorMatchOut {
   user_id: string;
@@ -26,7 +36,7 @@ export interface TutorMatchOut {
   rating: number;
   review_count: number;
   hourly_rate_cents: number;
-  mutual_slots: Array<{ start: string; end: string; kind: "free" }>;
+  mutual_slots: Array<{ start: string; end: string; kind: "free"; library_room: LibraryRoom | null }>;
   match: { score: number; mutual_minutes: number; reasons: string[] };
 }
 
@@ -42,6 +52,8 @@ export function findTutorMatches(input: {
   maxRateCents?: number;
   includeUnverified?: boolean;
   sort?: "match" | "rating" | "price" | "grade";
+  /** Free library room for the whole of [start, end) (UTC ms), if any. Omitted → every slot gets null. */
+  roomFor?: (start: number, end: number) => LibraryRoom | null;
 }): TutorMatchOut[] {
   const out: TutorMatchOut[] = [];
   for (const c of input.candidates) {
@@ -54,14 +66,21 @@ export function findTutorMatches(input: {
       notBefore: input.now,
     });
     const mutual = totalMinutes(slots);
+    const roomFor = c.meetsInPerson === false ? undefined : input.roomFor;
+    const withRooms = slots.map((s) => ({
+      start: iso(s.start), end: iso(s.end), kind: "free" as const, library_room: roomFor?.(s.start, s.end) ?? null,
+    }));
+    const roomSlots = withRooms.filter((s) => s.library_room).length;
     const reasons: string[] = [`Got ${c.record.grade} in ${c.record.term}${c.record.verified ? " (verified)" : ""}`];
     if (slots.length) reasons.push(`${slots.length} times you're both free`);
+    if (roomSlots) reasons.push(`Library room free at ${roomSlots === slots.length ? "all" : roomSlots} of them`);
     if (c.reviewCount) reasons.push(`${c.rating.toFixed(1)}★ from ${c.reviewCount} reviews`);
 
     const score =
       (gradePoints(c.record.grade) ?? 0) * 10 +
       (c.reviewCount ? c.rating * 6 : 15) +
       Math.min(slots.length, 6) * 4 +
+      Math.min(roomSlots, ROOM_SLOTS_COUNTED) * ROOM_SLOT_BONUS +
       (c.record.verified ? 5 : 0) -
       c.hourlyRateCents / 500;
 
@@ -73,7 +92,7 @@ export function findTutorMatches(input: {
       rating: c.rating,
       review_count: c.reviewCount,
       hourly_rate_cents: c.hourlyRateCents,
-      mutual_slots: slots.map((s) => ({ start: iso(s.start), end: iso(s.end), kind: "free" as const })),
+      mutual_slots: withRooms,
       match: { score: Math.round(score * 10) / 10, mutual_minutes: mutual, reasons },
     });
   }

@@ -25,6 +25,7 @@ export const ProfileRow = z.object({
   phone: z.string().nullable(),
   budget_cents: z.number().int().nullable(),
   mail_stop_code: z.string().nullable(),
+  mail_name: z.string().nullish(),
   tutor_opt_in: z.boolean(),
   location_sharing: z.enum(["off", "during_handoffs"]),
   notification_prefs: z.object({

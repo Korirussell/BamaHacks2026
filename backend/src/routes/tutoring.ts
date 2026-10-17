@@ -1,11 +1,12 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import type { RoomBooker } from "../adapters/ports.js";
+import type { RoomAvailability, RoomBooker } from "../adapters/ports.js";
 import { toCourse } from "../db/academics.js";
 import {
   SESSION_SELECT, SessionRow, loadClassRecords, loadLibrary, loadMeetingInputs, loadSchool, loadSessionBusy,
-  loadTutorProfiles, toGradeRecord, toSession, toTutorProfile, type HistoryEntry,
+  loadTutorProfiles, toGradeRecord, toRoomBooking, toSession, toTutorProfile, type HistoryEntry,
 } from "../db/tutoring.js";
+import { freeRoomFor } from "../services/library-rooms.js";
 import { loadUsersPublic } from "../db/users.js";
 import { ApiError } from "../lib/errors.js";
 import { notify } from "../lib/notify.js";
@@ -13,10 +14,11 @@ import { one } from "../lib/respond.js";
 import { adminClient } from "../lib/supabase.js";
 import { parseBody, parseQuery } from "../lib/validate.js";
 import { requireUser, type AuthEnv, type TokenVerifier } from "../middleware/auth.js";
-import { CounterSessionReq, CreateSessionReq, PutTutorProfileReq, TutorsQuery } from "../schemas/tutoring.js";
-import { expandMeetings, freeBlocks, type BusyInterval } from "../services/availability.js";
+import { CounterSessionReq, CreateSessionReq, PutTutorProfileReq, TutorAvailability, TutorsQuery } from "../schemas/tutoring.js";
+import { expandMeetings, freeBlocks, intersect, type BusyInterval, type FreeBlock, type Interval } from "../services/availability.js";
 import { freeBusy } from "../services/google.js";
-import { DAY, MINUTE, iso } from "../services/time.js";
+import type { Party } from "../services/slots.js";
+import { DAY, MINUTE, iso, localDate, localDatesBetween, weekdayOf, zonedToUtc } from "../services/time.js";
 import {
   acceptSession, cancelSession, completeSession, counterSession, declineSession, findTutorMatches, priceFor,
   tutorEligibility, type Side, type SessionState, type TutorCandidate,
@@ -37,25 +39,89 @@ async function eligibilityFor(userId: string, schoolId: string, minGrade: string
   return { records, eligibility: tutorEligibility(records.map(toGradeRecord), minGrade) };
 }
 
-async function myTutorProfile(userId: string, schoolId: string) {
+/** A user's TutorProfile, or null when they never set one up. */
+export async function tutorProfileFor(userId: string, schoolId: string) {
   const school = await loadSchool(schoolId);
   const [{ eligibility }, tp] = await Promise.all([eligibilityFor(userId, schoolId, school.tutor_min_grade), loadTutorProfiles([userId])]);
   const row = tp.profiles.get(userId);
   return row ? toTutorProfile(row, tp.courses.get(userId) ?? [], eligibility, tp.stats.get(userId)) : null;
 }
 
-/** Each person's free time in [from, to): class schedule, Google Calendar busy time and sessions already on the books. */
-async function freeTimeFor(userIds: string[], schoolId: string, tz: string, from: number, to: number) {
-  const [meetings, sessions, calendars] = await Promise.all([
+/** Expands a tutor's recurring and one-off availability into concrete allowed intervals. */
+export function availabilityWindows(availability: z.output<typeof TutorAvailability>, from: number, to: number, tz: string): Interval[] {
+  const recurring: Interval[] = [];
+  for (const date of localDatesBetween(from, to, tz)) {
+    for (const window of availability.recurring) {
+      if (!window.days.includes(weekdayOf(date))) continue;
+      const start = zonedToUtc(date, window.start, tz);
+      const end = zonedToUtc(date, window.end, tz);
+      if (end > from && start < to) recurring.push({ start: Math.max(start, from), end: Math.min(end, to) });
+    }
+  }
+  const oneOff = availability.one_off.map((block) => ({ start: Math.max(Date.parse(block.start), from), end: Math.min(Date.parse(block.end), to) }))
+    .filter((block) => block.end > block.start);
+  return [...recurring, ...oneOff].sort((a, b) => a.start - b.start);
+}
+
+/** Limits free blocks to the tutor's declared availability when they have declared any. */
+export function applyTutorAvailability(free: FreeBlock[], availability: z.output<typeof TutorAvailability>, from: number, to: number, tz: string): FreeBlock[] {
+  if (!availability.recurring.length && !availability.one_off.length) return free;
+  return intersect(free, availabilityWindows(availability, from, to, tz)).map(({ start, end, a }) => ({ ...a, start, end }));
+}
+
+/**
+ * Each person's free time in [from, to): class schedule, Google Calendar busy time and sessions already on the books.
+ * For ids in `tutorIds`, free time is also limited to the windows they declared in PUT /me/tutor-availability (if any).
+ */
+async function freeTimeFor(userIds: string[], schoolId: string, tz: string, from: number, to: number, tutorIds: string[] = []) {
+  const [meetings, sessions, calendars, tutorProfiles] = await Promise.all([
     loadMeetingInputs(userIds, schoolId),
     loadSessionBusy(userIds, from, to),
     Promise.all(userIds.map((id) => freeBusy(id, from, to))),
+    loadTutorProfiles(tutorIds),
   ]);
   return new Map(userIds.map((id, i) => {
     const google: BusyInterval[] = (calendars[i] ?? []).map((b) => ({ ...b, kind: "busy" }));
     const busy: BusyInterval[] = [...expandMeetings(meetings.get(id) ?? [], from, to), ...(sessions.get(id) ?? []), ...google];
-    return [id, freeBlocks(busy, from, to, tz)];
+    const free = freeBlocks(busy, from, to, tz);
+    const profile = tutorIds.includes(id) ? tutorProfiles.profiles.get(id) : undefined;
+    return [id, profile ? applyTutorAvailability(free, profile.availability, from, to, tz) : free];
   }));
+}
+
+/** Everyone (but the student) who lists the course in their tutor profile; 404 when the course isn't at the school. */
+export async function tutorIdsForCourse(courseId: string, schoolId: string, studentId: string) {
+  const db = adminClient();
+  const [course, offered] = await Promise.all([
+    db.from("courses").select("id").eq("id", courseId).eq("school_id", schoolId).maybeSingle(),
+    db.from("tutor_courses").select("user_id").eq("course_id", courseId),
+  ]);
+  if (!check(course)) throw new ApiError(404, "NOT_FOUND", "Course not found");
+  return [...new Set(z.array(z.object({ user_id: z.guid() })).parse(check(offered)).map((r) => r.user_id))].filter((t) => t !== studentId);
+}
+
+/** Profiles, public users and per-course eligibility for a set of tutors. */
+export async function tutorPool(tutorIds: string[], schoolId: string, minGrade: string) {
+  const [tp, records, users] = await Promise.all([loadTutorProfiles(tutorIds), loadClassRecords(tutorIds, schoolId), loadUsersPublic(tutorIds, schoolId)]);
+  const eligibility = new Map(tutorIds.map((t) => [t, tutorEligibility((records.get(t) ?? []).map(toGradeRecord), minGrade)]));
+  return { tutorIds, tp, users, eligibility };
+}
+
+/** The pool as findTutorMatches candidates; `party` gives each tutor's free time. */
+export function tutorCandidates(pool: Awaited<ReturnType<typeof tutorPool>>, courseId: string, schoolId: string, party: (tutorId: string) => Party): TutorCandidate[] {
+  const { tp, users, eligibility } = pool;
+  return pool.tutorIds.flatMap((t) => {
+    const p = tp.profiles.get(t);
+    if (!p || p.school_id !== schoolId || !users.has(t)) return [];
+    const e = eligibility.get(t)?.get(courseId);
+    const stats = tp.stats.get(t);
+    return [{
+      userId: t, enabled: p.enabled && p.open_to_requests, courseIds: (tp.courses.get(t) ?? []).map((x) => x.id),
+      hourlyRateCents: p.hourly_rate_cents, rating: stats?.rating ?? 0, reviewCount: stats?.review_count ?? 0, sessionsCompleted: stats?.sessions_completed ?? 0,
+      record: e ? { grade: e.grade, verified: e.verified, term: e.term } : null,
+      party: party(t), meetsInPerson: p.modes.includes("in_person"),
+    }];
+  });
 }
 
 async function loadSessionRow(id: string, userId: string) {
@@ -116,10 +182,11 @@ const SessionsQuery = z.object({
 });
 const CancelReq = z.object({ reason: z.string().trim().min(1).max(500) });
 
-export const tutoringRoutes = (verify: TokenVerifier, rooms: RoomBooker) => {
+export const tutoringRoutes = (verify: TokenVerifier, rooms: RoomBooker, availability: RoomAvailability) => {
   const app = new Hono<AuthEnv>()
     .use("/me/tutor-eligibility/*", requireUser(verify))
     .use("/me/tutor-profile/*", requireUser(verify))
+    .use("/me/tutor-availability/*", requireUser(verify))
     .use("/tutors/*", requireUser(verify))
     .use("/tutoring/*", requireUser(verify));
 
@@ -134,7 +201,27 @@ export const tutoringRoutes = (verify: TokenVerifier, rooms: RoomBooker) => {
     return c.json(one(items));
   });
 
-  app.get("/me/tutor-profile", async (c) => c.json(one(await myTutorProfile(c.var.user.id, c.var.user.schoolId))));
+  app.get("/me/tutor-profile", async (c) => c.json(one(await tutorProfileFor(c.var.user.id, c.var.user.schoolId))));
+
+  app.get("/me/tutor-availability/suggested", async (c) => {
+    const { week_of } = parseQuery(c, z.object({ week_of: z.iso.datetime() }));
+    const from = Date.parse(week_of);
+    const school = await loadSchool(c.var.user.schoolId);
+    const free = await freeTimeFor([c.var.user.id], c.var.user.schoolId, school.timezone, from, from + 7 * DAY);
+    return c.json(one((free.get(c.var.user.id) ?? []).map((block) => ({ start: iso(block.start), end: iso(block.end), kind: "free" as const }))));
+  });
+
+  app.put("/me/tutor-availability", async (c) => {
+    const availability = await parseBody(c, TutorAvailability);
+    const { id, schoolId } = c.var.user;
+    const db = adminClient();
+    const profile = await db.from("tutor_profiles").select("user_id").eq("user_id", id).eq("school_id", schoolId).maybeSingle();
+    if (profile.error) throw profile.error;
+    if (!profile.data) throw new ApiError(400, "VALIDATION", "Invalid request", { tutor_profile: "Set up your tutor profile first" });
+    const saved = await db.from("tutor_profiles").update({ availability }).eq("user_id", id).eq("school_id", schoolId);
+    if (saved.error) throw saved.error;
+    return c.json(one(await tutorProfileFor(id, schoolId)));
+  });
 
   app.put("/me/tutor-profile", async (c) => {
     const input = await parseBody(c, PutTutorProfileReq);
@@ -159,7 +246,7 @@ export const tutoringRoutes = (verify: TokenVerifier, rooms: RoomBooker) => {
     check(await db.from("tutor_courses").delete().eq("user_id", id));
     if (courseIds.length) check(await db.from("tutor_courses").insert(courseIds.map((course_id) => ({ user_id: id, course_id }))));
     check(await db.from("profiles").update({ tutor_opt_in: input.enabled }).eq("id", id));
-    return c.json(one(await myTutorProfile(id, schoolId)));
+    return c.json(one(await tutorProfileFor(id, schoolId)));
   });
 
   app.get("/tutors", async (c) => {
@@ -170,44 +257,24 @@ export const tutoringRoutes = (verify: TokenVerifier, rooms: RoomBooker) => {
     if (to <= from) throw new ApiError(400, "VALIDATION", "Invalid request", { to: "Must be after from" });
     if (to - from > MAX_SEARCH_DAYS * DAY) throw new ApiError(400, "VALIDATION", "Invalid request", { to: `Maximum range is ${MAX_SEARCH_DAYS} days` });
 
-    const db = adminClient();
-    const [school, library, course, offered] = await Promise.all([
-      loadSchool(schoolId),
-      loadLibrary(schoolId),
-      db.from("courses").select("*").eq("id", q.course_id).eq("school_id", schoolId).maybeSingle(),
-      db.from("tutor_courses").select("user_id").eq("course_id", q.course_id),
+    const [school, library, tutorIds] = await Promise.all([loadSchool(schoolId), loadLibrary(schoolId), tutorIdsForCourse(q.course_id, schoolId, studentId)]);
+    const [pool, free] = await Promise.all([
+      tutorPool(tutorIds, schoolId, school.tutor_min_grade),
+      freeTimeFor([studentId, ...tutorIds], schoolId, school.timezone, from, to, tutorIds),
     ]);
-    if (!check(course)) throw new ApiError(404, "NOT_FOUND", "Course not found");
-    const tutorIds = [...new Set(z.array(z.object({ user_id: z.guid() })).parse(check(offered)).map((r) => r.user_id))].filter((t) => t !== studentId);
-
-    const [tp, records, free, users] = await Promise.all([
-      loadTutorProfiles(tutorIds),
-      loadClassRecords(tutorIds, schoolId),
-      freeTimeFor([studentId, ...tutorIds], schoolId, school.timezone, from, to),
-      loadUsersPublic(tutorIds, schoolId),
-    ]);
+    const { tp, users, eligibility } = pool;
     const fallback = { lat: school.center_lat, lng: school.center_lng };
     const place = library ? { lat: library.lat, lng: library.lng } : null;
-    const eligibility = new Map(tutorIds.map((t) => [t, tutorEligibility((records.get(t) ?? []).map(toGradeRecord), school.tutor_min_grade)]));
-
-    const candidates: TutorCandidate[] = [];
-    for (const t of tutorIds) {
-      const p = tp.profiles.get(t);
-      if (!p || p.school_id !== schoolId || !users.has(t)) continue;
-      const e = eligibility.get(t)?.get(q.course_id);
-      const stats = tp.stats.get(t);
-      candidates.push({
-        userId: t, enabled: p.enabled && p.open_to_requests, courseIds: (tp.courses.get(t) ?? []).map((x) => x.id),
-        hourlyRateCents: p.hourly_rate_cents, rating: stats?.rating ?? 0, reviewCount: stats?.review_count ?? 0, sessionsCompleted: stats?.sessions_completed ?? 0,
-        record: e ? { grade: e.grade, verified: e.verified, term: e.term } : null,
-        party: { free: free.get(t) ?? [], fallback },
-      });
-    }
-    const matches = findTutorMatches({
+    const candidates = tutorCandidates(pool, q.course_id, schoolId, (t) => ({ free: free.get(t) ?? [], fallback }));
+    const matchInput = {
       courseId: q.course_id, student: { userId: studentId, free: free.get(studentId) ?? [], fallback }, candidates,
       minGrade: school.tutor_min_grade, meetingPlace: place, durationMin: q.duration_min, now: Date.now(),
       includeUnverified: q.include_unverified, sort: q.sort, ...(q.max_rate_cents !== undefined ? { maxRateCents: q.max_rate_cents } : {}),
-    });
+    };
+    // Two passes: the first finds which days have mutual slots, so we only ask LibCal about those days.
+    const days = [...new Set(findTutorMatches(matchInput).flatMap((m) => m.mutual_slots.map((s) => localDate(Date.parse(s.start), school.timezone))))];
+    const freeRooms = (await Promise.all(days.map((day) => availability.freeRooms(day)))).flat();
+    const matches = findTutorMatches({ ...matchInput, roomFor: (start, end) => freeRoomFor(freeRooms, start, end) });
     return c.json(one(matches.map((m) => {
       const profile = toTutorProfile(tp.profiles.get(m.user_id)!, tp.courses.get(m.user_id) ?? [], eligibility.get(m.user_id)!, tp.stats.get(m.user_id));
       const { user_id: _id, ...rest } = m;
@@ -296,7 +363,7 @@ export const tutoringRoutes = (verify: TokenVerifier, rooms: RoomBooker) => {
     let saved = await saveTransition(row, {
       status: next.status, waiting_on: next.waitingOn, history: [...row.history, historyEntry(by, "accept", row.start_at, row.end_at)],
     });
-    if (saved.location_kind === "library_room") saved = await bookRoom(saved, rooms);
+    if (saved.location_kind === "library_room") saved = await bookRoom(saved, rooms, availability);
     await tellOtherSide(saved, me, "Tutoring session confirmed", `${saved.course.code}${saved.room ? ` · ${saved.room}` : ""}`);
     return c.json(one(await sessionOut(saved)));
   });
@@ -337,18 +404,23 @@ export const tutoringRoutes = (verify: TokenVerifier, rooms: RoomBooker) => {
     const row = await loadSessionRow(c.req.param("id"), c.var.user.id);
     if (row.location_kind !== "library_room") throw new ApiError(409, "INVALID_STATE", "This session isn't in a library room");
     if (row.status !== "accepted" && row.status !== "paid") throw new ApiError(409, "INVALID_STATE", "Accept the session first");
-    const saved = row.room_booking_status === "booked" ? row : await bookRoom(row, rooms);
-    return c.json(one({ status: saved.room_booking_status, room: saved.room, booking_url: saved.booking_url }));
+    const saved = row.room_booking_status === "booked" ? row : await bookRoom(row, rooms, availability);
+    return c.json(one(toRoomBooking(saved)));
   });
 
   return app;
 };
 
-async function bookRoom(row: SessionRow, rooms: RoomBooker): Promise<SessionRow> {
-  const result = await rooms.book({ schoolId: row.school_id, start: row.start_at, end: row.end_at, partySize: 2 });
+/** Picks the first library room free for the whole session (live availability), then hands it to the booker. */
+async function bookRoom(row: SessionRow, rooms: RoomBooker, availability: RoomAvailability): Promise<SessionRow> {
+  const school = await loadSchool(row.school_id);
+  const start = Date.parse(row.start_at);
+  const end = Date.parse(row.end_at);
+  const room = freeRoomFor(await availability.freeRooms(localDate(start, school.timezone)), start, end);
+  const result = await rooms.book({ schoolId: row.school_id, start: row.start_at, end: row.end_at, partySize: 2, room });
   const data = check(
     await adminClient().from("tutoring_sessions")
-      .update({ room_booking_status: result.status, room: result.room, booking_url: result.bookingUrl })
+      .update({ room_booking_status: result.status, room: result.room?.name ?? null, booking_url: result.bookingUrl })
       .eq("id", row.id).select(SESSION_SELECT).single(),
   );
   return SessionRow.parse(data);

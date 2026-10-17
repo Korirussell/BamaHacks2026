@@ -28,6 +28,7 @@ export const Me = z.object({
   phone: z.string().nullable(),
   budget_cents: Cents.nullable(),
   mail_stop_code: z.string().nullable(),
+  mail_name: z.string().nullable(),
   tutor_opt_in: z.boolean(),
   location_sharing: z.enum(["off", "during_handoffs"]),
   notification_prefs: z.object({
@@ -53,6 +54,7 @@ export const PatchMeReq = z.object({
   phone: z.string().optional(),
   budget_cents: Cents.optional(),
   mail_stop_code: z.string().optional(),
+  mail_name: z.string().optional(),
   tutor_opt_in: z.boolean().optional(),
   location_sharing: z.enum(["off", "during_handoffs"]).optional(),
   notification_prefs: z

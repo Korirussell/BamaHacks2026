@@ -40,7 +40,7 @@ All traffic is **JSON REST under `/api/v1`**, authenticated with the Supabase ac
 - **Lists:** `?cursor=&limit=` (default 20, max 50) → `{ "data": [T], "next_cursor": "string?" }`.
 - **Single objects:** `{ "data": T }`.
 - **Errors:** HTTP status + `{ "error": { "code": "string", "message": "string", "field_errors": { "<field>": "string" }? } }`.
-- **Error codes:** `UNAUTHENTICATED`, `NOT_EDU_EMAIL`, `SCHOOL_NOT_SUPPORTED`, `FORBIDDEN`, `NOT_FOUND`, `VALIDATION`, `INVALID_STATE` (illegal status change), `STRIPE_ONBOARDING_REQUIRED`, `PAYMENT_FAILED`, `NOT_NEARBY`, `MAIL_INFO_REQUIRED` (buyer has no mail stop on file), `CLAIM_INVALID` (claim link expired, used or unknown), `RATE_LIMITED`, `INTERNAL` (500, unexpected server error).
+- **Error codes:** `UNAUTHENTICATED`, `NOT_EDU_EMAIL`, `SCHOOL_NOT_SUPPORTED`, `FORBIDDEN`, `NOT_FOUND`, `VALIDATION`, `INVALID_STATE` (illegal status change), `STRIPE_ONBOARDING_REQUIRED`, `PAYMENT_FAILED`, `NOT_NEARBY`, `MAIL_INFO_REQUIRED` (buyer has no 6-digit MSC or no first + last `mail_name` on file), `CLAIM_INVALID` (claim link expired, used or unknown), `RATE_LIMITED`, `INTERNAL` (500, unexpected server error).
 - **Idempotency:** any call that moves money or advances an order or handoff takes an `Idempotency-Key` header.
 - **AI jobs:** return `202 { "job_id" }`; the frontend listens on its user channel or polls `GET /jobs/{id}`.
 
@@ -62,7 +62,7 @@ All traffic is **JSON REST under `/api/v1`**, authenticated with the Supabase ac
   },
   "Me": {
     "user": "UserPublic", "email": "string", "phone": "string?",
-    "budget_cents": "cents?", "mail_stop_code": "string?", "tutor_opt_in": "bool",
+    "budget_cents": "cents?", "mail_stop_code": "string? (6 digits)", "mail_name": "string? (first + last, as on UA record)", "tutor_opt_in": "bool",
     "location_sharing": "off|during_handoffs",
     "notification_prefs": { "push": "bool", "email": "bool", "wishlist_alerts": "bool", "tutor_requests": "bool" },
     "connections": { "google_calendar": "bool", "stripe": "none|pending|ready" },
@@ -90,6 +90,8 @@ All traffic is **JSON REST under `/api/v1`**, authenticated with the Supabase ac
     "source": "manual|ics|screenshot|google"
   },
   "TimeBlock":    { "start": "ts", "end": "ts", "kind": "free|busy|class" },
+  "LibraryRoom":  { "room_id": "string (LibCal space id)", "name": "string", "capacity": "int", "book_url": "string (the room's LibCal booking page)" },
+  "FreeRoomSlot": { "room_id": "string", "name": "string", "capacity": "int", "start": "ts", "end": "ts", "book_url": "string" },
   "OpeningHours": { "days": ["mon|tue|wed|thu|fri|sat|sun"], "open": "HH:MM", "close": "HH:MM" },
   "SafeZone":     { "id": "uuid", "name": "string", "kind": "police|student_center|library|other", "location": "LatLng", "radius_m": "int", "hours": ["OpeningHours"], "hours_note": "string?" },
   "MeetupSuggestion": {
@@ -139,11 +141,19 @@ All traffic is **JSON REST under `/api/v1`**, authenticated with the Supabase ac
     "suggestions": ["MeetupSuggestion"], "agreed": { "start": "ts", "end": "ts", "safe_zone": "SafeZone" },
     "status": "proposing|agreed|arriving|completed|no_show|cancelled|expired",
     "presence": { "giver_nearby": "bool", "receiver_nearby": "bool" },
-    "confirmations": { "giver_at": "ts?", "receiver_at": "ts?", "item_ok": "bool?" }
+    "confirmations": { "giver_at": "ts?", "receiver_at": "ts?", "item_ok": "bool?" },
+    "tracking": "Tracking (viewer-relative: the caller is \"me\")",
+    "taps": "Taps"
   },
+  "Tracking":     { "me": "MeTracking? (null outside agreed/arriving or before your first ping)", "other": "OtherTracking" },
+  "MeTracking":   { "inside_zone": "bool", "distance_to_zone_m": "int? (to the zone edge, nearest 10 m; 0 inside; null when accuracy_ok is false)", "accuracy_ok": "bool (accuracy_m <= 100)" },
+  "OtherTracking": { "arrived": "bool", "distance_m": "int? (to the zone edge, nearest 10 m; null unless they share, see Meetup confirm rules)", "last_seen_at": "ts?" },
+  "Taps":         { "giver_at": "ts? (only while the tap is still valid, 60 s, or the handoff is completed)", "receiver_at": "ts?" },
+  "EscrowEntry":  { "kind": "hold|release|refund", "amount_cents": "cents", "provider": "demo|stripe", "created_at": "ts", "reason": "string?" },
   "Shipment": {
     "id": "uuid", "order_id": "uuid", "label_pdf_url": "string", "label_code": "string (printed on label as QR + text)",
-    "to": { "name": "string", "mail_stop_code": "string" },
+    "to": { "name": "string", "mail_stop_code": "string", "address_lines": ["string (4 lines: NAME, 1831 UNIVERSITY STATION, MSC ######, TUSCALOOSA, AL 35487-0002)"] },
+    "steps": ["string (seller's drop-off steps, in order; show next to the address)"],
     "drop_off": "DropOffPoint", "status": "label_created|dropped_off|received",
     "dropped_off_at": "ts?", "drop_off_proof_media_id": "uuid?", "received_at": "ts?", "auto_complete_at": "ts?"
   },
@@ -168,7 +178,7 @@ Sign-in: the frontend calls `/auth/check-email`, then Supabase `signInWithOtp`. 
   "POST /auth/check-email":   { "req": { "email": "string" }, "res": { "allowed": "bool", "school": "School?", "reason": "NOT_EDU_EMAIL|SCHOOL_NOT_SUPPORTED?" } },
 
   "GET /me":                  { "res": "Me" },
-  "PATCH /me":                { "req": { "display_name": "string?", "major": "string?", "grad_year": "int?", "avatar_media_id": "uuid?", "phone": "string?", "budget_cents": "cents?", "mail_stop_code": "string?", "tutor_opt_in": "bool?", "location_sharing": "off|during_handoffs?", "notification_prefs": "object?" }, "res": "Me" },
+  "PATCH /me":                { "req": { "display_name": "string?", "major": "string?", "grad_year": "int?", "avatar_media_id": "uuid?", "phone": "string?", "budget_cents": "cents?", "mail_stop_code": "string? (6 digits; \"MSC 123456\" accepted)", "mail_name": "string?", "tutor_opt_in": "bool?", "location_sharing": "off|during_handoffs?", "notification_prefs": "object?" }, "res": "Me" },
   "GET /users/{id}":          { "res": { "user": "UserPublic", "mutual_friends": ["UserPublic"], "active_listings": ["Listing"], "tutor_profile": "TutorProfile?", "review_summary": { "avg_stars": "number", "count": "int" } } },
   "GET /users/search":        { "query": { "q": "string", "course_id": "uuid?" }, "res": ["UserPublic"] },
 
@@ -237,9 +247,10 @@ Transcript parsing is **review-then-confirm**: grades only count as `grade_verif
 
   "GET /orders/{id}":         { "res": "Order" },
   "GET /me/orders":           { "query": { "role": "buyer|seller", "status": "string?" }, "res": ["Order"] },
-  "POST /orders/{id}/pay":    { "headers": ["Idempotency-Key"], "res": { "client_secret": "string", "payment_intent_id": "string" } },
+  "POST /orders/{id}/pay":    { "headers": ["Idempotency-Key"], "note": "buyer only. With PAYMENTS=demo (until Stripe lands) the order is paid at once: client_secret is null, demo is true and the paid Order comes back; skip the payment sheet. In-person orders get handoff_id here.", "res": { "client_secret": "string?", "payment_intent_id": "string", "demo": "bool?", "order": "Order?" } },
   "POST /orders/{id}/cancel": { "req": { "reason": "string" }, "res": "Order" },
-  "POST /orders/{id}/dispute":{ "req": { "reason": "not_as_described|no_show|never_received|other", "details": "string", "media_ids": ["uuid"] }, "res": "Order" },
+  "POST /orders/{id}/dispute":{ "headers": ["Idempotency-Key"], "note": "buyer or seller; only from scheduled, handing_off or in_transit (else INVALID_STATE). details 1-1000 chars, media_ids max 10 and must be the caller's own uploads. Order becomes disputed, money stays held until the team resolves it, the other party is notified", "req": { "reason": "not_as_described|no_show|never_received|other", "details": "string", "media_ids": ["uuid"] }, "res": "Order" },
+  "GET /orders/{id}/escrow":  { "note": "buyer or seller; the money ledger for the order, oldest first, for the payment timeline", "res": { "entries": ["EscrowEntry"], "held_cents": "cents (hold minus release minus refund, so 0 once settled)" } },
   "POST /payments/onboard":   { "res": { "onboarding_url": "string" } },
   "GET /payments/status":     { "res": { "charges_enabled": "bool", "payouts_enabled": "bool", "requirements_due": ["string"] } },
 
@@ -248,14 +259,15 @@ Transcript parsing is **review-then-confirm**: grades only count as `grade_verif
   "POST /handoffs/{id}/suggest": { "res": { "suggestions": ["MeetupSuggestion"] } },
   "POST /handoffs/{id}/propose": { "req": { "start": "ts", "safe_zone_id": "uuid" }, "res": "Handoff" },
   "POST /handoffs/{id}/agree":   { "req": { "start": "ts", "safe_zone_id": "uuid" }, "res": "Handoff" },
-  "POST /handoffs/{id}/location":{ "req": { "location": "LatLng", "accuracy_m": "int" }, "res": { "giver_nearby": "bool", "receiver_nearby": "bool" } },
+  "POST /handoffs/{id}/location":{ "note": "either party, status agreed|arriving; accuracy_m 0-5000. Latest position only; fixes with accuracy_m > 100 refresh last-seen but never change presence. When both are nearby the handoff goes arriving", "req": { "location": "LatLng", "accuracy_m": "int" }, "res": { "giver_nearby": "bool", "receiver_nearby": "bool", "me": "MeTracking", "other": "OtherTracking", "sharing_window": { "starts_at": "ts", "ends_at": "ts" } } },
   "POST /handoffs/{id}/code":    { "note": "giver only; giver must be inside the zone, which records confirmations.giver_at", "req": { "location": "LatLng", "accuracy_m": "int" }, "res": { "qr_token": "string", "short_code": "string", "expires_at": "ts" } },
   "POST /handoffs/{id}/confirm": { "note": "receiver only", "headers": ["Idempotency-Key"], "req": { "qr_token": "string?", "short_code": "string?", "location": "LatLng", "accuracy_m": "int", "item_ok": "bool" }, "res": "Handoff" },
-  "POST /handoffs/{id}/no-show": { "res": "Handoff" },
+  "POST /handoffs/{id}/tap":     { "note": "either party; primary confirm. Both must tap within 60 s, both inside the safe zone with accuracy_m <= 100, tap positions within 50 m + min(both accuracies, 50). The receiver must send item_ok (else 400 VALIDATION). First tap waits; the second completes it (status completed, or disputed when item_ok=false: money stays held). NOT_NEARBY (403) when outside the zone or accuracy is poor: fall back to /code + /confirm. Status agreed|arriving only", "headers": ["Idempotency-Key"], "req": { "location": "LatLng", "accuracy_m": "int", "item_ok": "bool? (required for the receiver)" }, "res": { "handoff": "Handoff", "status": "waiting_for_other|completed|disputed", "tap_expires_at": "ts (this tap + 60 s)" } },
+  "POST /handoffs/{id}/no-show": { "note": "reporter must be inside the zone now (accuracy_m <= 100), at least agreed start + 15 min, and the other party never arrived or tapped; else 409 INVALID_STATE (too early, other arrived) or 403 NOT_NEARBY. Buyer is always refunded; the absent party's no-show count goes up", "req": { "location": "LatLng", "accuracy_m": "int" }, "res": "Handoff" },
 
   "GET /mail/drop-off-points":      { "res": ["DropOffPoint"] },
-  "POST /orders/{id}/shipment":      { "note": "seller; needs buyer mail stop else MAIL_INFO_REQUIRED", "req": { "drop_off_point_id": "uuid?" }, "res": "Shipment" },
-  "POST /shipments/{id}/dropped-off":{ "note": "seller; must be inside the drop-off point radius", "headers": ["Idempotency-Key"], "req": { "location": "LatLng", "accuracy_m": "int", "photo_media_id": "uuid" }, "res": "Shipment" },
+  "POST /orders/{id}/shipment":      { "note": "seller; needs buyer MSC + mail_name else MAIL_INFO_REQUIRED", "req": { "drop_off_point_id": "uuid?" }, "res": "Shipment" },
+  "POST /shipments/{id}/dropped-off":{ "note": "seller; must be inside the drop-off point radius while it is open (else NOT_NEARBY / INVALID_STATE)", "headers": ["Idempotency-Key"], "req": { "location": "LatLng", "accuracy_m": "int", "photo_media_id": "uuid" }, "res": "Shipment" },
   "POST /shipments/{id}/received":   { "note": "buyer; scan or type the label code", "headers": ["Idempotency-Key"], "req": { "label_code": "string", "item_ok": "bool" }, "res": { "shipment": "Shipment", "order": "Order" } },
 
   "GET /claims/{token}":             { "note": "NO auth; landing page for the link we DM to an external seller", "res": { "external_seller": "ExternalSeller", "listings": ["Listing"], "pending_offers": ["Offer"], "expires_at": "ts" } },
@@ -266,7 +278,27 @@ Transcript parsing is **review-then-confirm**: grades only count as `grade_verif
 }
 ```
 
-> **Sync confirm rule (anti-scam):** the giver shows a QR (or 6-digit code) that rotates every 60 s; the receiver scans it and sends their location. The server completes the handoff only if the token is valid **and** the receiver is inside the agreed safe zone's radius. That completion is what releases money to the seller.
+### Campus mail at UA
+
+Campus mail is **one of the fulfillment methods students choose between**: in person at a safe zone (`in_person`) or async by campus mail (`campus_mail`). There is no default; the seller lists which methods they accept and the buyer picks one on the offer. In-person trades need none of this. Everything below only applies to `campus_mail` orders.
+
+How UA Campus Mail works (campusmail.ua.edu and the myBama Student Mail Portal), and what the app does about it:
+
+- **Address:** every student has a permanent 6-digit **MSC** (mailstop code), on or off campus. Packages are matched by **name + MSC**, so the label uses `mail_name` (first + last, as on the UA record), not `display_name`. A wrong name or MSC lands the package in Campus Mail's "mystery pile" with no notice.
+- **Shipping:** Campus Mail only accepts student packages that arrive through USPS or another carrier; intra-campus mail is for University departments only. So the seller ships it **USPS at the Crimson Mail & Shipping window** (Student Center, 1st floor, behind Starbucks, Mon–Fri 8:00–4:30; after 3:00 pm it goes out the next business day). Campus Mail then puts it in the buyer's locker and emails/texts them a pickup code.
+- **Pickup:** lockers are Bryce Lawn, Student Center (Student Mail Center) and Magnolia Parking Deck; students pick a primary one in the portal. A package waits 3–5 days in the locker, then 10 more at the Service Center, then goes back to the sender.
+- **Fees:** off-campus students (not in residence halls, Greek housing or UA-leased apartments) pay Campus Mail **$2.50 per package**, capped at $25 per billing period (Jan–May, Jun–Dec), billed to their student account. Show this to off-campus buyers before they pick campus mail.
+- **Auto-complete:** `auto_complete_at` = 7 days after the package enters the mail stream, at 3:00 pm local.
+
+> **Sync confirm rule (anti-scam):** the primary confirm is **both parties tapping "Confirm trade"** (`POST /handoffs/{id}/tap`) within 60 s of each other, both inside the agreed safe zone's radius. The **QR fallback** (for bad GPS): the giver shows a QR (or 6-digit code) that rotates every 60 s; the receiver scans it and sends their location. The server completes the handoff only if the token is valid **and** the receiver is inside the zone. Either way, that completion is what releases money to the seller.
+
+### Meetup confirm, location and escrow
+
+- **Both-tap:** a tap carries `location` + `accuracy_m`. It counts only when `accuracy_m <= 100` and the point is inside the safe zone. The other tap must land within 60 s and within 50 m + min(both accuracies, 50) of the first. The receiver's tap carries `item_ok`; `false` makes the order `disputed` and the money stays held. Taps expire after 60 s (`Handoff.taps` hides expired ones).
+- **Location privacy:** the other party only ever gets `arrived` and a distance to the zone edge (rounded to 10 m), never coordinates. Distance shows only while the handoff is `agreed|arriving`, inside `[agreed_start - 30 min, agreed_end + 30 min]` (`sharing_window`), and only if that person's `location_sharing` is `during_handoffs`; otherwise `distance_m` and `last_seen_at` are null. `arrived` is always visible. Stored positions are wiped when the meetup ends (completed, no-show, reschedule).
+- **No-show:** the reporter must be inside the zone, at least 15 min after `agreed.start`, and the other side must never have arrived or tapped. The buyer is always refunded (seller no-show or buyer no-show) and the absent party's `no_show_count` goes up by 1.
+- **Escrow:** `POST /orders/{id}/pay` holds the full amount in the `escrow_entries` ledger (`GET /orders/{id}/escrow`). Final states settle it: `completed` releases the seller payout (or `awaiting_onboarding` until Stripe onboarding), `refunded`/`cancelled` refunds the buyer and relists the item. Today `provider` is `demo` (nothing leaves the platform); Stripe plugs in as another provider later without changing these shapes.
+- **Disputes:** `POST /orders/{id}/dispute` freezes the money; an admin ends it with `POST /admin/orders/{id}/resolve`.
 
 > **Auto-accept rule:** an offer with `kind: cash` and `amount_cents >= price_cents` on a **claimed** listing is accepted immediately and the response includes the new `Order`. On an unclaimed listing every offer waits with `waiting_on: seller_claim` and triggers a claim invite to the external seller.
 
@@ -289,10 +321,11 @@ Transcript parsing is **review-then-confirm**: grades only count as `grade_verif
   "GET /tutoring/sessions":     { "query": { "role": "tutor|student?", "status": "string?" }, "res": ["TutoringSession"] },
   "GET /tutoring/sessions/{id}":{ "note": "parties only; 404 otherwise", "res": "TutoringSession" },
   "POST /tutoring/sessions/{id}/counter":  { "note": "either side proposes a different time; flips waiting_on", "req": { "start": "ts", "end": "ts", "message": "string?" }, "res": "TutoringSession" },
-  "POST /tutoring/sessions/{id}/accept":   { "note": "only the party in waiting_on; library_room triggers room booking", "res": "TutoringSession" },
+  "POST /tutoring/sessions/{id}/accept":   { "note": "only the party in waiting_on; library_room triggers room booking (picks the first LibCal room free for the whole session)", "res": "TutoringSession" },
   "POST /tutoring/sessions/{id}/decline":  { "res": "TutoringSession" },
   "POST /tutoring/sessions/{id}/pay":      { "res": { "client_secret": "string" } },
-  "POST /tutoring/sessions/{id}/book-room":{ "res": { "status": "booked|manual_required", "room": "string?", "booking_url": "string?" } },
+  "POST /tutoring/sessions/{id}/book-room":{ "note": "retries booking; returns the session's room_booking", "res": "RoomBooking" },
+  "GET /library/rooms":         { "note": "free Gorgas study rooms on a library-local day, for a 'rooms free now' card; [] when LibCal is off or unreachable", "query": { "date": "date" }, "res": ["FreeRoomSlot"] },
   "POST /tutoring/sessions/{id}/complete": { "res": "TutoringSession" },
   "POST /tutoring/sessions/{id}/cancel":   { "req": { "reason": "string" }, "res": "TutoringSession" },
 
@@ -325,17 +358,18 @@ Transcript parsing is **review-then-confirm**: grades only count as `grade_verif
     "tutor": "UserPublic", "profile": "TutorProfile",
     "grade": "string", "grade_verified": "bool", "term_taken": "string",
     "rating": "number", "review_count": "int", "hourly_rate_cents": "cents",
-    "open_slots": ["TimeBlock"], "mutual_slots": ["TimeBlock (both free, fits duration_min)"],
+    "open_slots": ["TimeBlock"], "mutual_slots": [{ "start": "ts", "end": "ts", "kind": "free", "library_room": "LibraryRoom? (first room free for the whole slot; null if none or the tutor is online-only)" }],
     "match": { "score": "number", "mutual_minutes": "int", "reasons": ["string"] }
   },
   "TutoringSession": {
     "id": "uuid", "tutor": "UserPublic", "student": "UserPublic", "course": "Course", "start": "ts", "end": "ts", "price_cents": "cents",
     "location": { "kind": "library_room|safe_zone|virtual", "name": "string?", "meeting_url": "string?" },
-    "room_booking": { "status": "not_needed|pending|booked|manual_required", "room": "string?", "booking_url": "string?" },
+    "room_booking": "RoomBooking",
     "status": "requested|accepted|paid|completed|cancelled|no_show",
     "waiting_on": "tutor|student?", "history": [{ "by": "tutor|student", "action": "propose|counter|accept|decline", "start": "ts", "end": "ts", "at": "ts" }],
     "handoff_id": "uuid?"
   },
+  "RoomBooking":     { "status": "not_needed|pending|booked|manual_required", "room": "{ id: string, name: string }?", "booking_url": "string? (manual_required: the room's LibCal page, or the library site when no room was free)" },
   "Ride":            { "id": "uuid", "driver": "UserPublic", "origin": "Place", "destination": "Place", "depart_at": "ts", "seats_total": "int", "seats_left": "int", "price_per_seat_cents": "cents", "riders": ["UserPublic"], "status": "open|full|en_route|completed|cancelled", "driver_location": "LatLng?" },
   "RideRequest":     { "id": "uuid", "rider": "UserPublic", "pickup": "Place", "dropoff": "Place", "depart_at": "ts", "seats": "int", "max_price_cents": "cents?", "status": "open|matched|cancelled", "ride_id": "uuid?" },
   "CourseEvent":     { "id": "uuid", "course_id": "uuid", "kind": "string", "title": "string", "due_at": "ts", "source": "syllabus|manual", "confirmations": "int" },
@@ -344,6 +378,8 @@ Transcript parsing is **review-then-confirm**: grades only count as `grade_verif
 ```
 
 > **Tutor eligibility rule:** a user shows up in `/tutors` for a course when they have a `past` `ClassRecord` for it with a grade ≥ `School.tutor_min_grade` (verified only, unless `include_unverified=true`), and an enabled `TutorProfile` that lists the course. `mutual_slots` apply the walk-time rule to the tutor and student, using the library (or chosen safe zone) as the meeting spot.
+
+> **Library room rule:** each mutual slot gets `library_room`: the first Gorgas Team Workroom (smallest first) that UA's LibCal shows free for the **whole** slot. Consecutive free LibCal slots of one room are merged; any taken part disqualifies it. Each slot with a room adds +1.5 to `match.score` (counted for at most 3 slots, so at most +4.5), and the reasons say "Library room free at …". Availability is read-only from the public booking page, cached 60 s, and turned off with `LIBCAL=off`; if LibCal is down every `library_room` is `null`. Nothing is booked automatically: on accept, `room_booking` stays `manual_required` with `booking_url` = that room's LibCal page, unless a room booker that can really book is configured.
 
 Tickets reuse Listings, Offers and Orders (`category: ticket`); only the transfer confirmation is new. Funds for tickets stay held until the buyer confirms receipt or the event starts with no dispute.
 
@@ -369,9 +405,17 @@ Tickets reuse Listings, Offers and Orders (`category: ticket`); only the transfe
   "POST /me/push-subscriptions":      { "req": { "platform": "web|ios|android", "subscription": "object" }, "res": "204" },
 
   "GET /ingested-posts/{id}":         { "res": { "id": "uuid", "channel": "string", "raw_text": "string", "author_handle": "string?", "posted_at": "ts", "listing": "Listing?", "ride_request": "RideRequest?" } },
-  "POST /admin/ingested-posts":       { "note": "admin/scraper; feeds one external post in; 202 → ingest_classify job → Listing with source.claimed=false", "req": { "channel": "instagram|groupme|facebook|snapchat", "external_url": "string", "author_handle": "string", "caption": "string", "media_ids": ["uuid"], "posted_at": "ts" }, "res": { "job_id": "uuid", "ingested_post_id": "uuid" } },
+  "POST /admin/orders/{id}/resolve":  { "note": "admin; only for a disputed order (else INVALID_STATE). complete = release to the seller (or awaiting_onboarding), refund = money back to the buyer. Both parties are notified", "req": { "outcome": "complete|refund", "note": "string (1-1000)" }, "res": "Order" },
+  "POST /admin/ingested-posts":       { "note": "admin (profiles.is_admin) or scraper; feeds one external post in; the same URL twice is a no-op; 202 → ingest_classify job (owned by the caller, so GET /jobs/{id} works; result: { listing_id, status, isbn, missing, matched_course_ids, notified }) → Listing with source.claimed=false", "req": { "channel": "instagram|groupme|facebook|snapchat", "external_url": "string", "author_handle": "string", "caption": "string", "media_ids": ["uuid"], "posted_at": "ts" }, "res": { "job_id": "uuid", "ingested_post_id": "uuid" } },
   "GET /admin/seller-invites":        { "note": "admin; DMs to send by hand until outreach is automated", "query": { "status": "queued|sent|claimed?" }, "res": ["SellerInvite"] },
   "POST /admin/seller-invites/{id}/sent": { "res": "SellerInvite" },
+  "GET /admin/ingestion/feed":       { "note": "admin; the live-sources screen, newest first (poll every ~2 s). status: queued|processing|processed|failed. events are the pipeline steps in order; step: detected|photos_saved|identified|matched_courses|listed|notified|replied|reply_failed|failed|dm_sent|dm_failed|dm_window_closed", "res": [{ "id": "uuid", "channel": "string", "external_url": "string", "author_handle": "string", "caption": "string", "posted_at": "ts", "received_at": "ts", "photo_url": "string?", "status": "string", "listing": "{ id, title, price_cents, status, isbn? }?", "course_codes": ["string"], "notified": "int", "identified_by": "vision|caption?", "confidence": "number?", "events": [{ "at": "ts", "step": "string", "text": "string" }], "error": "string?" }] },
+  "GET /admin/instagram/status":     { "note": "admin; the poller reads posts that tag our account (INSTAGRAM=graph) or the seller account's own stories (INSTAGRAM=stories) every INSTAGRAM_POLL_SECONDS. seller_account and dm_window are null outside stories mode. dm_window.open: the seller DMed us in the last 24 h (expires_at = last_inbound_at + 24 h), re-worked out against the clock on every read", "res": { "mode": "graph|stories|off", "account": "string? (our IG username)", "seller_account": "string? (stories mode)", "polling_every_s": "int", "last_poll_at": "ts?", "next_poll_at": "ts?", "last_error": "string?", "polls": "int", "ingested": "int", "dm_window": "DmWindow?" } },
+  "POST /admin/instagram/poll":      { "note": "admin; poll right now instead of waiting for the next tick (stories in stories mode); 409 INVALID_STATE when polling is off", "res": { "found": "int", "ingested": "int", "status": "InstagramStatus" } },
+  "DmWindow":                        { "open": "bool", "last_inbound_at": "ts? (the seller's newest message to us)", "expires_at": "ts?", "seller_igsid": "string? (the seller as our account sees them; cached)", "checked_at": "ts?", "last_error": "string?" },
+  "POST /admin/instagram/dm":        { "note": "admin; stories mode; DMs the seller now. 409 INVALID_STATE when the mode isn't stories or the 24 h window is closed (message says why and to ask the seller to DM us first); 500 INTERNAL with Instagram's message if Instagram refuses", "req": { "text": "string (1-1000)" }, "res": { "sent": "true", "message_id": "string", "dm_window": "DmWindow" } },
+  "POST /admin/instagram/dm-window/refresh": { "note": "admin; stories mode; re-reads our conversation with the seller (Conversations API). Never fails on an Instagram error: it lands in last_error. 409 INVALID_STATE outside stories mode", "res": "DmWindow" },
+  "POST /admin/instagram/dm/listed": { "note": "admin; stories mode; re-sends the \"listed\" DM for an ingested story and adds the event to its feed entry. 404 when it isn't an ingested story, 409 when it isn't a live listing or the window is closed. sent=false (with a dm_failed event) when Instagram refuses", "req": { "ingested_post_id": "uuid" }, "res": { "sent": "bool", "event": "{ at, step, text }", "dm_window": "DmWindow" } },
 
   "SellerInvite": { "id": "uuid", "external_seller": "ExternalSeller", "listing_ids": ["uuid"], "claim_url": "string", "message_text": "string", "status": "queued|sent|claimed|expired", "trigger": "first_offer|manual", "sent_at": "ts?", "claimed_at": "ts?", "expires_at": "ts" }
 }
@@ -381,12 +425,12 @@ The frontend **never talks to Stripe, Google or GroupMe directly**, except Strip
 
 ### Realtime channels (Supabase Realtime)
 
-Every message is `{ "event": "string", "at": "ts", "data": object }`. Channels are private and authorised by RLS.
+Every message is `{ "event": "string", "at": "ts", "data": object }`. Channels are private and authorised by RLS: subscribe with the user's access token; on `handoff:{id}` only the giver and receiver receive (clients never send). Payloads are identical for both phones and never carry locations or distances; refetch `GET /handoffs/{id}` for your own `tracking`.
 
 | Channel | Events | Payload `data` |
 |---|---|---|
 | `user:{id}` | `notification.created`, `offer.created`, `offer.updated`, `order.updated`, `job.finished`, `wishlist.match`, `material.match`, `tutoring.updated`, `shipment.updated` | `Notification`, `Offer`, `Offer`, `Order`, `Job`, `{ wishlist_item_id, listing }`, `{ listing, course }`, `TutoringSession`, `Shipment` |
-| `handoff:{id}` | `handoff.updated`, `handoff.presence`, `handoff.completed` | `Handoff`, `{ giver_nearby, receiver_nearby }`, `Handoff` |
+| `handoff:{id}` | `handoff.updated`, `handoff.presence`, `handoff.tap`, `handoff.completed` | `Handoff` (neutral: `tracking.me` null, no distances), `{ giver_nearby, receiver_nearby }`, `{ by: giver\|receiver, expires_at }`, `Handoff` (neutral: `tracking.me` null, no distances) |
 | `ride:{id}` | `ride.location`, `ride.updated` | `{ location: LatLng }`, `Ride` |
 | `auto-bargain:{id}` | `round`, `finished` | `{ by, amount_cents }`, `{ status, proposed_offer }` |
 
@@ -408,7 +452,7 @@ These are the two P0 demo moments, end to end. If a step here can't be done with
 2. Server: users with a past grade in A ≥ `tutor_min_grade` and an enabled `TutorProfile` → expands both schedules into free time → `mutual_slots` (with walk time to the library) → ranked `TutorMatch[]` with grade, rating, rate, slots.
 3. Student picks a tutor + slot → `POST /tutoring/sessions` (`waiting_on: tutor`). Tutor gets `tutoring.updated`.
 4. Tutor `accept`s, or `counter`s with another time (then the student accepts).
-5. On accept with `library_room`: room booking runs → `room_booking.status` = `booked`, or `manual_required` with a `booking_url` (stub for now).
+5. On accept with `library_room`: room booking runs → `room_booking.status` = `booked`, or `manual_required` with `room` = the real free Gorgas room and `booking_url` = its LibCal page (library site if none was free). `GET /library/rooms?date=…` powers a "rooms free now" card.
 6. Payment + in-person check-in reuse the order/handoff pieces (stretch for the demo).
 
 **Demo 2 — Instagram post → matched buyer → claim → fulfil**
@@ -461,8 +505,9 @@ awaiting_payment --pay--> paid --agree time/place--> scheduled --both nearby--> 
 - `paid` = buyer charged; money sits on the platform balance.
 - `completed` = Stripe transfer to the seller minus `fee_cents`, then reviews unlock and reliability updates.
 - Campus mail swaps the handoff steps: `paid --label created--> scheduled --dropped off (geofence + photo)--> in_transit --buyer scans label--> completed`. Tickets swap them for `ticket-sent → ticket-received`.
+- Escrow ledger: `pay` writes a `hold`, final states write a `release` or `refund` (`GET /orders/{id}/escrow`). Demo provider for now; Stripe plugs in as a provider later.
 - Payout: `held` while the order is open; on `completed` it becomes `released` (Stripe transfer), or `awaiting_onboarding` if the seller hasn't finished Stripe yet; a refund makes it `reversed`.
-- Timers (job runner): offers expire after 48 h, unpaid orders cancel after 30 min, mail orders auto-complete N days after drop-off (N is an open question).
+- Timers (`workers/order-timers.ts`, `ORDER_TIMERS=on|off`, every `ORDER_TIMERS_INTERVAL_MS`, default 60 s): unpaid orders cancel after 30 min; campus-mail orders auto-complete at `auto_complete_at`; pending offers expire after 48 h; overdue meetups (1 h past `agreed.end`, still agreed/arriving): only one side ever arrived → no-show against the other + buyer refund; nobody arrived → handoff back to `proposing` (order stays `scheduled`); both arrived but no confirm → both notified once.
 
 ### Build order
 
@@ -498,7 +543,7 @@ Set up **Supabase, the API host, Stripe, the Claude API and an Apple Developer a
 | Maps | Campus map, safe zones, distance | MapKit on iOS · Mapbox or Leaflet + OSM on web · distance and geofence checks done **server-side in the API**, not in clients |
 | Book metadata | ISBN → title, cover, edition | Open Library or Google Books API |
 | GroupMe | Ingest Joyride + marketplace group posts | Developer token · bot with callback URL `/webhooks/groupme` · a group member has to add the bot to each group |
-| Library rooms | Auto-book tutoring rooms | Depends on what UA uses; fallback is a deep link (`manual_required`) |
+| Library rooms | Free rooms + auto-book tutoring rooms | UA uses Springshare LibCal (`ua.libcal.com`, Gorgas `lid=214`, Team Workrooms `gid=436`). Free rooms come read-only from its public availability grid (`LIBCAL=on`); booking stays a deep link to the room (`manual_required`) until a booker that signs in exists |
 | Campus mail | Async delivery labels | Generated PDF only (no carrier API); needs UA mail stop format confirmed |
 
 ### Channels without a usable API
@@ -517,6 +562,8 @@ GOOGLE_CLIENT_ID  GOOGLE_CLIENT_SECRET  GOOGLE_REDIRECT_URI  TOKEN_ENCRYPTION_KE
 APNS_KEY_ID  APNS_TEAM_ID  APNS_PRIVATE_KEY  APNS_BUNDLE_ID
 VAPID_PUBLIC_KEY  VAPID_PRIVATE_KEY
 GROUPME_BOT_TOKEN  RESEND_API_KEY  WEB_ORIGIN  APP_URL_SCHEME
+ROOM_BOOKER  ROOM_BOOKING_URL  LIBCAL (on|off, live free library rooms)
+HANDOFF_SECRET (32+ chars, signs handoff QR codes)  PAYMENTS (demo|stripe)  ORDER_TIMERS (on|off)  ORDER_TIMERS_INTERVAL_MS (default 60000)
 ```
 
 > **Never ship the Supabase service-role key or Stripe secret key to either client**; only the anon key and Stripe publishable key go in the app and website.
@@ -530,14 +577,15 @@ The first four change what gets built for the demo; the rest can be answered as 
 - [ ] **Time and team:** how many hours is the hackathon and how many backend people? That decides where the P0 line actually falls.
 - [ ] **Demo school:** UA only, or must a second school work live?
 - [ ] **Money:** Stripe test mode for the demo? What platform fee (default assumed 5%), and does buyer or seller pay it?
-- [ ] **Escrow:** OK to hold buyer funds until the QR confirm, with refund on no-show? Or pay seller immediately for speed?
+- [x] **Escrow:** hold buyer funds from pay until the meetup is confirmed (both tap, or QR); refund on no-show or cancel. Built on an `escrow_entries` ledger with a demo provider; Stripe comes later as a provider.
 - [ ] **Tutoring threshold:** minimum grade to tutor (assumed A-)? Allow self-reported grades with an "unverified" badge, or transcript only?
 - [ ] **Auto-bargaining:** must a human tap accept on the agent's deal (assumed yes), or can it auto-close?
 - [ ] **Rides:** scheduled carpools (like Joyride), or on-demand with live driver tracking? Carpools are far simpler and lower liability.
 - [ ] **Tickets:** how are UA student tickets transferred today (in-app transfer vs. physical/ID)?
 - [ ] **Course materials:** is there a source for required textbooks per course (bookstore list), or crowdsource from listings?
-- [ ] **Campus mail:** what's the UA mail stop format, and how many days after drop-off should a mail order auto-complete?
-- [ ] **Library booking:** which system does UA use for study rooms, and does it allow automated booking?
+- [x] **Campus mail:** MSC is a permanent 6-digit code (myBama → Campus Mail Student Portal); orders auto-complete 7 days after the package enters the mail stream. See [Campus mail at UA](#campus-mail-at-ua).
+- [ ] **Library booking:** UA uses LibCal (availability is public; booking needs a UA sign-in). Is automated booking allowed?
 - [ ] **GroupMe:** can we get the Joyride group admins to add our bot?
-- [ ] **Instagram:** scraping and cold DMs are against Instagram's terms. For the demo, use posts from consenting team accounts fed in through `/admin/ingested-posts`, and send the claim DM by hand. Long-term: the share-sheet / screenshot flow, or sellers tagging us.
+- [x] **Instagram:** no scraping, no cold DMs. Sellers tag our business account (photo tag **and** an @mention in the caption). With `INSTAGRAM=graph` the API polls `GET /{ig-id}/tags`, copies the photos, runs Claude vision (`IDENTIFIER=auto` + `ANTHROPIC_API_KEY`), lists the book, notifies students, and replies publicly on the post (`POST /{ig-id}/mentions`, caption mentions only). The first offer replies again with the claim link and marks the invite sent. `/admin/ingested-posts` stays as the by-hand fallback; `INSTAGRAM=off` turns all of it off.
+- [x] **Instagram stories + DMs (`INSTAGRAM=stories`):** the seller account reads its own stories with its own token (`INSTAGRAM_SELLER_TOKEN`), and each new story goes through the same ingest. Our account DMs the seller the "listed" message and, on the first offer, the claim link, but only while the seller's 24 h messaging window is open (read from the Conversations API). A human opens the window by DMing us; nothing automated keeps it open, and sends are refused (`409`, `dm_window_closed`) when it's closed. See `docs/INSTAGRAM_SETUP.md`.
 - [ ] **Payout before onboarding:** OK that a claimed seller can accept and the buyer can pay before the seller sets up Stripe (payout waits as `awaiting_onboarding`)?

@@ -6,20 +6,57 @@ import { supabaseVerifier, type TokenVerifier } from "./middleware/auth.js";
 import { integrationsRoutes } from "./routes/integrations.js";
 import { jobsRoutes } from "./routes/jobs.js";
 import { scheduleImportRoutes } from "./routes/schedule-import.js";
+import { transcriptRoutes } from "./routes/transcripts.js";
 import { authRoutes, supabaseSchoolLookup, type SchoolLookup } from "./routes/auth.js";
 import { academicsRoutes } from "./routes/academics.js";
 import { mediaRoutes } from "./routes/media.js";
 import { meRoutes } from "./routes/me.js";
 import { scheduleRoutes } from "./routes/schedule.js";
 import { tutoringRoutes } from "./routes/tutoring.js";
-import type { RoomBooker } from "./adapters/ports.js";
-import { manualRoomBooker } from "./adapters/stubs.js";
+import { adminRoutes } from "./routes/admin.js";
+import { claimsRoutes } from "./routes/claims.js";
+import { listingsRoutes } from "./routes/listings.js";
+import { notificationsRoutes } from "./routes/notifications.js";
+import { offersRoutes } from "./routes/offers.js";
+import { ordersRoutes, type PaymentsMode } from "./routes/orders.js";
+import type { RoomAvailability, RoomBooker, TextbookIdentifier } from "./adapters/ports.js";
+import { captionTextbookIdentifier, manualRoomBooker, noRoomAvailability } from "./adapters/stubs.js";
+import { libraryRoutes } from "./routes/library.js";
+import type { MarketConfig } from "./db/market-actions.js";
+import { supabaseIdempotencyStore, type IdempotencyStore } from "./middleware/idempotency.js";
+import { handoffRoutes } from "./routes/handoffs.js";
+import { shipmentRoutes } from "./routes/shipments.js";
+import { reviewsRoutes } from "./routes/reviews.js";
+import { socialRoutes } from "./routes/social.js";
+import { usersRoutes } from "./routes/users.js";
+import { wishlistRoutes } from "./routes/wishlist.js";
+import { eventsRoutes } from "./routes/events.js";
+import { ridesRoutes } from "./routes/rides.js";
+import { syllabiRoutes } from "./routes/syllabi.js";
+import { studyGroupsRoutes } from "./routes/study-groups.js";
+import { bargainRoutes } from "./routes/bargain.js";
+import { reportsRoutes } from "./routes/reports.js";
+import { pushRoutes } from "./routes/push.js";
+import { tutoringRequestRoutes } from "./routes/tutoring-requests.js";
+import { ingestedPostsRoutes } from "./routes/ingested-posts.js";
+import { webhookRoutes } from "./routes/webhooks.js";
+import type { InstagramPoller } from "./workers/instagram-poller.js";
 
 export interface AppDeps {
   verify: TokenVerifier;
   findSchool: SchoolLookup;
   rooms: RoomBooker;
+  /** Live library study-room availability (LibCal); tests default to none. */
+  roomAvailability: RoomAvailability;
+  identifier: TextbookIdentifier;
+  instagram: InstagramPoller | null;
+  idempotency: IdempotencyStore;
+  payments: PaymentsMode;
+  feeBps: number;
+  appName: string;
   webOrigin: string;
+  /** GroupMe bot callback: shared secret (null rejects all) and the school its groups belong to. */
+  groupme: { secret: string | null; schoolId: string };
   log: boolean;
 }
 
@@ -29,9 +66,19 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     verify = supabaseVerifier,
     findSchool = supabaseSchoolLookup,
     rooms = manualRoomBooker("https://www.lib.ua.edu/"),
+    roomAvailability = noRoomAvailability,
+    identifier = captionTextbookIdentifier,
+    instagram = null,
+    idempotency = supabaseIdempotencyStore(),
+    payments = "demo",
+    feeBps = 500,
+    appName = "Campus Marketplace",
     webOrigin = "http://localhost:3000",
+    groupme = { secret: null, schoolId: "00000000-0000-4000-a000-000000000001" },
     log = true,
   } = deps;
+
+  const market: MarketConfig = { feeBps, appUrl: webOrigin, appName, ...(instagram ? { outreach: instagram.outreach } : {}) };
 
   const api = new Hono()
     .get("/health", (c) => c.json({ data: { ok: true } }))
@@ -42,8 +89,32 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     .route("/", mediaRoutes(verify))
     .route("/", scheduleRoutes(verify))
     .route("/", scheduleImportRoutes(verify))
+    .route("/", transcriptRoutes(verify))
     .route("/", jobsRoutes(verify))
-    .route("/", tutoringRoutes(verify, rooms));
+    .route("/", tutoringRoutes(verify, rooms, roomAvailability))
+    .route("/", libraryRoutes(verify, roomAvailability))
+    .route("/admin", adminRoutes(verify, identifier, instagram))
+    .route("/claims", claimsRoutes(verify))
+    .route("/", listingsRoutes(verify, identifier))
+    .route("/", offersRoutes(verify, market))
+    .route("/", bargainRoutes(verify, market))
+    .route("/", reportsRoutes(verify))
+    .route("/", pushRoutes(verify))
+    .route("/", tutoringRequestRoutes(verify))
+    .route("/", ingestedPostsRoutes(verify))
+    .route("/webhooks", webhookRoutes({ identifier, groupmeSecret: groupme.secret, groupmeSchoolId: groupme.schoolId }))
+    .route("/", ordersRoutes(verify, idempotency, payments))
+    .route("/", handoffRoutes(verify, idempotency))
+    .route("/", shipmentRoutes(verify, idempotency))
+    .route("/", reviewsRoutes(verify))
+    .route("/", usersRoutes(verify))
+    .route("/", socialRoutes(verify))
+    .route("/", wishlistRoutes(verify))
+    .route("/", eventsRoutes(verify, idempotency))
+    .route("/", ridesRoutes(verify, idempotency, payments))
+    .route("/", syllabiRoutes(verify))
+    .route("/", studyGroupsRoutes(verify))
+    .route("/", notificationsRoutes(verify));
 
   const app = new Hono();
   if (log) app.use(logger());

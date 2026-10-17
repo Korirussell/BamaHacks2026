@@ -20,4 +20,6 @@ export async function notify(n: NotificationInput): Promise<void> {
     school_id: n.schoolId, user_id: n.userId, type: n.type, title: n.title, body: n.body, deep_link: n.deepLink, data: n.data ?? {},
   });
   if (error) console.error("notify failed", n.type, error.message);
+  // Push delivery plugs in here: read push_subscriptions for n.userId (when notification_prefs.push) and send
+  // Web Push (VAPID_*) / APNs (APNS_*), deleting rows the provider reports gone (404/410, Unregistered).
 }

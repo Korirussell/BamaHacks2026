@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { adminClient } from "../lib/supabase.js";
 import { ApiError } from "../lib/errors.js";
-import { TutoringSession } from "../schemas/tutoring.js";
+import { libcalSpaceId } from "../adapters/libcal.js";
+import { TutorAvailability, TutoringSession, type RoomBooking } from "../schemas/tutoring.js";
 import type { BusyInterval, MeetingInput } from "../services/availability.js";
 import type { Eligibility, GradeRecord } from "../services/tutoring.js";
 import { ClassMeetingRow, ClassRecordRow, CourseRow, toCourse, toMeetingInput } from "./academics.js";
@@ -14,7 +15,7 @@ const ts = z.string().transform((v) => new Date(v).toISOString());
 
 export const TutorProfileRow = z.object({
   user_id: z.guid(), school_id: z.guid(), enabled: z.boolean(), hourly_rate_cents: z.number().int(),
-  bio: z.string().nullable(), modes: z.array(Mode), open_to_requests: z.boolean(),
+  bio: z.string().nullable(), modes: z.array(Mode), open_to_requests: z.boolean(), availability: TutorAvailability,
 });
 export const TutorStatsRow = z.object({ user_id: z.guid(), rating: z.number(), review_count: z.number().int(), sessions_completed: z.number().int() });
 export const HistoryEntry = z.object({ by: Side, action: z.enum(["propose", "counter", "accept", "decline"]), start: z.string(), end: z.string(), at: z.string() });
@@ -41,9 +42,21 @@ export function toSession(row: SessionRow, users: Map<string, UserPublicOut>) {
   return TutoringSession.parse({
     id: row.id, tutor, student, course: toCourse(row.course), start: row.start_at, end: row.end_at, price_cents: row.price_cents,
     location: { kind: row.location_kind, name: row.location_name, meeting_url: row.meeting_url },
-    room_booking: { status: row.room_booking_status, room: row.room, booking_url: row.booking_url },
+    room_booking: toRoomBooking(row),
     status: row.status, waiting_on: row.waiting_on, history: row.history, handoff_id: row.handoff_id,
   });
+}
+
+/**
+ * RoomBooking from the session's room columns. There's no room_id column: `room` holds the name and the id is
+ * read back from the LibCal booking URL (/space/{eid}); rooms without one (demo booker) use the name as id.
+ */
+export function toRoomBooking(row: Pick<SessionRow, "room_booking_status" | "room" | "booking_url">): RoomBooking {
+  return {
+    status: row.room_booking_status,
+    room: row.room ? { id: libcalSpaceId(row.booking_url) ?? row.room, name: row.room } : null,
+    booking_url: row.booking_url,
+  };
 }
 
 /** TutorProfile: the listed courses with the grade that earned each one. */
@@ -98,7 +111,7 @@ export async function loadTutorProfiles(userIds: string[]) {
   if (!userIds.length) return empty;
   const db = adminClient();
   const [profiles, courses, stats] = await Promise.all([
-    db.from("tutor_profiles").select("user_id, school_id, enabled, hourly_rate_cents, bio, modes, open_to_requests").in("user_id", userIds),
+    db.from("tutor_profiles").select("user_id, school_id, enabled, hourly_rate_cents, bio, modes, open_to_requests, availability").in("user_id", userIds),
     db.from("tutor_courses").select("user_id, course:courses(*)").in("user_id", userIds),
     db.from("tutor_stats").select("*").in("user_id", userIds),
   ]);

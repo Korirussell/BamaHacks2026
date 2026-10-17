@@ -154,6 +154,17 @@ const personas: Record<string, Persona> = {
 const db = adminClient();
 const ids = Object.values(personas).map((p) => p.id);
 
+const completedTutoringSessions = [
+  ["00000000-0000-4000-8000-000000000101", "00000000-0000-4000-9000-000000000002", "00000000-0000-4000-9000-000000000001", "2026-09-01T15:00:00.000Z", 5],
+  ["00000000-0000-4000-8000-000000000102", "00000000-0000-4000-9000-000000000002", "00000000-0000-4000-9000-000000000005", "2026-09-03T15:00:00.000Z", 5],
+  ["00000000-0000-4000-8000-000000000103", "00000000-0000-4000-9000-000000000002", "00000000-0000-4000-9000-000000000006", "2026-09-05T15:00:00.000Z", 5],
+  ["00000000-0000-4000-8000-000000000104", "00000000-0000-4000-9000-000000000002", "00000000-0000-4000-9000-000000000004", "2026-09-08T15:00:00.000Z", 5],
+  ["00000000-0000-4000-8000-000000000105", "00000000-0000-4000-9000-000000000002", "00000000-0000-4000-9000-000000000003", "2026-09-10T15:00:00.000Z", 5],
+  ["00000000-0000-4000-8000-000000000106", "00000000-0000-4000-9000-000000000002", "00000000-0000-4000-9000-000000000007", "2026-09-12T15:00:00.000Z", 4],
+  ["00000000-0000-4000-8000-000000000107", "00000000-0000-4000-9000-000000000003", "00000000-0000-4000-9000-000000000001", "2026-09-15T15:00:00.000Z", 5],
+  ["00000000-0000-4000-8000-000000000108", "00000000-0000-4000-9000-000000000003", "00000000-0000-4000-9000-000000000005", "2026-09-17T15:00:00.000Z", 4],
+] as const;
+
 async function run(label: string, query: PromiseLike<{ error: { message: string } | null }>) {
   const { error } = await query;
   if (error) throw new Error(`${label}: ${error.message}`);
@@ -173,6 +184,9 @@ async function resetDemoState() {
   await run("offers", db.from("offers").delete().or(`buyer_id.in.${list},seller_id.in.${list}`));
   await run("seller invites", db.from("seller_invites").delete().eq("school_id", SCHOOL).eq("handle", INSTAGRAM_HANDLE));
   if (listingIds.length) await run("listings", db.from("listings").delete().in("id", listingIds));
+  // So the demo post can be ingested again: re-sending a known URL is a no-op.
+  await run("ingested posts", db.from("ingested_posts").delete().eq("school_id", SCHOOL).ilike("author_handle", `%${INSTAGRAM_HANDLE}`));
+  await run("ingest jobs", db.from("jobs").delete().eq("kind", "ingest_classify").in("user_id", ids));
   await run("tutoring sessions", db.from("tutoring_sessions").delete().or(`tutor_id.in.${list},student_id.in.${list}`));
   await run("reviews", db.from("reviews").delete().or(`from_id.in.${list},to_id.in.${list}`));
   await run("notifications", db.from("notifications").delete().in("user_id", ids));
@@ -228,6 +242,42 @@ async function seedPersona(p: Persona) {
   }
 }
 
+/** Fixed historical sessions give the tutoring demo stable, visible reputation. */
+async function seedTutoringReputation() {
+  const sessions = completedTutoringSessions.map(([id, tutor_id, student_id, start_at]) => {
+    const end_at = new Date(Date.parse(start_at) + 60 * 60 * 1000).toISOString();
+    return {
+      id, school_id: SCHOOL, tutor_id, student_id, course_id: course.CH101, start_at, end_at, price_cents: tutor_id === "00000000-0000-4000-9000-000000000002" ? 2500 : 1800,
+      location_kind: "virtual", location_name: null, safe_zone_id: null, meeting_url: "https://example.test/tutoring", room_booking_status: "not_needed",
+      status: "completed", waiting_on: null, history: [], notes: null,
+    };
+  });
+  await run("completed tutoring sessions", db.from("tutoring_sessions").insert(sessions));
+  const reviews = completedTutoringSessions.map(([context_id, to_id, from_id, , stars]) => ({
+    school_id: SCHOOL, from_id, to_id, context_type: "tutoring_session", context_id, stars,
+    on_time: true, as_described: true, comment: "Helpful tutoring session.",
+  }));
+  await run("tutoring reviews", db.from("reviews").insert(reviews));
+}
+
+// Upcoming UA events (times are UTC; Tuscaloosa is UTC-5 in November, UTC-6 in winter).
+const events = [
+  { id: "00000000-0000-4000-7000-000000000001", name: "Alabama vs. Auburn (Iron Bowl)", kind: "athletics", starts_at: "2026-11-28T20:30:00.000Z", venue: "Bryant-Denny Stadium" },
+  { id: "00000000-0000-4000-7000-000000000002", name: "Alabama vs. Kentucky Men's Basketball", kind: "athletics", starts_at: "2027-01-23T23:00:00.000Z", venue: "Coleman Coliseum" },
+  { id: "00000000-0000-4000-7000-000000000003", name: "Homecoming Concert", kind: "concert", starts_at: "2026-10-30T01:00:00.000Z", venue: "Tuscaloosa Amphitheater" },
+] as const;
+
+/** Events plus one app-transfer ticket from the seller, so GET /events/{id}/tickets has something to show. */
+async function seedTickets() {
+  await run("events", db.from("events").upsert(events.map((e) => ({ ...e, school_id: SCHOOL }))));
+  await run("ticket listing", db.from("listings").insert({
+    id: "00000000-0000-4000-7000-000000000101", school_id: SCHOOL, seller_id: personas["seller"]!.id, category: "ticket",
+    title: "Iron Bowl student ticket", description: "Can't make it home for the game. Transfers through the ticket app.",
+    price_cents: 8500, negotiable: true, condition: "new", fulfillment: ["digital_transfer"], status: "active", source_channel: "native",
+    event_id: events[0].id, ticket_section: "N4", ticket_row: "22", ticket_seat: null, ticket_transfer: "app_transfer",
+  }));
+}
+
 async function printOtp(name: string) {
   const p = personas[name];
   if (!p) throw new Error(`Unknown persona "${name}". Pick one of: ${Object.keys(personas).join(", ")}`);
@@ -242,6 +292,8 @@ if (command === "otp") {
 } else {
   await resetDemoState();
   for (const p of Object.values(personas)) await seedPersona(p);
+  await seedTutoringReputation();
+  await seedTickets();
   console.log("Demo personas ready:");
   for (const [name, p] of Object.entries(personas)) console.log(`  ${name.padEnd(13)} ${p.email}  (${p.display_name})`);
   console.log(`\nSign in as one: pnpm seed:demo otp <name>`);

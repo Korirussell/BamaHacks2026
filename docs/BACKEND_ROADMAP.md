@@ -67,13 +67,17 @@ The services are **pure functions**: they take plain data in and return decision
 - Realtime: a `tutoring.updated` broadcast on `user:{id}` for both sides.
 - **Done when:** the full Demo 1 script runs against seeded personas.
 
-### 8. Demo 2a: ingest → listing → "your class needs this"
+### 8. Demo 2a: ingest → listing → "your class needs this" ✅
+> Done: `routes/admin.ts` + `workers/ingest.ts` (runs inline; the job row records the result), `routes/listings.ts` (`/feed`, `/explore/listings`, `/listings`, `/me/listings`), `routes/notifications.ts`. Media must be uploaded to `public-media` (purpose `listing`) to show on the listing. Still open: `PATCH /listings/{id}`, Claude vision identifier (caption parsing only for now), job queue, wishlist.
+
 - `POST /admin/ingested-posts` (admin key header) stores the post and queues an `ingest_classify` job.
 - Job runner: start with an in-process queue (a `jobs` table plus a polling loop) and move to Inngest or pg_cron later. The job uses `TextbookIdentifier` (stub, then Claude vision), `normalizeIsbn` and `CourseMaterialsLookup`, then creates a `Listing` with `external_seller` and `source.claimed=false`.
 - Then `interestedStudents` sends `material.match` + a notification to each matching student. `GET /feed` returns `reason: your_class` + `reason_course`.
 - **Done when:** posting a fake Instagram post makes it appear in the CH 101 buyer's feed with "You're in CH 101".
 
-### 9. Demo 2b: offers + claim link
+### 9. Demo 2b: offers + claim link ✅
+> Done: `routes/offers.ts`, `routes/claims.ts`, `/admin/seller-invites`. Cash offers only (trades later). Still open: rate limits on `/claims`, offer expiry job.
+
 - `POST /listings/{id}/offers` uses `openOffer`. The first offer on an unclaimed listing creates a `SellerInvite` (`newClaimToken`, `sellerInviteMessage`).
 - `GET /admin/seller-invites` shows the DM text to copy-paste from the team Instagram, and `/sent` marks it sent.
 - `GET /claims/{token}` (public preview) and `POST /claims/{token}` (signed in): attach the listings to the user and run `afterClaim` on their offers.
@@ -81,6 +85,8 @@ The services are **pure functions**: they take plain data in and return decision
 - **Done when:** buyer offers → the invite appears → the seller opens the link, signs in, sees the offer, accepts → an order exists.
 
 ### 10. Demo 2c: Stripe escrow 🧑
+> Demo stand-in done: `PAYMENTS=demo` marks the order paid and opens the handoff (`routes/orders.ts`), plus `/orders/{id}`, `/me/orders`, `/orders/{id}/cancel`. Real Stripe below is still to do.
+
 - 🧑 Create a Stripe account in test mode, enable Connect (Express), and add `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` and `STRIPE_PUBLISHABLE_KEY`.
 - `POST /orders/{id}/pay` creates a PaymentIntent on the platform (separate charges and transfers) and returns `client_secret`.
 - `POST /webhooks/stripe`: on `payment_intent.succeeded`, run `nextOrderStatus(…, "payment_succeeded")` and create the `Handoff` or wait for a shipment.
@@ -115,5 +121,6 @@ The services are **pure functions**: they take plain data in and return decision
 | `staticCourseMaterials` / seeded table | UA bookstore list |
 | `manualOutreach` (copy-paste DM) | Automated DM, or sellers tagging us |
 | `noDirectory` (buyer types their mail stop) | UA directory lookup |
-| `manualRoomBooker` (link to booking page) | Library booking API, if UA's system has one |
+| `manualRoomBooker` (link to the free LibCal room's page) | A `RoomBooker` that signs in to LibCal and books the room it's handed (e.g. Playwright), if UA allows it |
+| `noRoomAvailability` (tests, `LIBCAL=off`) | Live: `libcalAvailability` (`adapters/libcal.ts`, read-only, on by default) |
 | `placeholderLabelRenderer` | PDF label generation |

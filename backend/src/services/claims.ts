@@ -38,3 +38,8 @@ export function sellerInviteMessage(input: {
     `(Not yours or not interested? Just ignore this and it comes down in 7 days.)`
   );
 }
+
+/** The claim link inside a stored invite message (only the token's hash is stored on its own). */
+export function claimUrlIn(message: string): string | null {
+  return message.match(/https?:\/\/\S+\/claim\/[A-Za-z0-9_-]+/)?.[0] ?? null;
+}

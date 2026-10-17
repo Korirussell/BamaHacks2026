@@ -94,6 +94,24 @@ describe("tutoring", () => {
     assert.deepEqual(out.map((m) => m.user_id).sort(), ["a", "c"]);
   });
 
+  it("attaches a free library room to slots and ranks a tutor with rooms slightly higher", () => {
+    const room = { room_id: "1315", name: "Gorgas Team Workroom 2016", capacity: 4, book_url: "https://ua.libcal.com/space/1315" };
+    const twins = [tutor("a", "A", true), tutor("b", "A", true)];
+    const base = { courseId: "cs101", student, candidates: twins, minGrade: "A-", meetingPlace: UA.gorgas, durationMin: 60, now: from };
+    const none = findTutorMatches(base);
+    assert.ok(none.every((m) => m.mutual_slots.every((s) => s.library_room === null)));
+
+    const out = findTutorMatches({ ...base, roomFor: () => room });
+    assert.ok(out[0]!.mutual_slots.length >= 3);
+    assert.ok(out.every((m) => m.mutual_slots.every((s) => s.library_room?.room_id === "1315")));
+    assert.equal(out[0]!.match.score - none[0]!.match.score, 4.5, "bonus capped at 3 slots × 1.5");
+    assert.ok(out[0]!.match.reasons.some((r) => r.startsWith("Library room free")));
+
+    const onlyB = findTutorMatches({ ...base, roomFor: () => room, candidates: [{ ...twins[0]!, meetsInPerson: false }, twins[1]!] });
+    assert.deepEqual(onlyB.map((m) => m.user_id), ["b", "a"], "online-only tutor gets no room bonus");
+    assert.ok(onlyB[1]!.mutual_slots.every((s) => s.library_room === null));
+  });
+
   it("runs propose → counter → accept with turn-taking", () => {
     let s = { status: "requested" as const, waitingOn: "tutor" as const, start: "2026-10-20T15:00:00Z", end: "2026-10-20T16:00:00Z", hourlyRateCents: 2000 };
     assert.throws(() => acceptSession(s, "student"), ApiError);
@@ -226,8 +244,8 @@ describe("materials", () => {
 
 describe("campus mail", () => {
   it("needs a mail stop, geofenced drop-off with photo, and the label code on receipt", () => {
-    assert.throws(() => buildLabel({ orderId: "o", buyer: { name: "B", mailStopCode: null }, sellerName: "S", itemTitle: "Book", dropOff: { name: "Mail", instructions: "" } }), /mail stop/);
-    const label = buildLabel({ orderId: "o", buyer: { name: "B", mailStopCode: "Box 870123" }, sellerName: "S", itemTitle: "Book", dropOff: { name: "Mail", instructions: "" } });
+    assert.throws(() => buildLabel({ orderId: "o", buyer: { name: "Bo Buyer", mailStopCode: null }, sellerName: "S", itemTitle: "Book", dropOff: { name: "Mail", instructions: "" } }), /mail stop/);
+    const label = buildLabel({ orderId: "o", buyer: { name: "Bo Buyer", mailStopCode: "MSC 870123" }, sellerName: "S", itemTitle: "Book", dropOff: { name: "Mail", instructions: "" } });
     assert.match(label.label_code, /^[A-Z2-9]{8}$/);
     const point = { location: UA.mailCenter, radiusM: 40 };
     assert.throws(() => verifyDropOff({ status: "label_created", at: UA.gorgas, accuracyM: 5, point, photoMediaId: "m", now: 0 }), /drop-off point/);

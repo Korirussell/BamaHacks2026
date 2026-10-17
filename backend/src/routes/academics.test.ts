@@ -53,7 +53,7 @@ test("tutoring routes reject missing tokens", async () => {
 test("routers mounted at / keep unknown routes 404 instead of 401", async () => {
   const app = createApp({ verify: async () => null, log: false });
   assert.equal((await app.request("/api/v1/nope")).status, 404);
-  assert.equal((await app.request("/api/v1/claims/abc")).status, 404);
+  assert.equal((await app.request("/api/v1/nope/abc")).status, 404);
 });
 
 test("filterText strips PostgREST filter syntax", () => {
