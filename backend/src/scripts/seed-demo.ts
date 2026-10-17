@@ -296,9 +296,9 @@ const IG_STORY_JOB = "00000000-0000-4000-7000-000000000302";
 const L = (n: number) => `00000000-0000-4000-7000-0000000002${String(n).padStart(2, "0")}`;
 const demoListings: DemoListing[] = [
   { id: L(1), seller: "tutor_ava", category: "textbook", title: "Chemistry: The Central Science (14th ed.)", textbook_title: "Chemistry: The Central Science", authors: ["Brown", "LeMay", "Bursten"], edition: "14", isbn: "9780134414232", price_cents: 4500, condition: "good", courses: [course.CH101, course.CH102], description: "Used for CH 101 and 102. Some highlighting in ch. 1-6, no torn pages." },
-  { id: L(2), seller: "seller", category: "textbook", title: "Calculus: Early Transcendentals (9th ed.)", textbook_title: "Calculus: Early Transcendentals", authors: ["Stewart"], edition: "9", isbn: "9781337613927", price_cents: 6000, condition: "like_new", courses: [course.MATH125, course.MATH126], description: "Barely opened. Comes with the WebAssign card (unused)." },
-  { id: L(3), seller: "tutor_marcus", category: "textbook", title: "Principles of Microeconomics (Mankiw, 9th ed.)", textbook_title: "Principles of Microeconomics", authors: ["Mankiw"], edition: "9", isbn: "9780357133484", price_cents: 3500, condition: "good", courses: [course.EC110], description: "EC 110 book. Clean copy." },
-  { id: L(4), seller: "tutor_priya", category: "dorm", title: "Mini fridge (3.1 cu ft)", price_cents: 7000, condition: "good", courses: [], description: "Works great, moving off campus. Pick up at Presidential." },
+  { id: L(2), seller: "tutor_ava", category: "textbook", title: "Calculus: Early Transcendentals (9th ed.)", textbook_title: "Calculus: Early Transcendentals", authors: ["Stewart"], edition: "9", isbn: "9781337613927", price_cents: 6000, condition: "like_new", courses: [course.MATH125, course.MATH126], description: "Barely opened. Comes with the WebAssign card (unused)." },
+  { id: L(3), seller: "tutor_ava", category: "textbook", title: "Principles of Microeconomics (Mankiw, 9th ed.)", textbook_title: "Principles of Microeconomics", authors: ["Mankiw"], edition: "9", isbn: "9780357133484", price_cents: 3500, condition: "good", courses: [course.EC110], description: "EC 110 book. Clean copy." },
+  { id: L(4), seller: "tutor_ava", category: "dorm", title: "Mini fridge (3.1 cu ft)", price_cents: 7000, condition: "good", courses: [], description: "Works great, moving off campus. Pick up at Presidential." },
 ];
 
 /** Feed listings, plus one unclaimed Instagram post: an offer on it DMs the real account a claim link. */
