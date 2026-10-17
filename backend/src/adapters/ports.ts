@@ -26,6 +26,41 @@ export interface TextbookGuess {
   source?: "vision" | "caption";
   /** One line on how it was recognised, e.g. "Cover title and edition match a CH 101 book". */
   evidence?: string;
+  /** Any item, not just books (Gemma reads mini fridges and calculators too). Unset → textbook if there's an ISBN. */
+  category?: "textbook" | "lab_supplies" | "dorm" | "ticket" | "other";
+  /** The model's own resale estimate, used only when the caption has no price and there are no comparable listings. */
+  estimatedPriceCents?: number | null;
+  /** One line on the estimate, e.g. "Used TI-84s go for $50–70; screen is scuffed". */
+  priceReason?: string;
+}
+
+/** A typed question for JEV's decision mode. noul = yes/no, score = 0–5, choice = 2–16 options. */
+export type DecisionKind = "noul" | "choice" | "score";
+export interface DecisionQuestion {
+  /** Name the answer comes back under. */
+  key: string;
+  kind: DecisionKind;
+  question: string;
+  /** Choice options only; noul and score have fixed ones. */
+  options?: string[];
+}
+
+export interface Decision {
+  kind: DecisionKind;
+  options: string[];
+  /** Calibrated, aligned with `options`. */
+  probabilities: number[];
+  /** Most likely option. */
+  pick: string;
+  /** noul: P(true). score: expected level 0–5. choice: P(pick). */
+  value: number;
+}
+
+export type Decisions = Record<string, Decision>;
+
+/** JEV: text state + typed questions → calibrated answers. Null when no model is reachable, so callers use rules. */
+export interface Decider {
+  decide(state: string, questions: DecisionQuestion[]): Promise<Decisions | null>;
 }
 
 /** A book some class at the school requires (course_materials), so the photo can be matched to it. */

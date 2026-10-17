@@ -1,5 +1,6 @@
 import { serve } from "@hono/node-server";
 import { claudeTextbookIdentifier } from "./adapters/claude-vision.js";
+import { gemmaIdentifier, jevDecider, noDecider, offlineAiQueue, supabaseAiQueue } from "./adapters/local-ai.js";
 import { instagramGraph } from "./adapters/instagram.js";
 import { libcalAvailability } from "./adapters/libcal.js";
 import { libcalPlaywrightBooker } from "./adapters/libcal-booker.js";
@@ -21,9 +22,14 @@ const rooms = config.ROOM_BOOKER === "demo"
 
 const useClaude = config.IDENTIFIER === "claude" || (config.IDENTIFIER === "auto" && !!config.ANTHROPIC_API_KEY);
 if (useClaude && !config.ANTHROPIC_API_KEY) throw new Error("IDENTIFIER=claude needs ANTHROPIC_API_KEY");
-const identifier = useClaude && config.ANTHROPIC_API_KEY
+const cloudIdentifier = useClaude && config.ANTHROPIC_API_KEY
   ? claudeTextbookIdentifier({ apiKey: config.ANTHROPIC_API_KEY, model: config.CLAUDE_VISION_MODEL, fallback: captionTextbookIdentifier })
   : captionTextbookIdentifier;
+const aiQueue = config.AI === "laptop" ? supabaseAiQueue() : offlineAiQueue;
+const identifier = config.AI === "laptop" && config.IDENTIFIER !== "caption"
+  ? gemmaIdentifier({ queue: aiQueue, fallback: cloudIdentifier, timeoutMs: config.AI_VISION_TIMEOUT_MS })
+  : cloudIdentifier;
+const decider = config.AI === "laptop" ? jevDecider(aiQueue, config.AI_DECIDE_TIMEOUT_MS) : noDecider;
 
 if (config.INSTAGRAM === "graph" && !config.INSTAGRAM_ACCESS_TOKEN) throw new Error("INSTAGRAM=graph needs INSTAGRAM_ACCESS_TOKEN");
 const instagram = config.INSTAGRAM === "graph" && config.INSTAGRAM_ACCESS_TOKEN
@@ -64,6 +70,8 @@ const app = createApp({
   rooms,
   roomAvailability: config.LIBCAL === "on" ? libcalAvailability() : noRoomAvailability,
   identifier,
+  decider,
+  aiQueue,
   instagram: instagram ?? stories,
   payments: config.PAYMENTS,
   feeBps: config.PLATFORM_FEE_BPS,
@@ -72,7 +80,7 @@ const app = createApp({
 });
 
 serve({ fetch: app.fetch, port: config.PORT }, (info) => {
-  console.log(`API listening on http://localhost:${info.port}/api/v1 (rooms: ${config.ROOM_BOOKER}, libcal: ${config.LIBCAL}, payments: ${config.PAYMENTS}, identifier: ${useClaude ? "claude" : "caption"}, instagram: ${config.INSTAGRAM}, timers: ${config.ORDER_TIMERS})`);
+  console.log(`API listening on http://localhost:${info.port}/api/v1 (rooms: ${config.ROOM_BOOKER}, libcal: ${config.LIBCAL}, payments: ${config.PAYMENTS}, identifier: ${config.AI === "laptop" ? "gemma→" : ""}${useClaude ? "claude" : "caption"}, ai: ${config.AI}, instagram: ${config.INSTAGRAM}, timers: ${config.ORDER_TIMERS})`);
   (instagram ?? stories)?.start();
   timers?.start();
 });

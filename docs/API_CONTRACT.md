@@ -226,7 +226,7 @@ Transcript parsing is **review-then-confirm**: grades only count as `grade_verif
   "PATCH /listings/{id}":     { "req": "any POST /listings field", "res": "Listing" },
   "DELETE /listings/{id}":    { "res": "204 (sets status=removed)" },
   "GET /me/listings":         { "query": { "status": "string?" }, "res": ["Listing"] },
-  "POST /listings/from-screenshot":   { "req": { "media_ids": ["uuid"] }, "res": { "job_id": "uuid" }, "job_result": { "draft": "POST /listings req", "confidence": "number", "missing_fields": ["string"] } },
+  "POST /listings/from-screenshot":   { "req": { "media_ids": ["uuid"] }, "res": { "job_id": "uuid" }, "job_result": { "draft": "POST /listings req", "confidence": "number", "missing_fields": ["string"], "price_source": "screenshot|comparable_listings|ai_estimate|null", "price_reason": "string? (only for ai_estimate)" } },
   "POST /listings/identify-textbook": { "req": { "media_id": "uuid" }, "res": { "job_id": "uuid" }, "job_result": { "isbn": "string", "title": "string", "edition": "string?", "matched_courses": ["Course"], "suggested_price_cents": "cents?" } },
 
   "GET /me/wishlist":         { "res": ["WishlistItem"] },
@@ -243,6 +243,9 @@ Transcript parsing is **review-then-confirm**: grades only count as `grade_verif
   "POST /offers/{id}/decline":  { "res": "Offer" },
   "POST /offers/{id}/withdraw": { "res": "Offer" },
   "POST /listings/{id}/auto-bargain": { "req": { "max_price_cents": "cents", "style": "quick|balanced|patient" }, "res": { "session_id": "uuid", "status": "negotiating|deal_found|no_deal" } },
+  "POST /listings/{id}/haggle": { "req": { "message": "string", "history": [{ "from": "buyer|seller", "text": "string" }], "last_counter_cents": "cents?", "place_offer": "bool (default true)" }, "res": { "intent": "offer|accept|decline|question|logistics|spam", "amount_cents": "cents?", "action": "accept|counter|hold_firm|reply|warn|ignore", "price_cents": "cents?", "reply": "string", "scam_flags": ["off_platform_payment|urgency_pressure|meetup_change|phishing"], "reported": "bool", "seriousness": "number 0-5", "engine": "jev|rules", "decisions": "{ key: { pick, value, probabilities } }? (JEV only)", "proposed_offer": "Offer? (set when action=accept)" } },
+  "POST /ai/listing-review":  { "req": { "title": "string", "description": "string?", "category": "textbook|lab_supplies|dorm|ticket|other", "price_cents": "cents", "isbn": "string?" }, "res": { "allowed": "bool", "blocked_reasons": ["string"], "warnings": ["string"], "suggested_category": "string?", "engine": "jev|none", "decisions": "object?" } },
+  "GET /ai/status":           { "auth": "none", "res": { "online": "bool", "kinds": ["gemma_vision|jev_decide"], "models": "object", "last_seen_at": "ts?" } },
   "GET /auto-bargain/{id}":   { "res": { "status": "negotiating|deal_found|no_deal", "rounds": [{ "by": "buyer_agent|seller_agent", "amount_cents": "cents", "at": "ts" }], "proposed_offer": "Offer?" } },
 
   "GET /orders/{id}":         { "res": "Order" },

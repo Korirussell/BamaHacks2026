@@ -1,9 +1,11 @@
 import { z } from "zod";
+import { decider } from "../lib/ai.js";
 import { notify } from "../lib/notify.js";
 import { adminClient } from "../lib/supabase.js";
 import { SuggestedTrade, WishlistItem } from "../schemas/wishlist.js";
 import {
-  matchesToAlert, suggestTrades, wishlistMatches, type Candidate, type WishItem, type WishMatch,
+  matchesToAlert, semanticCandidates, semanticQuestion, semanticState, suggestTrades, wishlistMatches, SEMANTIC_MIN_SCORE,
+  type Candidate, type WishItem, type WishMatch,
 } from "../services/wishlist.js";
 import { CourseRow, toCourse } from "./academics.js";
 import { LISTING_SELECT, ListingRow, listingsOut, type Viewer } from "./market.js";
@@ -104,7 +106,9 @@ export async function notifyWishlistMatch(row: ListingRow, from: string): Promis
   let query = db.from("wishlist_items").select(WISHLIST_SELECT).eq("school_id", row.school_id).eq("alert", true).or(targets.join(","));
   if (row.seller_id) query = query.neq("user_id", row.seller_id);
   const items = z.array(WishlistRow).parse(check(await query.limit(1000)));
-  const matches = matchesToAlert(items.map(toWishItem), toCandidate(row));
+  const wishItems = items.map(toWishItem);
+  const candidate = toCandidate(row);
+  const matches = [...matchesToAlert(wishItems, candidate), ...await semanticMatches(wishItems, candidate)];
   if (!matches.length) return 0;
 
   const prefs = z.array(Prefs).parse(check(await db.from("profiles").select("id, notification_prefs").in("id", matches.map((m) => m.userId))));
@@ -119,6 +123,16 @@ export async function notifyWishlistMatch(row: ListingRow, from: string): Promis
     data: { wishlist_item_id: m.itemId, listing_id: row.id },
   })));
   return told.length;
+}
+
+/** Keyword wishes JEV scores as a real match even though the words differ. [] when JEV is offline. */
+async function semanticMatches(items: WishItem[], listing: Candidate): Promise<WishMatch[]> {
+  const exact = new Set(matchesToAlert(items, listing).map((m) => m.userId));
+  const asks = semanticCandidates(items, listing, exact);
+  if (!asks.length) return [];
+  const d = await decider().decide(semanticState(listing), asks.map(semanticQuestion));
+  if (!d) return [];
+  return asks.flatMap((item, i) => (d[`wish_${i}`]?.value ?? 0) >= SEMANTIC_MIN_SCORE ? [{ itemId: item.id, userId: item.userId, listingId: listing.id }] : []);
 }
 
 /** SuggestedTrade objects for the viewer looking at `row` (empty for their own or unclaimed listings). */

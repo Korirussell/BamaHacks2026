@@ -16,6 +16,7 @@ import { draftFromScreenshot, suggestedPrice } from "../services/listing-draft.j
 import { normalizeIsbn } from "../services/materials.js";
 import { ticketFields, ticketInputOf } from "../services/tickets.js";
 import { knownBooks, materialsFor, notifyMaterialMatch } from "../workers/ingest.js";
+import { reviewListing } from "./ai.js";
 
 const FEED_WINDOW = 100;
 const PageQuery = z.object({ cursor: z.string().regex(/^\d+$/).optional(), limit: z.coerce.number().int().min(1).max(50).default(20) });
@@ -91,6 +92,19 @@ async function startJob(
       if (saved.error) console.error(`Couldn't save ${kind} job ${jobId}`, saved.error.message);
     });
   return jobId;
+}
+
+/** Prices of similar listings for auto-pricing: same ISBN, else a full-text match on the item's title in its category. */
+export async function comparablePrices(schoolId: string, guess: { isbn: string | null; title: string; category?: string | undefined }) {
+  if (guess.isbn) return activePricesForIsbn(schoolId, guess.isbn);
+  const words = guess.title.toLowerCase().match(/[a-z0-9]+/g)?.filter((w) => w.length > 2).slice(0, 4) ?? [];
+  if (!words.length) return [];
+  let query = adminClient().from("listings").select("price_cents").eq("school_id", schoolId).in("status", ["active", "pending", "sold"])
+    .textSearch("search", words.join(" or "), { type: "websearch", config: "english" });
+  if (guess.category) query = query.eq("category", guess.category);
+  const r = await query.limit(30);
+  if (r.error) return [];
+  return z.array(z.object({ price_cents: z.number().int() })).parse(r.data).map((x) => x.price_cents);
 }
 
 async function activePricesForIsbn(schoolId: string, isbn: string) {
@@ -202,6 +216,11 @@ export const listingsRoutes = (verify: TokenVerifier, identifier: TextbookIdenti
     if (!body.fulfillment.length) throw new ApiError(400, "VALIDATION", "Invalid request", { fulfillment: "Pick at least one" });
     const ticket = await ticketFields(body.category, body.ticket, schoolId);
     await ownListingPhotos(id, body.media_ids);
+    if (body.publish) {
+      // JEV's listing gate: prohibited items never go live. Price/category warnings come from POST /ai/listing-review.
+      const verdict = await reviewListing(schoolId, { title: body.title, description: body.description, category: body.category, priceCents: body.price_cents, isbn });
+      if (!verdict.allowed) throw new ApiError(400, "VALIDATION", verdict.blocked_reasons[0] ?? "This listing can't be published", { title: "Not allowed on the marketplace" });
+    }
     const courseIds = body.course_ids.length ? [...new Set(body.course_ids)] : isbn ? await coursesForIsbn(schoolId, isbn) : [];
 
     const db = adminClient();
@@ -242,8 +261,11 @@ export const listingsRoutes = (verify: TokenVerifier, identifier: TextbookIdenti
         imageUrls: photos.map((p) => publicMediaUrl(p.bucket, p.path)), caption: "", knownBooks: await knownBooks(user.schoolId),
       });
       const isbn = guess.isbn ? normalizeIsbn(guess.isbn) : null;
-      const materials = isbn ? await materialsFor(user.schoolId, isbn) : [];
-      return { ...draftFromScreenshot(guess, materials, media_ids) };
+      const [materials, comps] = await Promise.all([
+        isbn ? materialsFor(user.schoolId, isbn) : Promise.resolve([]),
+        comparablePrices(user.schoolId, { isbn, title: guess.title, category: guess.category }),
+      ]);
+      return { ...draftFromScreenshot(guess, materials, media_ids, comps) };
     });
     return c.json(one({ job_id: jobId }), 202);
   })
