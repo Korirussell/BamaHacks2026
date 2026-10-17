@@ -7,6 +7,7 @@ import { captionTextbookIdentifier, demoRoomBooker, manualRoomBooker, noRoomAvai
 import { createApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import { instagramPoller } from "./workers/instagram-poller.js";
+import { instagramStoriesPoller } from "./workers/instagram-stories.js";
 
 const config = loadConfig();
 const manualRooms = manualRoomBooker(config.ROOM_BOOKING_URL);
@@ -34,12 +35,29 @@ const instagram = config.INSTAGRAM === "graph" && config.INSTAGRAM_ACCESS_TOKEN
   })
   : null;
 
+if (config.INSTAGRAM === "stories" && (!config.INSTAGRAM_ACCESS_TOKEN || !config.INSTAGRAM_SELLER_TOKEN)) {
+  throw new Error("INSTAGRAM=stories needs INSTAGRAM_ACCESS_TOKEN (our account) and INSTAGRAM_SELLER_TOKEN (the seller account)");
+}
+const stories = config.INSTAGRAM === "stories" && config.INSTAGRAM_ACCESS_TOKEN && config.INSTAGRAM_SELLER_TOKEN
+  ? instagramStoriesPoller({
+    platform: instagramGraph({ token: config.INSTAGRAM_ACCESS_TOKEN, userId: config.INSTAGRAM_USER_ID, host: config.INSTAGRAM_GRAPH_URL }),
+    seller: instagramGraph({ token: config.INSTAGRAM_SELLER_TOKEN, host: config.INSTAGRAM_GRAPH_URL }),
+    sellerUsername: config.INSTAGRAM_SELLER_USERNAME,
+    sellerIgsid: config.INSTAGRAM_SELLER_IGSID,
+    identifier,
+    schoolId: config.INSTAGRAM_SCHOOL_ID,
+    appName: config.APP_NAME,
+    autoDm: config.INSTAGRAM_AUTO_REPLY === "on",
+    intervalMs: config.INSTAGRAM_POLL_SECONDS * 1000,
+  })
+  : null;
+
 const app = createApp({
   webOrigin: config.WEB_ORIGIN,
   rooms,
   roomAvailability: config.LIBCAL === "on" ? libcalAvailability() : noRoomAvailability,
   identifier,
-  instagram,
+  instagram: instagram ?? stories,
   payments: config.PAYMENTS,
   feeBps: config.PLATFORM_FEE_BPS,
   appName: config.APP_NAME,
@@ -47,5 +65,5 @@ const app = createApp({
 
 serve({ fetch: app.fetch, port: config.PORT }, (info) => {
   console.log(`API listening on http://localhost:${info.port}/api/v1 (rooms: ${config.ROOM_BOOKER}, libcal: ${config.LIBCAL}, payments: ${config.PAYMENTS}, identifier: ${useClaude ? "claude" : "caption"}, instagram: ${config.INSTAGRAM})`);
-  instagram?.start();
+  (instagram ?? stories)?.start();
 });
