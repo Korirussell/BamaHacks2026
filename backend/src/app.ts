@@ -84,6 +84,7 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     log = true,
   } = deps;
 
+  // WEB_ORIGIN may list several origins (comma-separated, e.g. localhost and the Vercel deploy); the first is the app URL in links.
   const market: MarketConfig = { feeBps, appUrl: primaryOrigin(webOrigin), appName, ...(instagram ? { outreach: instagram.outreach } : {}) };
 
   const api = new Hono()
