@@ -1,9 +1,8 @@
 'use client';
 import Link from 'next/link';
-import { use, useRef, useState } from 'react';
+import { use, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { motion, useMotionValue, useReducedMotion, useSpring } from 'framer-motion';
-import { ArrowLeft, ExternalLink } from 'lucide-react';
+import { ArrowLeft, ExternalLink, Heart, Share2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { copy, copy2 } from '@/lib/copy';
 import { money } from '@/lib/money';
@@ -12,33 +11,10 @@ import { useDemo, useMockLoad } from '@/lib/store';
 import { BidBubbles } from '@/components/BidBubbles';
 import { InterestSheet } from '@/components/InterestSheet';
 import { PaySheet } from '@/components/PaySheet';
-import { EmptyState, ErrorState, GhostBadge, Pill, PillLink, PriceTag, ReliabilityBadge, Skeleton, Tag, tileBg } from '@/components/ui';
+import { ListingGallery } from '@/components/ListingGallery';
+import { EmptyState, ErrorState, GhostBadge, Pill, PillLink, PriceTag, ReliabilityBadge, Skeleton, Tag } from '@/components/ui';
 
 const COND: Record<string, string> = { new: 'New', like_new: 'Like new', good: 'Good', fair: 'Fair', poor: 'Poor' };
-
-function TiltTile({ emoji, tile, children }: { emoji: string; tile: 'peach' | 'mint' | 'butter'; children?: React.ReactNode }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const reduce = useReducedMotion();
-  const rx = useSpring(useMotionValue(0), { stiffness: 200, damping: 18 });
-  const ry = useSpring(useMotionValue(0), { stiffness: 200, damping: 18 });
-  return (
-    <motion.div
-      ref={ref}
-      onMouseMove={e => {
-        if (reduce || !ref.current) return;
-        const r = ref.current.getBoundingClientRect();
-        ry.set(((e.clientX - r.left) / r.width - 0.5) * 12);
-        rx.set(-((e.clientY - r.top) / r.height - 0.5) * 12);
-      }}
-      onMouseLeave={() => { rx.set(0); ry.set(0); }}
-      style={{ rotateX: rx, rotateY: ry, transformPerspective: 900, background: tileBg(tile) }}
-      className="stk relative flex aspect-square w-full items-center justify-center rounded-[24px]"
-    >
-      <span style={{ fontSize: 120, lineHeight: 1 }} aria-hidden>{emoji}</span>
-      {children}
-    </motion.div>
-  );
-}
 
 export default function ListingDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -47,14 +23,15 @@ export default function ListingDetail({ params }: { params: Promise<{ id: string
   const [pay, setPay] = useState(false);
   const { status, retry } = useMockLoad([id]);
   const [want, setWant] = useState(false);
+  const [saved, setSaved] = useState(false);
   const listing = listings.find(l => l.id === id);
 
   if (status === 'error') return <ErrorState onRetry={retry} />;
   if (status === 'loading')
     return (
-      <div className="mx-auto grid max-w-[1100px] gap-10 md:grid-cols-2">
-        <Skeleton className="aspect-square w-full rounded-[24px]" />
-        <div className="space-y-4"><Skeleton className="h-10 w-3/4" /><Skeleton className="h-8 w-1/3" /><Skeleton className="h-24 w-full" /><Skeleton className="h-14 w-full rounded-full" /></div>
+      <div className="mx-auto grid max-w-[1100px] gap-10 min-[900px]:grid-cols-2">
+        <Skeleton className="aspect-[4/5] w-full rounded-2xl" />
+        <div className="space-y-4"><Skeleton className="h-10 w-3/4" /><Skeleton className="h-8 w-1/3" /><Skeleton className="h-24 w-full" /><Skeleton className="h-14 w-full rounded-xl" /></div>
       </div>
     );
   if (!listing) return <EmptyState emoji="🔎" line="That listing's gone. Maybe someone already made the handoff." action={<PillLink href="/feed" size="sm">Back to the feed</PillLink>} />;
@@ -63,40 +40,69 @@ export default function ListingDetail({ params }: { params: Promise<{ id: string
   const seller = userById(listing.seller_id);
   const listingBids = bids.filter(b => b.listing_id === listing.id);
   const claimedFromIg = !ghost && listing.source.channel === 'instagram';
+  const share = () => {
+    if (typeof navigator !== 'undefined' && navigator.share) navigator.share({ title: listing.title, url: window.location.href }).catch(() => {});
+    else toast('Link copied');
+  };
+
+  const buyBar = (
+    <div className="flex flex-col gap-3 sm:flex-row">
+      <Pill className="flex-1" onClick={() => setPay(true)}>
+        {listing.id === 'l_owala' ? copy2.buy.cta : `Buy · ${money(listing.price_cents)}`}
+      </Pill>
+      {listing.id === 'l_fridge' ? (
+        <PillLink href="/offers/t_fridge" variant="neutral" className="flex-1">Make offer</PillLink>
+      ) : (
+        <Pill variant="neutral" className="flex-1" onClick={() => toast(`Offer sent to ${seller?.display_name ?? 'the seller'}. Thread expires in 47h.`)}>Make offer</Pill>
+      )}
+    </div>
+  );
 
   return (
-    <div className="mx-auto max-w-[1100px]">
-      <button onClick={() => router.back()} className="label mb-5 inline-flex items-center gap-1.5 text-[12px] text-soft hover:text-ink"><ArrowLeft size={16} strokeWidth={2.6} /> Back</button>
-      <div className="grid gap-10 md:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
-        <div className="md:sticky md:top-8 md:self-start">
-          <TiltTile emoji={listing.emoji} tile={listing.tile}>
-            <div className="absolute left-4 top-4">
-              {ghost && listing.source.author_handle ? <GhostBadge handle={listing.source.author_handle} /> : listing.tag ? <Tag>{listing.tag}</Tag> : null}
-            </div>
-          </TiltTile>
+    <div className="mx-auto max-w-[1100px] pb-24 min-[900px]:pb-0">
+      <button onClick={() => router.back()} className="mb-5 inline-flex items-center gap-1.5 text-[13px] font-semibold text-soft hover:text-ink"><ArrowLeft size={16} strokeWidth={2.4} /> Back</button>
+      <div className="grid gap-10 min-[900px]:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
+        <div className="min-[900px]:sticky min-[900px]:top-8 min-[900px]:self-start">
+          <ListingGallery listing={listing} saved={saved} onToggleSaved={() => setSaved(s => !s)} />
         </div>
 
         <div className="min-w-0">
-          <h1 className="font-display text-[34px] font-bold">{listing.title}</h1>
-          <div className="mt-4"><PriceTag listing={listing} big /></div>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <span className="rounded-full border-2 border-ink bg-card px-3 py-1 text-[12px] font-extrabold">{COND[listing.condition]}</span>
-            {listing.negotiable && <span className="rounded-full border-2 border-ink bg-card px-3 py-1 text-[12px] font-extrabold">Negotiable</span>}
-            {listing.location_label && <span className="rounded-full border-2 border-ink bg-card px-3 py-1 text-[12px] font-extrabold">📍 {listing.location_label}</span>}
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              {ghost && listing.source.author_handle ? <GhostBadge handle={listing.source.author_handle} /> : listing.tag ? <Tag>{listing.tag}</Tag> : null}
+              <h1 className="mt-2 text-[28px] font-bold text-ink">{listing.title}</h1>
+            </div>
+            <div className="flex shrink-0 gap-2">
+              <button onClick={() => setSaved(s => !s)} aria-label={saved ? 'Remove from wishlist' : 'Save to wishlist'} aria-pressed={saved} className="flex h-10 w-10 items-center justify-center rounded-full bg-img-bg active:scale-90">
+                <Heart size={17} strokeWidth={2.2} className={saved ? 'fill-accent text-accent' : 'text-ink'} />
+              </button>
+              <button onClick={share} aria-label="Share" className="flex h-10 w-10 items-center justify-center rounded-full bg-img-bg active:scale-90">
+                <Share2 size={16} strokeWidth={2.2} />
+              </button>
+            </div>
           </div>
-          <p className="mt-5 text-[16px] font-medium leading-relaxed">{listing.description}</p>
 
-          <div className="mt-6 flex items-center gap-3 rounded-[18px] border-2 border-ink bg-card p-3.5 shadow-[3px_3px_0_var(--shadow)]">
-            <span className="flex h-11 w-11 items-center justify-center rounded-full border-2 border-ink bg-sunk text-2xl" aria-hidden>{ghost ? '📸' : seller?.avatar_emoji}</span>
+          <div className="mt-3"><PriceTag listing={listing} big /></div>
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            <span className="rounded-full bg-img-bg px-3 py-1 text-[12.5px] font-medium text-ink">{COND[listing.condition]}</span>
+            {listing.negotiable && <span className="rounded-full bg-img-bg px-3 py-1 text-[12.5px] font-medium text-ink">Negotiable</span>}
+            {listing.location_label && <span className="rounded-full bg-img-bg px-3 py-1 text-[12.5px] font-medium text-ink">📍 {listing.location_label}</span>}
+          </div>
+
+          <p className="mt-5 text-[15.5px] leading-relaxed text-ink">{listing.description}</p>
+
+          <div className="mt-6 flex items-center gap-3 rounded-2xl bg-card-bg p-3.5">
+            <span className="flex h-11 w-11 items-center justify-center rounded-full bg-img-bg text-xl" aria-hidden>{ghost ? '📸' : seller?.avatar_emoji}</span>
             <div className="min-w-0">
               {ghost ? (
                 <>
-                  <p className="font-extrabold">{listing.source.author_handle}</p>
-                  <p className="text-[13px] font-semibold text-soft">{copy.ghost.label}</p>
+                  <p className="font-semibold text-ink">{listing.source.author_handle}</p>
+                  <p className="text-[13px] font-medium text-meta">{copy.ghost.label}</p>
                 </>
               ) : (
                 <>
-                  <p className="font-extrabold">{seller?.display_name} <span className="font-semibold text-soft">· {seller?.major}</span></p>
+                  <p className="font-semibold text-ink">{seller?.display_name} <span className="font-medium text-meta">· {seller?.major}</span></p>
                   {seller && <div className="mt-1"><ReliabilityBadge r={seller.reliability} /></div>}
                 </>
               )}
@@ -105,58 +111,56 @@ export default function ListingDetail({ params }: { params: Promise<{ id: string
 
           {ghost && (
             <>
-              <div className="mt-6 rounded-[20px] p-[3px] ig-grad">
-                <div className="rounded-[17px] bg-card p-4">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[13px] font-extrabold">{listing.source.author_handle} <span className="font-semibold text-soft">· {listing.source.posted_ago}</span></span>
-                    <span className="label text-[10.5px] text-soft">Instagram post</span>
-                  </div>
-                  <p className="mt-2 text-[16px] font-semibold italic">&ldquo;{listing.source.post_caption}&rdquo;</p>
-                  <a href={listing.source.post_url} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1 text-[13px] font-extrabold text-accent-text hover:underline">View on Instagram <ExternalLink size={13} /></a>
+              <div className="mt-6 rounded-2xl bg-card-bg p-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-[13px] font-semibold text-ink">{listing.source.author_handle} <span className="font-medium text-meta">· {listing.source.posted_ago}</span></span>
+                  <span className="text-[10.5px] font-semibold uppercase tracking-wide text-meta">Instagram post</span>
                 </div>
+                <p className="mt-2 text-[15px] font-medium italic text-ink">&ldquo;{listing.source.post_caption}&rdquo;</p>
+                <a href={listing.source.post_url} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1 text-[13px] font-semibold text-accent-text hover:underline">View on Instagram <ExternalLink size={13} /></a>
               </div>
 
               <div className="mt-6 flex items-center justify-between">
-                <h2 className="font-display text-[21px] font-bold">🔥 {listing.interest?.count ?? 0} people want this</h2>
+                <h2 className="text-[20px] font-bold text-ink">🔥 {listing.interest?.count ?? 0} people want this</h2>
               </div>
               <div className="mt-4"><BidBubbles bids={listingBids} /></div>
 
               <div className="sticky bottom-[84px] z-20 mt-6 min-[900px]:bottom-6">
                 <Pill variant="butter" size="lg" className="w-full" onClick={() => setWant(true)}>{copy.ghost.cta}</Pill>
               </div>
-              <p className="mt-3 text-center text-[12.5px] font-semibold text-soft">{copy.ghost.fineprint}</p>
+              <p className="mt-3 text-center text-[12.5px] font-medium text-meta">{copy.ghost.fineprint}</p>
             </>
           )}
 
           {!ghost && claimedFromIg && listingBids.length > 0 && (
             <>
-              <h2 className="font-display mt-7 text-[21px] font-bold">Offers waiting</h2>
+              <h2 className="mt-7 text-[20px] font-bold text-ink">Offers waiting</h2>
               <div className="mt-4">
                 <BidBubbles bids={listingBids} onAccept={b => toast(`Accepted ${money(b.amount_cents)} from ${userById(b.user_id)?.display_name ?? 'you'}. We'll find a spot.`)} />
               </div>
             </>
           )}
 
+          {!ghost && <div className="mt-7 hidden min-[900px]:block">{buyBar}</div>}
           {!ghost && (
-            <div className="mt-7 flex flex-wrap gap-3">
-              <Pill className="flex-1" onClick={() => setPay(true)}>
-                {listing.id === 'l_owala' ? copy2.buy.cta : `Buy · ${money(listing.price_cents)}`}
-              </Pill>
-              {listing.id === 'l_fridge' ? (
-                <PillLink href="/offers/t_fridge" variant="neutral" className="flex-1">Make offer</PillLink>
-              ) : (
-                <Pill variant="neutral" className="flex-1" onClick={() => toast(`Offer sent to ${seller?.display_name ?? 'the seller'}. Thread expires in 47h.`)}>Make offer</Pill>
-              )}
-            </div>
-          )}
-          {!ghost && (
-            <p className="mt-3 text-[12.5px] font-semibold text-soft">
+            <p className="mt-3 text-[12.5px] font-medium text-meta">
               {!listing.negotiable && seller ? `You're agreeing to ${seller.display_name.split(' ')[0]}'s price. ` : ''}🔒 Money&apos;s held until it&apos;s in your hands.
             </p>
           )}
-          <p className="mt-8 text-[12px] font-semibold text-soft"><Link href="/feed" className="hover:underline">← More from University of Alabama</Link></p>
+          <p className="mt-8 text-[12px] font-medium text-meta"><Link href="/feed" className="hover:underline">← More from University of Alabama</Link></p>
         </div>
       </div>
+
+      {!ghost && (
+        <div className="fixed inset-x-0 bottom-[68px] z-30 flex items-center gap-3 border-t border-v3-divider bg-card-bg px-4 py-3 min-[900px]:hidden">
+          <div className="shrink-0">
+            <div className="text-[17px] font-bold tabular-nums text-ink">{money(listing.price_cents)}</div>
+            <div className="text-[11.5px] font-medium text-meta">{COND[listing.condition]}</div>
+          </div>
+          <div className="flex flex-1 gap-2">{buyBar}</div>
+        </div>
+      )}
+
       <InterestSheet listing={want ? listing : null} onClose={() => setWant(false)} />
       <PaySheet
         open={pay}

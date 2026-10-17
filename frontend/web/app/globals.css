@@ -21,6 +21,14 @@
   --map-road: #FFFFFF;
   --ig-pink: #DD2A7B;
   --dark-ink: #1A1414;
+  /* cards-v3: clean marketplace card tokens (docs/cards-v3.md §1) */
+  --card-bg: #FFFFFF;
+  --card-hover-shadow: 0 8px 24px rgba(26, 20, 20, .08);
+  --img-bg: #EFEAE3;
+  --meta: #7A6F6A;
+  --price-drop: #9E1B32;
+  --badge-bg: rgba(255, 255, 255, .82);
+  --v3-divider: rgba(26, 20, 20, .08);
 }
 
 .dark {
@@ -40,6 +48,13 @@
   --tape-ink: #161213;
   --map-ground: #1F2A24;
   --map-road: #2D3A32;
+  --card-bg: #1E1A1B;
+  --card-hover-shadow: 0 8px 24px rgba(0, 0, 0, .4);
+  --img-bg: #2A2425;
+  --meta: #A89D97;
+  --price-drop: #FF7088;
+  --badge-bg: rgba(22, 18, 19, .7);
+  --v3-divider: rgba(255, 255, 255, .08);
 }
 
 @theme inline {
@@ -59,6 +74,11 @@
   --color-tape-ink: var(--tape-ink);
   --color-ig-pink: var(--ig-pink);
   --color-dark-ink: var(--dark-ink);
+  --color-card-bg: var(--card-bg);
+  --color-img-bg: var(--img-bg);
+  --color-meta: var(--meta);
+  --color-price-drop: var(--price-drop);
+  --color-v3-divider: var(--v3-divider);
   --font-display: var(--font-fredoka), ui-rounded, system-ui, sans-serif;
   --font-sans: var(--font-archivo), system-ui, sans-serif;
 }
@@ -112,3 +132,14 @@ body {
 
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { scrollbar-width: none; }
+
+/* cards-v3: clean button/badge primitives (docs/cards-v3.md §5) — no outline, no offset shadow, radius 12 */
+.btn-clean { border-radius: 12px; transition: filter 150ms, transform 150ms; }
+.btn-clean:active { transform: scale(0.98); }
+.btn-primary-clean { background: var(--accent); color: var(--on-accent); }
+.btn-primary-clean:hover { filter: brightness(0.94); }
+.btn-secondary-clean { background: transparent; border: 1.5px solid var(--ink); color: var(--ink); }
+.btn-secondary-clean:hover { background: var(--img-bg); }
+.chip-clean { border-radius: 999px; background: var(--img-bg); color: var(--ink); transition: background 150ms, color 150ms; }
+.chip-clean[aria-selected="true"], .chip-clean[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+.glass-badge { background: var(--badge-bg); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); color: var(--ink); }

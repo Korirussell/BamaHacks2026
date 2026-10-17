@@ -8,9 +8,7 @@ import { copy, copy2 } from '@/lib/copy';
 import { notifications, wishlist } from '@/lib/data';
 import { WhyPanel } from '@/components/WhyPanel';
 import { useDemo, useMockLoad } from '@/lib/store';
-import type { Listing } from '@/lib/types';
 import { ListingCard, ListingCardSkeleton } from '@/components/ListingCard';
-import { InterestSheet } from '@/components/InterestSheet';
 import { ChipRow, EmptyState, ErrorState, PageTitle, PillLink } from '@/components/ui';
 
 type Chip = (typeof copy.chips)[number];
@@ -20,7 +18,6 @@ export default function Feed() {
   const { status, retry } = useMockLoad();
   const [chip, setChip] = useState<Chip>('All');
   const [q, setQ] = useState('');
-  const [want, setWant] = useState<Listing | null>(null);
   const [view, setView] = useState<'all' | 'foryou'>('all');
   useEffect(() => { if (new URLSearchParams(window.location.search).get('view') === 'foryou') setView('foryou'); }, []);
   const [why, setWhy] = useState<(typeof wishlist.for_you)[number] | null>(null);
@@ -72,12 +69,12 @@ export default function Feed() {
           <p className="mt-2 text-[13px] font-semibold text-soft">Ranked from your wishlist, budget, schedule and where you walk.</p>
           <div className="mt-4">
             {status === 'loading' ? (
-              <div className="grid grid-cols-2 gap-[14px] sm:grid-cols-[repeat(auto-fill,minmax(170px,1fr))] sm:gap-[18px]">{Array.from({ length: 5 }, (_, i) => <ListingCardSkeleton key={i} />)}</div>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-6 sm:grid-cols-[repeat(auto-fill,minmax(200px,1fr))] sm:gap-x-4 sm:gap-y-6">{Array.from({ length: 5 }, (_, i) => <ListingCardSkeleton key={i} />)}</div>
             ) : status === 'error' ? <ErrorState onRetry={retry} /> : forYou.length === 0 ? <EmptyState line="No matches for that one yet. We'll ping you." /> : (
-              <div className="grid grid-cols-2 gap-[14px] sm:grid-cols-[repeat(auto-fill,minmax(170px,1fr))] sm:gap-[18px]">
+              <div className="grid grid-cols-2 gap-x-3 gap-y-6 sm:grid-cols-[repeat(auto-fill,minmax(200px,1fr))] sm:gap-x-4 sm:gap-y-6">
                 {forYou.map(({ f, l }, i) => (
                   <motion.div key={l.id} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }} className="h-full">
-                    <ListingCard listing={l} reasonText={f.reason} onWhy={() => setWhy(f)} className="h-full" />
+                    <ListingCard listing={l} priority={i < 5} reasonText={f.reason} onWhy={() => setWhy(f)} className="h-full" />
                   </motion.div>
                 ))}
               </div>
@@ -96,13 +93,13 @@ export default function Feed() {
         {status === 'error' ? (
           <ErrorState onRetry={retry} />
         ) : status === 'loading' ? (
-          <div className="grid grid-cols-2 gap-[14px] sm:grid-cols-[repeat(auto-fill,minmax(170px,1fr))] sm:gap-[18px]">
+          <div className="grid grid-cols-2 gap-x-3 gap-y-6 sm:grid-cols-[repeat(auto-fill,minmax(200px,1fr))] sm:gap-x-4 sm:gap-y-6">
             {Array.from({ length: 8 }, (_, i) => <ListingCardSkeleton key={i} />)}
           </div>
         ) : shown.length === 0 ? (
           <EmptyState line={copy.empty.feed} action={<PillLink href="/post" size="sm">Post something</PillLink>} />
         ) : (
-          <motion.div layout className="grid grid-cols-2 gap-[14px] sm:grid-cols-[repeat(auto-fill,minmax(170px,1fr))] sm:gap-[18px]">
+          <motion.div layout className="grid grid-cols-2 gap-x-3 gap-y-6 sm:grid-cols-[repeat(auto-fill,minmax(200px,1fr))] sm:gap-x-4 sm:gap-y-6">
             <AnimatePresence initial={false}>
               {shown.map((l, i) => (
                 <motion.div
@@ -114,7 +111,7 @@ export default function Feed() {
                   transition={{ delay: Math.min(i, 8) * 0.03, type: 'spring', stiffness: 260, damping: 22 }}
                   className="h-full"
                 >
-                  <ListingCard listing={l} onWant={setWant} className="h-full" />
+                  <ListingCard listing={l} priority={i < 5} className="h-full" />
                 </motion.div>
               ))}
             </AnimatePresence>
@@ -122,7 +119,6 @@ export default function Feed() {
         )}
       </div>
       </>)}
-      <InterestSheet listing={want} onClose={() => setWant(null)} />
       <WhyPanel item={why} listing={why ? listings.find(l => l.id === why.listing_id) : undefined} onClose={() => setWhy(null)} />
     </div>
   );

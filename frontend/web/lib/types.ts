@@ -8,10 +8,12 @@ export type Listing = {
   id: string; title: string; description: string; category: 'textbook' | 'lab_supplies' | 'dorm' | 'ticket' | 'bike' | 'tech' | 'other';
   price_cents: Cents; negotiable: boolean; condition: 'new' | 'like_new' | 'good' | 'fair' | 'poor';
   emoji: string; tile: 'peach' | 'mint' | 'butter'; tag?: string | null; location_label?: string;
+  images?: string[];
   status: 'ghost' | 'active' | 'pending' | 'sold';
   seller_id?: string | null;
   source: { channel: 'native' | 'screenshot' | 'instagram'; author_handle?: string; post_caption?: string; post_url?: string; posted_ago?: string; claimed: boolean };
   fair_price?: { low_cents: Cents; high_cents: Cents };
+  original_price_cents?: Cents;
   interest?: { count: number; top_amount_cents?: Cents };
   reason?: 'your_class' | 'wishlist_match' | 'friend' | 'nearby' | 'new';
   created_at: string;

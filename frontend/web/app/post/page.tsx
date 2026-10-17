@@ -78,7 +78,7 @@ export default function Post() {
     const l: Listing = {
       id: `l_new_${Date.now()}`, title: form.title, description: form.description, category: r.category as Listing['category'],
       price_cents: Math.round(form.price * 100), negotiable: true, condition: (form.condition || 'good') as Listing['condition'],
-      emoji: '💡', tile: 'peach', tag: 'New', location_label: 'Tutwiler', status: 'active', seller_id: 'u_kori',
+      emoji: '💡', tile: 'peach', tag: 'New', location_label: 'Tutwiler', images: ['/listings/l_lamp-1.webp', '/listings/l_lamp-2.webp'], status: 'active', seller_id: 'u_kori',
       source: { channel: 'screenshot', author_handle: r.author_handle, claimed: true }, fair_price: r.fair_price, reason: 'new',
       created_at: new Date().toISOString(),
     };
@@ -91,7 +91,7 @@ export default function Post() {
     const r = photoResult;
     publishListing({
       id: 'l_mouse', title: r.title, description: r.description, category: 'tech', price_cents: photoPrice, negotiable: false,
-      condition: 'like_new', emoji: r.emoji, tile: 'mint', tag: 'Tech', location_label: 'Bevill', status: 'active', seller_id: 'u_kori',
+      condition: 'like_new', emoji: r.emoji, tile: 'mint', tag: 'Tech', location_label: 'Bevill', images: ['/listings/l_mouse-1.webp', '/listings/l_mouse-2.webp'], status: 'active', seller_id: 'u_kori',
       source: { channel: 'native', claimed: true }, fair_price: { low_cents: r.price_model.fast_cents, high_cents: r.price_model.max_cents }, reason: 'new',
       created_at: new Date().toISOString(),
     });

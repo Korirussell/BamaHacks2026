@@ -56,7 +56,7 @@ export default function Landing() {
               whileHover={{ rotate: 0, y: fanPose[i].y - 18, zIndex: 5, transition: { type: 'spring', stiffness: 300, damping: 18 } }}
               transition={{ delay: 0.15 + i * 0.1, type: 'spring', stiffness: 160, damping: 16 }}
             >
-              <ListingCard listing={l} static />
+              <ListingCard listing={l} static priority />
             </motion.div>
           ))}
         </div>
