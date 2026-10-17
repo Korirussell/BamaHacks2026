@@ -134,6 +134,11 @@ function forget(userId: string) {
   busyCache.delete(userId);
 }
 
+/** The calendar changed (push notification): the next freeBusy() call re-reads it from Google. */
+export function invalidateFreeBusy(userId: string) {
+  busyCache.delete(userId);
+}
+
 /** Drops the connection row and flag without telling Google (used when Google already revoked it). */
 async function disconnectLocally(userId: string) {
   forget(userId);

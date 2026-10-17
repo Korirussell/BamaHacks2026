@@ -20,7 +20,13 @@ const Media = z.object({
   width: z.number().int().nullable(),
   height: z.number().int().nullable(),
 });
-const Event = z.object({ id: Uuid, name: z.string(), kind: z.enum(["athletics", "concert", "other"]), starts_at: Timestamp, venue: z.string() });
+export const Event = z.object({ id: Uuid, name: z.string(), kind: z.enum(["athletics", "concert", "other"]), starts_at: Timestamp, venue: z.string() });
+
+const TicketTransfer = z.enum(["app_transfer", "in_person"]);
+const SeatPart = z.string().trim().min(1).max(20);
+export const TicketInput = z.object({
+  event_id: Uuid, section: z.string().trim().min(1).max(40), row: SeatPart.nullish(), seat: SeatPart.nullish(), transfer: TicketTransfer,
+});
 
 export const Listing = z.object({
   id: Uuid,
@@ -35,7 +41,7 @@ export const Listing = z.object({
   condition: Condition,
   media: z.array(Media),
   textbook: z.object({ isbn: z.string(), title: z.string(), authors: z.array(z.string()), edition: z.string().nullable(), courses: z.array(Course) }).nullable(),
-  ticket: z.object({ event: Event, section: z.string(), row: z.string().nullable(), seat: z.string().nullable(), transfer: z.enum(["app_transfer", "in_person"]) }).nullable(),
+  ticket: z.object({ event: Event, section: z.string(), row: z.string().nullable(), seat: z.string().nullable(), transfer: TicketTransfer }).nullable(),
   fulfillment: z.array(Fulfillment),
   status: z.enum(["draft", "active", "pending", "sold", "removed"]),
   source: z.object({ channel: z.enum(["native", "screenshot", "instagram", "groupme", "facebook", "snapchat"]), external_url: z.string().nullable(), claimed: z.boolean() }),
@@ -54,8 +60,7 @@ const ListingFields = {
   media_ids: z.array(Uuid),
   isbn: z.string().optional(),
   course_ids: z.array(Uuid),
-  // The request contract intentionally leaves ticket as an unspecified object.
-  ticket: z.object({}).passthrough().optional(),
+  ticket: TicketInput.optional(),
   fulfillment: z.array(Fulfillment),
   publish: z.boolean(),
 };
@@ -75,9 +80,13 @@ export const ExploreQuery = z.object({
 });
 export const FeedItem = z.object({ type: z.enum(["listing", "tutor", "ride", "ticket", "study_group"]), item: z.object({}).passthrough(), reason: z.enum(["wishlist_match", "your_class", "friend", "nearby", "new"]), reason_course: Course.nullable() });
 
+export const EventsQuery = z.object({ kind: Event.shape.kind.optional(), from: Timestamp.optional() });
+
 export type ExternalSeller = z.infer<typeof ExternalSeller>;
 export type Listing = z.infer<typeof Listing>;
 export type CreateListingReq = z.infer<typeof CreateListingReq>;
 export type PatchListingReq = z.infer<typeof PatchListingReq>;
 export type ExploreQuery = z.infer<typeof ExploreQuery>;
 export type FeedItem = z.infer<typeof FeedItem>;
+export type Event = z.infer<typeof Event>;
+export type TicketInput = z.infer<typeof TicketInput>;
