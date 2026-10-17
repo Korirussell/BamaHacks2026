@@ -12,7 +12,7 @@ import { PageTitle, Pill, StickerCard } from '@/components/ui';
 const STATUS_BG: Record<DmStatus, string> = { queued: 'bg-card', sent: 'bg-butter text-dark-ink', clicked: 'bg-mint text-dark-ink', claimed: 'bg-accent text-on-accent' };
 
 export default function DemoPanel() {
-  const { dm, mockMode, set, reset, celebrate, listings } = useDemo();
+  const { dm, mockMode, set, reset, celebrate, listings, zoe, maya } = useDemo();
   const { setTheme } = useTheme();
   const [scraping, setScraping] = useState(false);
   const bike = listings.find(l => l.id === 'l_bike');
@@ -56,6 +56,31 @@ export default function DemoPanel() {
           <div className="mt-4 flex flex-wrap gap-3">
             <Pill variant="butter" onClick={() => celebrate({ kind: 'touchdown', title: copy.celebrate.td, line: copy.celebrate.tdPaid })}>Touchdown</Pill>
             <Pill variant="butter" onClick={() => celebrate({ kind: 'fieldgoal', title: copy.celebrate.fg, line: copy.celebrate.fgLocked })}>Field goal</Pill>
+          </div>
+        </StickerCard>
+
+        <StickerCard className="p-5">
+          <h2 className="font-display text-[21px] font-bold">Flow A · Maya</h2>
+          <p className="mt-1 text-[13.5px] font-semibold text-soft">Request: <b className="text-ink">{maya}</b></p>
+          <div className="mt-4 flex flex-wrap gap-3">
+            <Pill onClick={() => { set(s => ({ ...s, maya: 'requested' })); toast('Maya wants your mouse · $25'); }}>Send Maya&apos;s buy request</Pill>
+            <Link href="/requests/br1" className="self-center text-[13px] font-extrabold text-accent-text hover:underline">Open request →</Link>
+          </div>
+        </StickerCard>
+
+        <StickerCard className="p-5">
+          <h2 className="font-display text-[21px] font-bold">Flow B · Zoe&apos;s locker</h2>
+          <p className="mt-1 text-[13.5px] font-semibold text-soft">Stage: <b className="text-ink">{zoe}</b></p>
+          <div className="mt-4 flex flex-wrap gap-3">
+            <Pill
+              onClick={() => {
+                set(s => ({ ...s, zoe: 'dropped', zoeSpot: s.zoeSpot ?? 'mz1' }));
+                toast('Your Owala is ready · Locker 14 · code 4821');
+              }}
+            >
+              Simulate locker drop-off
+            </Pill>
+            <Link href="/orders/o_owala" className="self-center text-[13px] font-extrabold text-accent-text hover:underline">Open chat →</Link>
           </div>
         </StickerCard>
 
@@ -115,7 +140,7 @@ export default function DemoPanel() {
         </StickerCard>
       </div>
       <div className="mt-8 flex flex-wrap gap-2 text-[12.5px] font-bold">
-        {[['/claim/abc123', 'Claim page'], ['/listings/l_bike', 'Ghost bike'], ['/meetup/o_fridge', 'Meetup'], ['/handoff/o_fridge', 'Handoff QR'], ['/post', 'Screenshot → listing'], ['/offers/t_fridge', 'Haggle (web)']].map(([h, l]) => (
+        {[['/claim/abc123', 'Claim page'], ['/listings/l_bike', 'Ghost bike'], ['/meetup/o_fridge', 'Meetup'], ['/handoff/o_fridge', 'Handoff QR'], ['/post', 'Screenshot → listing'], ['/offers/t_fridge', 'Haggle (web)'], ['/feed?view=foryou', 'For you'], ['/listings/l_owala', 'Owala'], ['/history', 'History']].map(([h, l]) => (
           <Link key={h} href={h} className="rounded-full border-2 border-ink bg-card px-3 py-1.5 hover:bg-butter hover:text-dark-ink">{l}</Link>
         ))}
       </div>
