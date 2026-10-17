@@ -1,0 +1,35 @@
+Handoff — iOS listing photo credits (cards-v3 §4)
+All photos downloaded from Unsplash, free to use under the Unsplash License
+(https://unsplash.com/license). Downloaded locally so the demo works offline.
+
+l_bike-1    Himiway Bikes (@himiwaybikes) — https://unsplash.com/photos/FNkigp4EftY
+l_bike-2    Gints Gailis — https://unsplash.com/photos/u8S1tPx6ccc
+l_fridge-1  Darrien Staton (@darestaton) — https://unsplash.com/photos/ZUhM8LE_HGc
+l_fridge-2  Humphrey M (@good_citizen) — https://unsplash.com/photos/3h7jbWXhpgM
+l_ti84-1    Sasun Bughdaryan — https://unsplash.com/photos/X4VwfPzy_2o
+l_ti84-2    Aaron Lefler (@alefler) — https://unsplash.com/photos/ySZdYkPGEbs
+l_cs201-1   unknown (Unsplash contributor) — https://unsplash.com/photos/w0ub5h1tbUM
+l_cs201-2   Beau Carpenter (@btcarpenter) — https://unsplash.com/photos/pTaQDMpOZn0
+l_ticket-1  T (@tanyabarrow) — https://unsplash.com/photos/GKItuYGlOfk
+l_goggles-1 unknown (Unsplash contributor) — https://unsplash.com/photos/PvkjMVHV5O4
+l_owala-1   unknown (Unsplash contributor) — https://unsplash.com/photos/g016_NJoOUk
+l_owala-2   Alexandra Tran (@alexgoesglobal) — https://unsplash.com/photos/NPybzV9xj7c
+l_owala-3   unknown (Unsplash contributor) — https://unsplash.com/photos/4Kd3svPFuEI
+l_lamp-1    Christian Mackie (@mackiec) — https://unsplash.com/photos/lDlU1zbjGQA
+l_lamp-2    unknown (Unsplash contributor) — https://unsplash.com/photos/ulftbH1sA0k
+l_hydro-1   Oleg Bilyk (@olegbilykpro) — https://unsplash.com/photos/axMEtSm42iQ
+l_hydro-2   Karl Köhler (@karlkoehler) — https://unsplash.com/photos/dGIEMeN2MV8
+l_mouse-1   Cemrecan Yurtman — https://unsplash.com/photos/JVUqiEc2Svc
+l_mouse-2   Homescreenify (@homescreenify) — https://unsplash.com/photos/b18ZsVX464c
+
+Note on l_mouse: cards-v3.md §4.1 calls for a real team-shot photo of the Logitech
+mouse used in the Sell-flow demo ("snap it" moment). No physical mouse/camera was
+available in this environment, so both l_mouse images use the documented Unsplash
+fallback ("wireless mouse" search) instead. Swap in a real photo before demo day if
+a teammate can shoot one — acceptance checklist item "Mouse demo uses a real photo
+the team took" is NOT yet satisfied.
+
+Note on l_cs201/l_goggles/l_owala-1/l_lamp-2: closest clean, product-centered
+Unsplash matches were generic (law books instead of a CS textbook; fashion
+eyeglasses instead of lab safety goggles) since exact-match product photography
+wasn't available for free. Swap for closer matches if someone has time before demo.

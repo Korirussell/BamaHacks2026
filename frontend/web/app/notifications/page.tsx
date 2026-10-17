@@ -1,0 +1,28 @@
+'use client';
+import Link from 'next/link';
+import { notifications } from '@/lib/data';
+import { useMockLoad } from '@/lib/store';
+import { EmptyState, ErrorState, PageTitle, Skeleton } from '@/components/ui';
+
+export default function Notifications() {
+  const { status, retry } = useMockLoad();
+  return (
+    <div className="mx-auto max-w-[760px]">
+      <PageTitle title="Notifications" />
+      <div className="space-y-3">
+        {status === 'error' ? <ErrorState onRetry={retry} /> : status === 'loading' ? [0, 1, 2].map(i => <Skeleton key={i} className="h-[72px]" />) : notifications.length === 0 ? (
+          <EmptyState emoji="🔕" line="All quiet. We'll ping you when someone wants your stuff." />
+        ) : notifications.map(n => (
+          <Link key={n.id} href={n.deep_link} className={`press flex items-center gap-3 rounded-[20px] border-[2.5px] border-ink p-4 shadow-[4px_4px_0_var(--shadow)] ${n.read ? 'bg-card' : 'bg-butter text-dark-ink'}`}>
+            {!n.read && <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-accent" aria-label="Unread" />}
+            <div className="min-w-0 flex-1">
+              <p className="font-extrabold">{n.title}</p>
+              <p className={`text-[13px] font-semibold ${n.read ? 'text-soft' : 'opacity-75'}`}>{n.body}</p>
+            </div>
+            <span className="shrink-0 text-[12px] font-bold opacity-70">{n.ago}</span>
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}

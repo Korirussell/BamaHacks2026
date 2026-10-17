@@ -1,0 +1,5 @@
+[
+  { "id": "b1", "listing_id": "l_bike", "user_id": "u_maya", "amount_cents": 18500, "message": "I'll do $185 today", "reactions": { "fire": 12, "eyes": 4 } },
+  { "id": "b2", "listing_id": "l_bike", "user_id": "u_dev",  "amount_cents": 20000, "message": "$200, can meet after class", "reactions": { "fire": 7, "eyes": 0 } },
+  { "id": "b3", "listing_id": "l_bike", "user_id": "u_sam",  "amount_cents": 0,     "message": "is the lock included?", "reactions": { "fire": 0, "eyes": 5 } }
+]

@@ -1,0 +1,5 @@
+[
+  { "id": "mu1", "start_label": "3:30 PM", "start_iso": "2026-10-19T20:30:00Z", "place_id": "p_bevill",   "reason": "You both get out of CS 201",      "walk_minutes": { "me": 1, "them": 3 }, "score": 96 },
+  { "id": "mu2", "start_label": "4:00 PM", "start_iso": "2026-10-19T21:00:00Z", "place_id": "p_rodgers",  "reason": "Safe zone, halfway between you", "walk_minutes": { "me": 5, "them": 6 }, "score": 88 },
+  { "id": "mu3", "start_label": "5:15 PM", "start_iso": "2026-10-19T22:15:00Z", "place_id": "p_ferguson", "reason": "On both your walks to dinner",    "walk_minutes": { "me": 7, "them": 4 }, "score": 81 }
+]

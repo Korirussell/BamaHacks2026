@@ -1,0 +1,66 @@
+// Exact copy strings from frontend-build.md §6. Don't paraphrase.
+export const copy = {
+  hero: {
+    titleBefore: 'Your campus, ',
+    titleHighlight: 'handed',
+    titleAfter: ' off.',
+    sub: "Buy, sell and trade with verified UA students. We turn Instagram posts into listings and find a time you're both free.",
+  },
+  cta: { primary: 'Make the handoff →', secondary: 'Browse the feed', signin: 'Sign in with .edu' },
+  sticker: { edu: '.edu only ✓', escrow: 'Escrow 🔒' },
+  steps: [
+    { title: 'Post it anywhere', body: 'Paste a screenshot or keep selling on Instagram. We turn it into a listing with a fair price.' },
+    { title: 'Haggle, then pay', body: "Offer, counter, accept. Your money is held until the item's in your hands." },
+    { title: 'Meet in the gap', body: 'We pick three spots and times between both your classes. Scan the QR, done.' },
+  ],
+  ticker: 'Gorgas Library ✦ @maddie sold a TI-84 ✦ Ferguson Center ✦ 3 people want a Trek bike ✦ Rodgers Library ✦ CS 201 tutor · $20/hr ✦ Bevill Building ✦ Ride to Birmingham Fri 3 PM ✦ UAPD safe zone ✦ Iron Bowl ticket · $90',
+  feed: { title: 'Feed', sub: 'University of Alabama · 1,284 listings' },
+  search: { placeholder: 'Search textbooks, tickets, rides…' },
+  chips: ['All', 'Marketplace', 'Tickets', 'Rides', 'Tutoring', 'From Instagram'] as const,
+  reason: { your_class: 'Your class', wishlist_match: 'Wishlist match', nearby: 'Near you', friend: 'Friend', new: 'New' } as Record<string, string>,
+  ghost: {
+    label: "Seller's not on Handoff yet",
+    cta: 'I want this · $200',
+    toast: "Done! We'll DM @jackson.rides. You'll hear back when they claim it.",
+    fineprint: "We'll DM @jackson.rides a claim link. Money's held until it's in your hands.",
+  },
+  claim: {
+    headline: '3 UA students want your Trek bike 🚲',
+    sub: 'We already wrote your listing. Claim it, pick a buyer, get paid.',
+    cta: 'Claim & get paid →',
+    trust: '.edu students only · Money held until handoff · Meet at safe zones',
+    optout: "Not yours? Don't contact me",
+  },
+  thread: { expiry: 'Offer thread · expires in 47h' },
+  pay: { cta: 'Pay $65 · held until handoff 🔒' },
+  meetup: { kicker: 'Deal at $65 🤝', title: '3 handoff spots that fit both your schedules', lock: (t: string) => `Lock in ${t} →` },
+  celebrate: {
+    td: 'Touchdown!',
+    tdPaid: "Paid $65. It's held safe until the handoff.",
+    tdDone: 'Clean handoff. $65 is on its way to Kayla.',
+    fg: "It's good!",
+    fgLocked: 'Locked in: Bevill Building · 3:30 PM',
+    fgClaimed: 'Your bike is live. 3 buyers are waiting.',
+    done: 'Done',
+  },
+  qr: { giver: 'Show this to Kori', receiver: "Scan Kayla's code to finish", override: "Pretend I'm at the spot" },
+  empty: { feed: 'Nothing here yet. Be the first to post something.' },
+  error: { generic: "That didn't load. Check your connection and try again." },
+  post: { screenshot: 'Paste a screenshot (⌘V), drop it here, or pick a file' },
+  job: { steps: ['Reading your post… 🔍', 'Spotting the item…', '💸 Estimating a fair price…'] },
+};
+
+// features-v2.md §7
+export const copy2 = {
+  sell: { snap: 'Snap it', snapSub: "One photo. We'll do the rest.", fast: 'Sell fast · $25 · ~1 day', max: 'Max · $32 · ~5 days', post: 'Post it', posted: 'Live on the feed' },
+  job: { photo: ['Looking at your photo… 👀', "That's a Logitech MX Master 3S 🖱️", 'Checking what these sell for on campus… 📈', 'Writing your listing… ✍️'] },
+  req: { title: 'Maya wants your mouse', money: 'Her $25 is ready to hold', accept: '✓ Accept', decline: 'Decline', held: "Maya's $25 is held 🔒" },
+  pick: { title: '3 handoff spots that fit both your schedules', you: 'You confirmed the price, so you pick the spot.', waiting: 'Waiting for Maya to confirm…', confirmed: 'Maya said looks good ✓' },
+  cal: { added: "📅 Added to your calendar and Maya's", addedZoe: '📅 Pickup window added for you and Zoe' },
+  buy: { cta: 'Buy · $15', note: "You're agreeing to Zoe's price." },
+  locker: { ready: 'Your Owala is ready', where: 'Locker 14 · Ridgecrest Lockers', code: 'Pickup code', done: 'I picked it up' },
+  td: { locker: 'Got it. $15 released to Zoe.', inpersonSeller: 'Clean handoff. $25 is on its way to you.' },
+  foryou: { title: 'For you', why: "Why you're seeing this" },
+  history: { title: 'Handoff history' },
+  ai: { priced: 'How Handoff priced this', spots: 'How we picked these spots' },
+};
