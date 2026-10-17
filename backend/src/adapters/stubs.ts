@@ -26,6 +26,8 @@ export const captionTextbookIdentifier: TextbookIdentifier = {
       priceCents: price ? Math.round(Number(price) * 100) : null,
       condition: null,
       confidence: isbn ? 0.6 : 0.2,
+      source: "caption",
+      evidence: isbn ? "ISBN in the caption" : "No ISBN in the caption",
     };
   },
 };
