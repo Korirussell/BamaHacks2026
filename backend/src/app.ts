@@ -5,6 +5,7 @@ import { ApiError, errorResponse } from "./lib/errors.js";
 import { supabaseVerifier, type TokenVerifier } from "./middleware/auth.js";
 import { authRoutes, supabaseSchoolLookup, type SchoolLookup } from "./routes/auth.js";
 import { academicsRoutes } from "./routes/academics.js";
+import { mediaRoutes } from "./routes/media.js";
 import { meRoutes } from "./routes/me.js";
 import { scheduleRoutes } from "./routes/schedule.js";
 
@@ -24,6 +25,7 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     .route("/auth", authRoutes(findSchool))
     .route("/me", meRoutes(verify))
     .route("/", academicsRoutes(verify))
+    .route("/", mediaRoutes(verify))
     .route("/", scheduleRoutes(verify));
 
   const app = new Hono();
