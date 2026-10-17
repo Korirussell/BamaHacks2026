@@ -226,8 +226,8 @@ describe("materials", () => {
 
 describe("campus mail", () => {
   it("needs a mail stop, geofenced drop-off with photo, and the label code on receipt", () => {
-    assert.throws(() => buildLabel({ orderId: "o", buyer: { name: "B", mailStopCode: null }, sellerName: "S", itemTitle: "Book", dropOff: { name: "Mail", instructions: "" } }), /mail stop/);
-    const label = buildLabel({ orderId: "o", buyer: { name: "B", mailStopCode: "Box 870123" }, sellerName: "S", itemTitle: "Book", dropOff: { name: "Mail", instructions: "" } });
+    assert.throws(() => buildLabel({ orderId: "o", buyer: { name: "Bo Buyer", mailStopCode: null }, sellerName: "S", itemTitle: "Book", dropOff: { name: "Mail", instructions: "" } }), /mail stop/);
+    const label = buildLabel({ orderId: "o", buyer: { name: "Bo Buyer", mailStopCode: "MSC 870123" }, sellerName: "S", itemTitle: "Book", dropOff: { name: "Mail", instructions: "" } });
     assert.match(label.label_code, /^[A-Z2-9]{8}$/);
     const point = { location: UA.mailCenter, radiusM: 40 };
     assert.throws(() => verifyDropOff({ status: "label_created", at: UA.gorgas, accuracyM: 5, point, photoMediaId: "m", now: 0 }), /drop-off point/);

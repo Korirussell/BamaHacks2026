@@ -7,7 +7,7 @@ import { WallTime, Weekday } from "./schedule.js";
 export const OpeningHours = z.object({ days: z.array(Weekday).min(1), open: WallTime, close: WallTime });
 export const DropOffPoint = z.object({ id: Uuid, name: z.string(), location: LatLng, radius_m: z.number().int(), hours: z.array(OpeningHours), instructions: z.string() });
 export const Shipment = z.object({
-  id: Uuid, order_id: Uuid, label_pdf_url: z.string(), label_code: z.string(), to: z.object({ name: z.string(), mail_stop_code: z.string() }),
+  id: Uuid, order_id: Uuid, label_pdf_url: z.string(), label_code: z.string(), to: z.object({ name: z.string(), mail_stop_code: z.string(), address_lines: z.array(z.string()) }), steps: z.array(z.string()),
   drop_off: DropOffPoint, status: z.enum(["label_created", "dropped_off", "received"]), dropped_off_at: Timestamp.nullable(),
   drop_off_proof_media_id: Uuid.nullable(), received_at: Timestamp.nullable(), auto_complete_at: Timestamp.nullable(),
 });

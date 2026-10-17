@@ -5,6 +5,7 @@ import { Handoff, MeetupSuggestion, SafeZone } from "../schemas/handoffs.js";
 import { DropOffPoint, Shipment } from "../schemas/orders.js";
 import { OpeningHoursRow } from "./academics.js";
 import type { UserPublicOut } from "./users.js";
+import { campusAddressLines, dropOffSteps } from "../services/shipping.js";
 
 // Postgres returns "+00:00" offsets; the contract's Timestamp wants "Z".
 const ts = z.string().transform((v) => new Date(v).toISOString());
@@ -76,7 +77,9 @@ export function toHandoff(row: HandoffRow, users: Map<string, UserPublicOut>) {
 
 export const toShipment = (row: ShipmentRow) => Shipment.parse({
   id: row.id, order_id: row.order_id, label_pdf_url: `about:blank#label-${row.label_code}`, label_code: row.label_code,
-  to: { name: row.to_name, mail_stop_code: row.to_mail_stop_code }, drop_off: toDropOffPoint(row.drop_off),
+  to: { name: row.to_name, mail_stop_code: row.to_mail_stop_code, address_lines: campusAddressLines(row.to_name, row.to_mail_stop_code) },
+  steps: dropOffSteps({ labelCode: row.label_code, dropOffName: row.drop_off.name, hours: row.drop_off.hours }),
+  drop_off: toDropOffPoint(row.drop_off),
   status: row.status, dropped_off_at: row.dropped_off_at, drop_off_proof_media_id: row.drop_off_proof_media_id,
   received_at: row.received_at, auto_complete_at: row.auto_complete_at,
 });
