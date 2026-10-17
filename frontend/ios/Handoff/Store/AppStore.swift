@@ -47,7 +47,7 @@ final class AppStore {
         if let list = await u { users = Dictionary(uniqueKeysWithValues: list.map { ($0.id, $0) }) }
         me = await m
         places = await p ?? []
-        if let o = try? await api.order(id: "o_fridge") { order = o }
+        // order.json is the awaiting_payment template; a live order only exists after Pay (startOrder).
         notifications = (try? await api.notifications()) ?? []
         await loadFeed()
     }
