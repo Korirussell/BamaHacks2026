@@ -20,7 +20,7 @@ export const ReviewRow = z.object({
 export function toReview(row: z.infer<typeof ReviewRow>, from: UserPublicOut): Review {
   return Review.parse({
     id: row.id, from, to_user_id: row.to_id, context: { type: row.context_type, id: row.context_id }, stars: row.stars,
-    on_time: row.on_time, as_described: row.as_described, comment: row.comment, created_at: row.created_at,
+    on_time: row.on_time, as_described: row.as_described, comment: row.comment, created_at: new Date(row.created_at).toISOString(),
   });
 }
 

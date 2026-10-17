@@ -2,7 +2,9 @@ import Foundation
 
 enum Config {
     static let useMocks = true
-    static let apiBaseURL = URL(string: "http://localhost:8787/api/v1")!
+    /// Live demo API: the laptop behind ngrok's static domain (`ngrok http --url=sled-maker-outshoot.ngrok-free.dev 8787`).
+    /// "http://localhost:8787/api/v1" for the Simulator.
+    static let apiBaseURL = URL(string: "https://sled-maker-outshoot.ngrok-free.dev/api/v1")!
     /// web/app/embed/campus (map-plan.md §4). Physical-device demo URL (Vercel); swap back to
     /// "http://localhost:3000" for the Simulator.
     static let mapBaseURL = URL(string: "https://web-navy-tau-cbiw53nkby.vercel.app")!

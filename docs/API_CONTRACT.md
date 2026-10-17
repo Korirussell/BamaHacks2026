@@ -226,7 +226,7 @@ Transcript parsing is **review-then-confirm**: grades only count as `grade_verif
   "PATCH /listings/{id}":     { "req": "any POST /listings field", "res": "Listing" },
   "DELETE /listings/{id}":    { "res": "204 (sets status=removed)" },
   "GET /me/listings":         { "query": { "status": "string?" }, "res": ["Listing"] },
-  "POST /listings/from-screenshot":   { "req": { "media_ids": ["uuid"] }, "res": { "job_id": "uuid" }, "job_result": { "draft": "POST /listings req", "confidence": "number", "missing_fields": ["string"] } },
+  "POST /listings/from-screenshot":   { "req": { "media_ids": ["uuid"] }, "res": { "job_id": "uuid" }, "job_result": { "draft": "POST /listings req", "confidence": "number", "missing_fields": ["string"], "price_source": "screenshot|comparable_listings|ai_estimate|null", "price_reason": "string? (only for ai_estimate)" } },
   "POST /listings/identify-textbook": { "req": { "media_id": "uuid" }, "res": { "job_id": "uuid" }, "job_result": { "isbn": "string", "title": "string", "edition": "string?", "matched_courses": ["Course"], "suggested_price_cents": "cents?" } },
 
   "GET /me/wishlist":         { "res": ["WishlistItem"] },
@@ -243,15 +243,18 @@ Transcript parsing is **review-then-confirm**: grades only count as `grade_verif
   "POST /offers/{id}/decline":  { "res": "Offer" },
   "POST /offers/{id}/withdraw": { "res": "Offer" },
   "POST /listings/{id}/auto-bargain": { "req": { "max_price_cents": "cents", "style": "quick|balanced|patient" }, "res": { "session_id": "uuid", "status": "negotiating|deal_found|no_deal" } },
+  "POST /listings/{id}/haggle": { "req": { "message": "string", "history": [{ "from": "buyer|seller", "text": "string" }], "last_counter_cents": "cents?", "place_offer": "bool (default true)" }, "res": { "intent": "offer|accept|decline|question|logistics|spam", "amount_cents": "cents?", "action": "accept|counter|hold_firm|reply|warn|ignore", "price_cents": "cents?", "reply": "string", "scam_flags": ["off_platform_payment|urgency_pressure|meetup_change|phishing"], "reported": "bool", "seriousness": "number 0-5", "engine": "jev|rules", "decisions": "{ key: { pick, value, probabilities } }? (JEV only)", "proposed_offer": "Offer? (set when action=accept)" } },
+  "POST /ai/listing-review":  { "req": { "title": "string", "description": "string?", "category": "textbook|lab_supplies|dorm|ticket|other", "price_cents": "cents", "isbn": "string?" }, "res": { "allowed": "bool", "blocked_reasons": ["string"], "warnings": ["string"], "suggested_category": "string?", "engine": "jev|none", "decisions": "object?" } },
+  "GET /ai/status":           { "auth": "none", "res": { "online": "bool", "kinds": ["gemma_vision|jev_decide"], "models": "object", "last_seen_at": "ts?" } },
   "GET /auto-bargain/{id}":   { "res": { "status": "negotiating|deal_found|no_deal", "rounds": [{ "by": "buyer_agent|seller_agent", "amount_cents": "cents", "at": "ts" }], "proposed_offer": "Offer?" } },
 
   "GET /orders/{id}":         { "res": "Order" },
   "GET /me/orders":           { "query": { "role": "buyer|seller", "status": "string?" }, "res": ["Order"] },
-  "POST /orders/{id}/pay":    { "headers": ["Idempotency-Key"], "note": "buyer only. With PAYMENTS=demo (until Stripe lands) the order is paid at once: client_secret is null, demo is true and the paid Order comes back; skip the payment sheet. In-person orders get handoff_id here.", "res": { "client_secret": "string?", "payment_intent_id": "string", "demo": "bool?", "order": "Order?" } },
+  "POST /orders/{id}/pay":    { "headers": ["Idempotency-Key"], "note": "buyer only. PAYMENTS=demo: paid at once, client_secret null, demo true, the paid Order comes back; skip the payment sheet. PAYMENTS=stripe: demo false, open PaymentSheet/Elements with client_secret; the order stays awaiting_payment until the payment_intent.succeeded webhook moves it to paid (watch order.updated). Calling pay again returns the same PaymentIntent. In-person orders get handoff_id once paid.", "res": { "client_secret": "string?", "payment_intent_id": "string", "demo": "bool?", "order": "Order?" } },
   "POST /orders/{id}/cancel": { "req": { "reason": "string" }, "res": "Order" },
   "POST /orders/{id}/dispute":{ "headers": ["Idempotency-Key"], "note": "buyer or seller; only from scheduled, handing_off or in_transit (else INVALID_STATE). details 1-1000 chars, media_ids max 10 and must be the caller's own uploads. Order becomes disputed, money stays held until the team resolves it, the other party is notified", "req": { "reason": "not_as_described|no_show|never_received|other", "details": "string", "media_ids": ["uuid"] }, "res": "Order" },
   "GET /orders/{id}/escrow":  { "note": "buyer or seller; the money ledger for the order, oldest first, for the payment timeline", "res": { "entries": ["EscrowEntry"], "held_cents": "cents (hold minus release minus refund, so 0 once settled)" } },
-  "POST /payments/onboard":   { "res": { "onboarding_url": "string" } },
+  "POST /payments/onboard":   { "query": { "client": "web|ios? (default web; ios returns to APP_URL_SCHEME://payments)" }, "note": "seller; creates the Stripe Express account on first call. Open onboarding_url (Stripe-hosted); it comes back to ?stripe=return or ?stripe=refresh (refresh = link expired, call onboard again)", "res": { "onboarding_url": "string" } },
   "GET /payments/status":     { "res": { "charges_enabled": "bool", "payouts_enabled": "bool", "requirements_due": ["string"] } },
 
   "GET /safe-zones":          { "res": ["SafeZone"] },
@@ -297,7 +300,7 @@ How UA Campus Mail works (campusmail.ua.edu and the myBama Student Mail Portal),
 - **Both-tap:** a tap carries `location` + `accuracy_m`. It counts only when `accuracy_m <= 100` and the point is inside the safe zone. The other tap must land within 60 s and within 50 m + min(both accuracies, 50) of the first. The receiver's tap carries `item_ok`; `false` makes the order `disputed` and the money stays held. Taps expire after 60 s (`Handoff.taps` hides expired ones).
 - **Location privacy:** the other party only ever gets `arrived` and a distance to the zone edge (rounded to 10 m), never coordinates. Distance shows only while the handoff is `agreed|arriving`, inside `[agreed_start - 30 min, agreed_end + 30 min]` (`sharing_window`), and only if that person's `location_sharing` is `during_handoffs`; otherwise `distance_m` and `last_seen_at` are null. `arrived` is always visible. Stored positions are wiped when the meetup ends (completed, no-show, reschedule).
 - **No-show:** the reporter must be inside the zone, at least 15 min after `agreed.start`, and the other side must never have arrived or tapped. The buyer is always refunded (seller no-show or buyer no-show) and the absent party's `no_show_count` goes up by 1.
-- **Escrow:** `POST /orders/{id}/pay` holds the full amount in the `escrow_entries` ledger (`GET /orders/{id}/escrow`). Final states settle it: `completed` releases the seller payout (or `awaiting_onboarding` until Stripe onboarding), `refunded`/`cancelled` refunds the buyer and relists the item. Today `provider` is `demo` (nothing leaves the platform); Stripe plugs in as another provider later without changing these shapes.
+- **Escrow:** `POST /orders/{id}/pay` holds the full amount in the `escrow_entries` ledger (`GET /orders/{id}/escrow`). Final states settle it: `completed` releases the seller payout (or `awaiting_onboarding` until Stripe onboarding), `refunded`/`cancelled` refunds the buyer and relists the item. `provider` is `demo` (nothing leaves the platform) or, with `PAYMENTS=stripe`, `stripe`: the hold is a PaymentIntent on the platform, the release a Transfer to the seller's Express account (`source_transaction` = the charge), the refund a Stripe Refund. The shapes are the same either way.
 - **Disputes:** `POST /orders/{id}/dispute` freezes the money; an admin ends it with `POST /admin/orders/{id}/resolve`.
 
 > **Auto-accept rule:** an offer with `kind: cash` and `amount_cents >= price_cents` on a **claimed** listing is accepted immediately and the response includes the new `Order`. On an unclaimed listing every offer waits with `waiting_on: seller_claim` and triggers a claim invite to the external seller.
@@ -323,11 +326,11 @@ How UA Campus Mail works (campusmail.ua.edu and the myBama Student Mail Portal),
   "POST /tutoring/sessions/{id}/counter":  { "note": "either side proposes a different time; flips waiting_on", "req": { "start": "ts", "end": "ts", "message": "string?" }, "res": "TutoringSession" },
   "POST /tutoring/sessions/{id}/accept":   { "note": "only the party in waiting_on; library_room triggers room booking (picks the first LibCal room free for the whole session)", "res": "TutoringSession" },
   "POST /tutoring/sessions/{id}/decline":  { "res": "TutoringSession" },
-  "POST /tutoring/sessions/{id}/pay":      { "res": { "client_secret": "string" } },
+  "POST /tutoring/sessions/{id}/pay":      { "headers": ["Idempotency-Key"], "note": "student only; session must be accepted (else INVALID_STATE; free sessions too). Same flow as POST /orders/{id}/pay: PAYMENTS=demo → paid at once, client_secret null, demo true. PAYMENTS=stripe → demo false, open PaymentSheet/Elements with client_secret; the session stays accepted until the payment_intent.succeeded webhook moves it to paid (watch tutoring.updated). Calling pay again returns the same PaymentIntent. Money is held until the session is confirmed (see Tutoring escrow).", "res": { "client_secret": "string? (null when demo is true)", "payment_intent_id": "string?", "demo": "bool", "session": "TutoringSession" } },
   "POST /tutoring/sessions/{id}/book-room":{ "note": "retries booking; returns the session's room_booking", "res": "RoomBooking" },
   "GET /library/rooms":         { "note": "free Gorgas study rooms on a library-local day, for a 'rooms free now' card; [] when LibCal is off or unreachable", "query": { "date": "date" }, "res": ["FreeRoomSlot"] },
-  "POST /tutoring/sessions/{id}/complete": { "res": "TutoringSession" },
-  "POST /tutoring/sessions/{id}/cancel":   { "req": { "reason": "string" }, "res": "TutoringSession" },
+  "POST /tutoring/sessions/{id}/complete": { "note": "after the start time. A paid session can only be completed by the student (else FORBIDDEN); it pays the tutor", "res": "TutoringSession" },
+  "POST /tutoring/sessions/{id}/cancel":   { "note": "a paid session is refunded to the student in full", "req": { "reason": "string" }, "res": "TutoringSession" },
 
   "PUT /me/driver":             { "req": { "vehicle": { "make": "string", "model": "string", "color": "string", "plate": "string" }, "accepts_terms": "bool" }, "res": { "status": "pending|verified|rejected" } },
   "POST /rides":                { "note": "driver posts a trip", "req": { "origin": "Place", "destination": "Place", "depart_at": "ts", "seats": "int", "price_per_seat_cents": "cents" }, "res": "Ride" },
@@ -367,7 +370,9 @@ How UA Campus Mail works (campusmail.ua.edu and the myBama Student Mail Portal),
     "room_booking": "RoomBooking",
     "status": "requested|accepted|paid|completed|cancelled|no_show",
     "waiting_on": "tutor|student?", "history": [{ "by": "tutor|student", "action": "propose|counter|accept|decline", "start": "ts", "end": "ts", "at": "ts" }],
-    "handoff_id": "uuid?"
+    "handoff_id": "uuid?",
+    "payment": { "status": "none|requires_payment|succeeded|failed|refunded", "paid_at": "ts?" },
+    "payout": { "status": "held|awaiting_onboarding|released|reversed?", "released_at": "ts?", "tutor_payout_cents": "cents? (price minus the platform fee, fixed at pay)" }
   },
   "RoomBooking":     { "status": "not_needed|pending|booked|manual_required", "room": "{ id: string, name: string }?", "booking_url": "string? (manual_required: the room's LibCal page, or the library site when no room was free)" },
   "Ride":            { "id": "uuid", "driver": "UserPublic", "origin": "Place", "destination": "Place", "depart_at": "ts", "seats_total": "int", "seats_left": "int", "price_per_seat_cents": "cents", "riders": ["UserPublic"], "status": "open|full|en_route|completed|cancelled", "driver_location": "LatLng?" },
@@ -376,6 +381,8 @@ How UA Campus Mail works (campusmail.ua.edu and the myBama Student Mail Portal),
   "StudyGroup":      { "id": "uuid", "course": "Course", "title": "string", "host": "UserPublic", "target_event": "CourseEvent?", "mode": "string", "place": "Place?", "meeting_url": "string?", "start": "ts", "end": "ts", "capacity": "int", "members": ["UserPublic"], "cross_campus": "bool" }
 }
 ```
+
+> **Tutoring escrow:** `POST /tutoring/sessions/{id}/pay` holds the full `price_cents` on the platform (same `escrow_entries` ledger and providers as orders). In-person sessions then get a `handoff_id`: a Handoff with `context.type: tutoring_session`, giver = tutor, receiver = student, already `agreed` at the session's start and library spot (or `proposing` when the school has no library safe zone). The money moves when the session ends: handoff confirmed (`/confirm` or both `/tap`, `item_ok: true`) or the student calls `/complete` (the only way for virtual sessions) → `completed`, tutor paid (`payout.status: released`, or `awaiting_onboarding` until their Stripe payouts are on); `item_ok: false` keeps the money held on a still-`paid` session for the team; `/cancel` → `cancelled` and the handoff no-show (reported or overdue, either party) → `no_show`, both refunding the student in full.
 
 > **Tutor eligibility rule:** a user shows up in `/tutors` for a course when they have a `past` `ClassRecord` for it with a grade ≥ `School.tutor_min_grade` (verified only, unless `include_unverified=true`), and an enabled `TutorProfile` that lists the course. `mutual_slots` apply the walk-time rule to the tutor and student, using the library (or chosen safe zone) as the meeting spot.
 
@@ -505,7 +512,7 @@ awaiting_payment --pay--> paid --agree time/place--> scheduled --both nearby--> 
 - `paid` = buyer charged; money sits on the platform balance.
 - `completed` = Stripe transfer to the seller minus `fee_cents`, then reviews unlock and reliability updates.
 - Campus mail swaps the handoff steps: `paid --label created--> scheduled --dropped off (geofence + photo)--> in_transit --buyer scans label--> completed`. Tickets swap them for `ticket-sent → ticket-received`.
-- Escrow ledger: `pay` writes a `hold`, final states write a `release` or `refund` (`GET /orders/{id}/escrow`). Demo provider for now; Stripe plugs in as a provider later.
+- Escrow ledger: `pay` writes a `hold`, final states write a `release` or `refund` (`GET /orders/{id}/escrow`). Demo or Stripe provider, chosen by `PAYMENTS`.
 - Payout: `held` while the order is open; on `completed` it becomes `released` (Stripe transfer), or `awaiting_onboarding` if the seller hasn't finished Stripe yet; a refund makes it `reversed`.
 - Timers (`workers/order-timers.ts`, `ORDER_TIMERS=on|off`, every `ORDER_TIMERS_INTERVAL_MS`, default 60 s): unpaid orders cancel after 30 min; campus-mail orders auto-complete at `auto_complete_at`; pending offers expire after 48 h; overdue meetups (1 h past `agreed.end`, still agreed/arriving): only one side ever arrived → no-show against the other + buyer refund; nobody arrived → handoff back to `proposing` (order stays `scheduled`); both arrived but no confirm → both notified once.
 

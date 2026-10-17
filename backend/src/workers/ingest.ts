@@ -3,6 +3,7 @@ import type { KnownBook, TextbookIdentifier } from "../adapters/ports.js";
 import { CourseRow } from "../db/academics.js";
 import { loadListingRow } from "../db/market.js";
 import { notifyWishlistMatch } from "../db/wishlist.js";
+import { reviewListing } from "../routes/ai.js";
 import { notify } from "../lib/notify.js";
 import { adminClient, publicMediaUrl } from "../lib/supabase.js";
 import { draftFromPost, type KnownMaterial } from "../services/ingest.js";
@@ -109,9 +110,19 @@ export async function runIngest(postId: string, identifier: TextbookIdentifier):
   const isbn = guess.isbn ? normalizeIsbn(guess.isbn) : null;
   const materials = isbn ? await materialsFor(post.school_id, isbn) : [];
   const result = draftFromPost({ channel: post.channel, authorHandle: post.author_handle, caption: post.caption }, guess, () => materials);
-  const by = guess.source === "vision" ? `Claude read the ${photos.length ? "photo" : "caption"}` : "Caption parser";
-  const what = result.isbn ? `${result.textbookTitle ?? result.title} · ISBN ${result.isbn}` : "no textbook found";
+  const model = guess.evidence?.startsWith("Gemma") ? "Gemma" : "Claude";
+  const by = guess.source === "vision" ? `${model} read the ${photos.length ? "photo" : "caption"}` : "Caption parser";
+  const what = result.isbn ? `${result.textbookTitle ?? result.title} · ISBN ${result.isbn}` : result.category !== "other" ? `${result.title} (${result.category})` : "no textbook found";
   events.push(pipelineEvent("identified", `${by}: ${what} (${Math.round(guess.confidence * 100)}% sure)${guess.evidence ? ` · ${guess.evidence}` : ""}`));
+  // JEV's listing gate: a prohibited item stays a draft for a human instead of going live.
+  if (result.status === "active") {
+    const verdict = await reviewListing(post.school_id, { title: result.title, description: result.description, category: result.category, priceCents: result.priceCents, isbn: result.isbn });
+    if (!verdict.allowed) {
+      result.status = "draft";
+      result.missing.push("review");
+    }
+    if (verdict.engine === "jev") events.push(pipelineEvent("identified", verdict.allowed ? `JEV listing check passed${verdict.warnings.length ? ` · ${verdict.warnings.join("; ")}` : ""}` : `JEV held it for review: ${verdict.blocked_reasons.join("; ")}`));
+  }
 
   const listing = check(
     await db.from("listings").insert({

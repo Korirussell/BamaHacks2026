@@ -2,7 +2,8 @@ import { z } from "zod";
 
 const optional = z.string().optional();
 const Env = z.object({
-  PORT: z.coerce.number().int(),
+  PORT: z.coerce.number().int().default(8787),
+  // Comma-separated; the first is the app URL in links. "https://*.vercel.app" allows preview deploys (CORS).
   WEB_ORIGIN: z.string().min(1),
   PLATFORM_FEE_BPS: z.coerce.number().int(),
   SUPABASE_URL: optional,
@@ -27,6 +28,8 @@ const Env = z.object({
   GROUPME_BOT_TOKEN: optional,
   // Shared secret in the bot's callback URL (/api/v1/webhooks/groupme?token=...). Unset → every callback is rejected.
   GROUPME_WEBHOOK_SECRET: optional,
+  // Verify token for Meta's Instagram webhook handshake (/api/v1/webhooks/instagram). Unset → verification is refused.
+  INSTAGRAM_WEBHOOK_VERIFY_TOKEN: optional,
   // Which school the bot's groups belong to (single-school MVP: the seeded UA school).
   GROUPME_SCHOOL_ID: z.guid().default("00000000-0000-4000-a000-000000000001"),
   RESEND_API_KEY: optional,
@@ -41,7 +44,7 @@ const Env = z.object({
   ROOM_BOOKING_URL: z.url().default("https://www.lib.ua.edu/"),
   // Live free Gorgas study rooms from UA's LibCal (read-only). "off" → no rooms are suggested.
   LIBCAL: z.enum(["on", "off"]).default("on"),
-  // Marketplace: "demo" marks orders paid without a card until Stripe (step 10) lands.
+  // Marketplace: "demo" marks orders paid without a card; "stripe" charges cards (needs STRIPE_SECRET_KEY + STRIPE_WEBHOOK_SECRET).
   PAYMENTS: z.enum(["demo", "stripe"]).default("demo"),
   // Instagram: "graph" polls the posts that tag our business account and lists them automatically.
   // "stories" polls the seller account's own stories (its token) and DMs the seller from ours.
@@ -62,14 +65,31 @@ const Env = z.object({
   // Textbook identification: "claude" (vision) when ANTHROPIC_API_KEY is set, else the caption parser.
   IDENTIFIER: z.enum(["auto", "claude", "caption"]).default("auto"),
   CLAUDE_VISION_MODEL: z.string().min(1).default("claude-sonnet-5-5"),
+  // Local AI worker (ai-worker/ on the laptop): Gemma 4 reads photos, JEV-9B makes typed decisions.
+  // "laptop" queues work in Supabase ai_tasks for it; anything it can't answer in time falls back
+  // (vision → Claude if ANTHROPIC_API_KEY, else the caption parser; decisions → keyword rules).
+  AI: z.enum(["laptop", "off"]).default("laptop"),
+  AI_VISION_TIMEOUT_MS: z.coerce.number().int().min(1000).default(45_000),
+  AI_DECIDE_TIMEOUT_MS: z.coerce.number().int().min(500).default(10_000),
   // Background timers: unpaid orders cancel, campus-mail orders auto-complete, offers expire.
   ORDER_TIMERS: z.enum(["on", "off"]).default("on"),
+  // Demo only: sign in by email with no code, and claim a seller link with no sign-in. Never on anywhere real.
+  DEMO_AUTH: z.enum(["on", "off"]).default("off"),
   ORDER_TIMERS_INTERVAL_MS: z.coerce.number().int().min(1000).default(60_000),
+  // Bearer for POST|GET /api/v1/internal/sweep (one timer pass; Vercel Cron sends it). Unset = endpoint disabled.
+  CRON_SECRET: optional,
   // Name used in the claim DM we send to Instagram sellers.
   APP_NAME: z.string().min(1).default("Campus Marketplace"),
 });
 
 export type Config = z.infer<typeof Env>;
+
+/** PAYMENTS=stripe can't run without its keys; fail at boot with a clear message (demo needs none). */
+export function assertPaymentsConfig(config: Config) {
+  if (config.PAYMENTS !== "stripe") return;
+  const missing = (["STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET"] as const).filter((k) => !config[k]);
+  if (missing.length) throw new Error(`PAYMENTS=stripe needs ${missing.join(" and ")}`);
+}
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const result = Env.safeParse(env);

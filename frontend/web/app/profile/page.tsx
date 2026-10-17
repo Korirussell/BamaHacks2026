@@ -32,6 +32,13 @@ export default function Profile() {
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3 border-t-2 border-dashed border-ink/30 pt-5">
           <div>
+            <p className="font-extrabold">Get paid</p>
+            <p className="text-[13px] font-semibold text-soft">Payouts to your bank through Stripe</p>
+          </div>
+          <PillLink href="/settings/payments" variant="neutral" size="sm">Payouts</PillLink>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t-2 border-dashed border-ink/30 pt-5">
+          <div>
             <p className="font-extrabold">Instagram</p>
             <p className="text-[13px] font-semibold text-soft">Not linked</p>
           </div>

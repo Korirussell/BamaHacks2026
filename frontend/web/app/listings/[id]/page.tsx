@@ -8,6 +8,9 @@ import { copy, copy2 } from '@/lib/copy';
 import { money } from '@/lib/money';
 import { userById } from '@/lib/data';
 import { useDemo, useMockLoad } from '@/lib/store';
+import { USE_MOCKS } from '@/lib/api';
+import { realListing, realOffer } from '@/lib/real';
+import { useRealLoad } from '@/lib/useRealLoad';
 import { BidBubbles } from '@/components/BidBubbles';
 import { InterestSheet } from '@/components/InterestSheet';
 import { PaySheet } from '@/components/PaySheet';
@@ -21,10 +24,28 @@ export default function ListingDetail({ params }: { params: Promise<{ id: string
   const router = useRouter();
   const { listings, bids, set } = useDemo();
   const [pay, setPay] = useState(false);
-  const { status, retry } = useMockLoad([id]);
+  const mock = useMockLoad([id]);
+  const real = useRealLoad(() => realListing(id), [id], !USE_MOCKS);
+  const { status, retry } = USE_MOCKS ? mock : real;
   const [want, setWant] = useState(false);
   const [saved, setSaved] = useState(false);
-  const listing = listings.find(l => l.id === id);
+  const [buying, setBuying] = useState(false);
+  const [offerSent, setOfferSent] = useState(false);
+  const listing = USE_MOCKS ? listings.find(l => l.id === id) : real.data?.listing;
+
+  // Real mode: offer at the listing price. An auto-accepted offer returns an order to pay.
+  const buyReal = async () => {
+    if (!listing) return;
+    setBuying(true);
+    try {
+      const { order } = await realOffer(listing.id, listing.price_cents);
+      if (order) router.push(`/orders/${order.id}`);
+      else setOfferSent(true);
+    } catch (e) {
+      if ((e as { code?: string }).code === 'UNAUTHENTICATED') router.push('/signin');
+      else toast((e as Error).message);
+    } finally { setBuying(false); }
+  };
 
   if (status === 'error') return <ErrorState onRetry={retry} />;
   if (status === 'loading')
@@ -37,7 +58,7 @@ export default function ListingDetail({ params }: { params: Promise<{ id: string
   if (!listing) return <EmptyState emoji="🔎" line="That listing's gone. Maybe someone already made the handoff." action={<PillLink href="/feed" size="sm">Back to the feed</PillLink>} />;
 
   const ghost = listing.status === 'ghost';
-  const seller = userById(listing.seller_id);
+  const seller = USE_MOCKS ? userById(listing.seller_id) : real.data?.seller ?? undefined;
   const listingBids = bids.filter(b => b.listing_id === listing.id);
   const claimedFromIg = !ghost && listing.source.channel === 'instagram';
   const share = () => {
@@ -47,10 +68,10 @@ export default function ListingDetail({ params }: { params: Promise<{ id: string
 
   const buyBar = (
     <div className="flex flex-col gap-3 sm:flex-row">
-      <Pill className="flex-1" onClick={() => setPay(true)}>
-        {listing.id === 'l_owala' ? copy2.buy.cta : `Buy · ${money(listing.price_cents)}`}
+      <Pill className="flex-1" disabled={!USE_MOCKS && (buying || offerSent || real.data?.isMine || listing.status !== 'active')} onClick={USE_MOCKS ? () => setPay(true) : buyReal}>
+        {!USE_MOCKS ? (offerSent ? 'Offer sent' : buying ? 'Sending…' : `Buy · ${money(listing.price_cents)}`) : listing.id === 'l_owala' ? copy2.buy.cta : `Buy · ${money(listing.price_cents)}`}
       </Pill>
-      {listing.id === 'l_fridge' ? (
+      {!USE_MOCKS ? null : listing.id === 'l_fridge' ? (
         <PillLink href="/offers/t_fridge" variant="neutral" className="flex-1">Make offer</PillLink>
       ) : (
         <Pill variant="neutral" className="flex-1" onClick={() => toast(`Offer sent to ${seller?.display_name ?? 'the seller'}. Thread expires in 47h.`)}>Make offer</Pill>
@@ -142,6 +163,7 @@ export default function ListingDetail({ params }: { params: Promise<{ id: string
           )}
 
           {!ghost && <div className="mt-7 hidden min-[900px]:block">{buyBar}</div>}
+          {offerSent && <p role="status" className="mt-3 rounded-2xl bg-mint px-4 py-3 text-[14px] font-bold text-dark-ink">Offer sent, waiting for the seller.</p>}
           {!ghost && (
             <p className="mt-3 text-[12.5px] font-medium text-meta">
               {!listing.negotiable && seller ? `You're agreeing to ${seller.display_name.split(' ')[0]}'s price. ` : ''}🔒 Money&apos;s held until it&apos;s in your hands.

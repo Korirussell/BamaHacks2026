@@ -7,5 +7,6 @@
 | [`docs/FRONTEND_NOTES.md`](docs/FRONTEND_NOTES.md) | Screen-by-screen notes for the app (start with campus mail) |
 | [`supabase/`](supabase) | Database migrations + UA seed ([setup steps](supabase/README.md)) |
 | [`backend/`](backend) | TypeScript API (Hono + Zod) served under `/api/v1` |
+| [`ai-worker/`](ai-worker) | Laptop worker: Gemma 4 (vision, pricing) + JEV-9B (haggle, scam, listing gate, wishlist) over Supabase |
 
 Frontend (Swift iOS app + website) gets its own folder when it lands.

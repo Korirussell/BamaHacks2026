@@ -9,6 +9,8 @@ import { googleCalendarUrl } from '@/lib/calendar';
 import { listings, locker, meetupsZoe, placeById, userById } from '@/lib/data';
 import { money } from '@/lib/money';
 import { useDemo } from '@/lib/store';
+import { USE_MOCKS } from '@/lib/api';
+import { RealOrder } from '@/components/RealOrder';
 import { StickerMap } from '@/components/StickerMap';
 import { MeetupBreakdown } from '@/components/MeetupBreakdown';
 import { LockerCard } from '@/components/LockerCard';
@@ -34,7 +36,7 @@ function Bubble({ me, children }: { me?: boolean; children: React.ReactNode }) {
   );
 }
 
-export default function OrderChat({ params }: { params: Promise<{ id: string }> }) {
+function MockOrderChat({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { zoe, zoeSpot, set, celebrate } = useDemo();
   const [sel, setSel] = useState(meetupsZoe[0].id);
@@ -173,4 +175,8 @@ export default function OrderChat({ params }: { params: Promise<{ id: string }> 
       <p className="text-center text-[12px] font-semibold text-soft"><Link href="/feed?view=foryou" className="underline">Back to For you</Link></p>
     </div>
   );
+}
+
+export default function OrderPage({ params }: { params: Promise<{ id: string }> }) {
+  return USE_MOCKS ? <MockOrderChat params={params} /> : <RealOrder params={params} />;
 }

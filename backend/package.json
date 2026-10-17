@@ -10,14 +10,18 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p scripts",
     "test": "node --import tsx --test \"src/**/*.test.ts\"",
     "seed:demo": "tsx --env-file-if-exists=.env src/scripts/seed-demo.ts",
+    "demo:password": "tsx --env-file-if-exists=.env src/scripts/demo-password.ts",
     "live-check": "tsx --env-file-if-exists=.env scripts/live-check.ts",
-    "libcal": "tsx --env-file-if-exists=.env scripts/libcal.ts"
+    "smoke": "tsx --env-file-if-exists=.env scripts/smoke.ts",
+    "libcal": "tsx --env-file-if-exists=.env scripts/libcal.ts",
+    "ai-check": "tsx --env-file-if-exists=.env scripts/ai-check.ts"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.5",
     "@supabase/supabase-js": "^2.118.0",
     "hono": "^4.13.13",
     "playwright-core": "^1.64.1",
+    "stripe": "^23.0.0",
     "unpdf": "^1.9.0",
     "zod": "^4.6.7"
   },

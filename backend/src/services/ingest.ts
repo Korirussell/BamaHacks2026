@@ -10,7 +10,7 @@ export interface KnownMaterial {
 }
 
 export interface IngestDraft {
-  category: "textbook" | "other";
+  category: NonNullable<TextbookGuess["category"]>;
   status: "active" | "draft";
   title: string;
   description: string;
@@ -51,10 +51,13 @@ export function draftFromPost(
   const materials = isbn ? materialsFor(isbn) : [];
   const known = materials[0];
   const handle = normalizeHandle(post.authorHandle);
-  const missing = [...(isbn ? [] : ["isbn"]), ...(guess.priceCents === null ? ["price"] : [])];
+  // Gemma can name non-book items (a fridge in a story); those list without an ISBN. Books still need one.
+  const category = isbn ? "textbook" : guess.category && guess.category !== "textbook" && guess.confidence >= 0.5 ? guess.category : "other";
+  const needsIsbn = !isbn && category === "other";
+  const missing = [...(needsIsbn ? ["isbn"] : []), ...(guess.priceCents === null ? ["price"] : [])];
   const title = known?.title ?? guess.title;
   return {
-    category: isbn ? "textbook" : "other",
+    category,
     status: missing.length ? "draft" : "active",
     title: known?.edition ? `${known.title} (${known.edition} ed.)` : title,
     description: post.caption.trim(),
