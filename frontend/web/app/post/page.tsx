@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { copy, copy2 } from '@/lib/copy';
 import { money } from '@/lib/money';
 import { photoResult, screenshotResult } from '@/lib/data';
+import { reviewListing, type ReviewRes } from '@/lib/ai';
 import { PricingPipeline } from '@/components/PricingPipeline';
 import { useDemo } from '@/lib/store';
 import type { Listing } from '@/lib/types';
@@ -74,7 +75,19 @@ export default function Post() {
     return () => window.removeEventListener('paste', onPaste);
   }, [take]);
 
-  const publish = () => {
+  const [review, setReview] = useState<ReviewRes | null>(null);
+  const [checking, setChecking] = useState(false);
+  useEffect(() => setReview(null), [form]); // edits re-run the check
+  const publish = async () => {
+    // JEV's listing gate: prohibited items are blocked; price / category warnings show once, then publish goes through.
+    if (!review) {
+      setChecking(true);
+      try {
+        const v = await reviewListing({ title: form.title, description: form.description, category: r.category, price_cents: Math.round(form.price * 100) });
+        setReview(v);
+        if (!v.allowed || v.warnings.length) return;
+      } catch { /* the gate is advisory in the UI; the API enforces it on publish */ } finally { setChecking(false); }
+    } else if (!review.allowed) return;
     const l: Listing = {
       id: `l_new_${Date.now()}`, title: form.title, description: form.description, category: r.category as Listing['category'],
       price_cents: Math.round(form.price * 100), negotiable: true, condition: (form.condition || 'good') as Listing['condition'],
@@ -247,8 +260,16 @@ export default function Post() {
                 <textarea rows={3} value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} className="mt-1.5 w-full rounded-[18px] border-[2.5px] border-ink bg-bg px-4 py-3 font-medium outline-none" />
               </label>
             </div>
+            {review && (review.blocked_reasons.length > 0 || review.warnings.length > 0) && (
+              <div role="status" className={`mt-5 rounded-[18px] border-[2.5px] border-ink p-4 text-[13.5px] font-semibold text-dark-ink ${review.allowed ? 'bg-butter' : 'bg-[#FFB4B4]'}`}>
+                <p className="label text-[11px]">{review.engine === 'jev' ? 'JEV-9B listing check' : 'Listing check'}</p>
+                <ul className="mt-1.5 list-disc space-y-0.5 pl-5">
+                  {[...review.blocked_reasons, ...review.warnings].map(w => <li key={w}>{w}</li>)}
+                </ul>
+              </div>
+            )}
             <div className="mt-6 flex flex-wrap gap-3">
-              <Pill type="submit" size="lg">Publish to the feed →</Pill>
+              <Pill type="submit" size="lg" disabled={checking || (review !== null && !review.allowed)}>{checking ? 'JEV is checking…' : review?.warnings.length && review.allowed ? 'Publish anyway →' : 'Publish to the feed →'}</Pill>
               <Pill type="button" variant="neutral" size="lg" onClick={() => { setImg(null); setPhase('idle'); }}>Start over</Pill>
             </div>
           </motion.form>
