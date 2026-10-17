@@ -40,9 +40,10 @@ const requireAdmin: MiddlewareHandler<AuthEnv> = async (c, next) => {
   await next();
 };
 
-async function createJob(schoolId: string, postId: string) {
+/** Owned by the admin who sent the post, so they can poll it with GET /jobs/{id}. */
+async function createJob(schoolId: string, userId: string, postId: string) {
   const { data, error } = await adminClient().from("jobs")
-    .insert({ school_id: schoolId, user_id: null, kind: "ingest_classify", status: "running", payload: { ingested_post_id: postId } })
+    .insert({ school_id: schoolId, user_id: userId, kind: "ingest_classify", status: "running", payload: { ingested_post_id: postId } })
     .select("id").single<{ id: string }>();
   if (error) throw error;
   return data.id;
@@ -73,7 +74,7 @@ export const adminRoutes = (verify: TokenVerifier, identifier: TextbookIdentifie
     }
     if (inserted.error) throw inserted.error;
     const postId = inserted.data.id;
-    const jobId = await createJob(schoolId, postId);
+    const jobId = await createJob(schoolId, c.var.user.id, postId);
     const linked = await db.from("ingested_posts").update({ job_id: jobId }).eq("id", postId);
     if (linked.error) throw linked.error;
 
