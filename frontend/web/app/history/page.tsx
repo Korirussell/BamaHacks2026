@@ -1,5 +1,7 @@
 'use client';
 import { useMemo, useState } from 'react';
+import dynamic from 'next/dynamic';
+import { Campus3DBoundary } from '@/components/campus3d/Campus3DBoundary';
 import { Play } from 'lucide-react';
 import { copy, copy2 } from '@/lib/copy';
 import { history, placeById } from '@/lib/data';
@@ -7,6 +9,8 @@ import { money } from '@/lib/money';
 import { useDemo, useMockLoad } from '@/lib/store';
 import { HistoryMap3D, type MapPin } from '@/components/HistoryMap3D';
 import { ErrorState, PageTitle, Skeleton, StickerCard } from '@/components/ui';
+
+const Campus3D = dynamic(() => import('@/components/campus3d/Campus3D'), { ssr: false, loading: () => <Skeleton className="h-full w-full rounded-[24px]" /> });
 
 export default function History() {
   const { extraHistory, celebrate } = useDemo();
@@ -46,7 +50,6 @@ export default function History() {
               <li
                 key={h.id}
                 onMouseEnter={() => setFocus(h.place_id)}
-                onMouseLeave={() => setFocus(null)}
                 onFocus={() => setFocus(h.place_id)}
                 className="flex items-center gap-3 rounded-[18px] border-2 border-ink bg-card p-3 shadow-[3px_3px_0_var(--shadow)] transition-transform hover:-translate-y-0.5"
               >
@@ -65,12 +68,23 @@ export default function History() {
           </ul>
         </div>
         <div className="order-1 h-[420px] lg:order-2 lg:sticky lg:top-8 lg:h-[calc(100vh-120px)] lg:min-h-[560px]">
-          <HistoryMap3D
-            pins={pins}
-            focus={focus}
-            replay={replay}
-            onReplayEnd={() => replay && celebrate({ kind: 'touchdown', title: copy.celebrate.td, line: copy.celebrate.tdDone, onDone: () => setReplay(null) })}
-          />
+          {(() => {
+            const onEnd = () => replay && celebrate({ kind: 'touchdown', title: copy.celebrate.td, line: copy.celebrate.tdDone, onDone: () => setReplay(null) });
+            const flat = <HistoryMap3D pins={pins} focus={focus} replay={replay} onReplayEnd={onEnd} />;
+            return (
+              <Campus3DBoundary fallback={flat}>
+                <Campus3D
+                  mode="history"
+                  pins={pins.map(p => { const h = items.find(x => x.place_id === p.placeId)!; return { id: p.id, placeId: p.placeId, label: `${h.title} · ${h.partner} · ${h.date}`, emoji: h.emoji, count: p.count }; })}
+                  focusPlaceId={focus}
+                  onPinClick={id => setFocus(f => (f === id ? null : id))}
+                  replay={replay ? { fromPlaceId: replay.from, toPlaceId: replay.to, key: replay.key } : null}
+                  onReplayEnd={onEnd}
+                  fallback={flat}
+                />
+              </Campus3DBoundary>
+            );
+          })()}
         </div>
       </div>
     </div>
