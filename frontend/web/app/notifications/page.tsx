@@ -2,12 +2,17 @@
 import Link from 'next/link';
 import { notifications as mockNotifications } from '@/lib/data';
 import { useDemo, useMockLoad } from '@/lib/store';
+import { USE_MOCKS, getNotifications } from '@/lib/api';
+import { useRealLoad } from '@/lib/useRealLoad';
 import { EmptyState, ErrorState, PageTitle, Skeleton } from '@/components/ui';
 
 export default function Notifications() {
-  const { status, retry } = useMockLoad();
+  const mock = useMockLoad();
+  // Real mode: fresh from /me/notifications on every visit, never the mock list.
+  const real = useRealLoad(getNotifications, [], !USE_MOCKS);
+  const { status, retry } = USE_MOCKS ? mock : real;
   const { notificationItems } = useDemo();
-  const notifications = notificationItems.length ? notificationItems : mockNotifications;
+  const notifications = USE_MOCKS ? (notificationItems.length ? notificationItems : mockNotifications) : real.data ?? [];
   return (
     <div className="mx-auto max-w-[760px]">
       <PageTitle title="Notifications" />

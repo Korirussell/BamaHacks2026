@@ -41,7 +41,7 @@ export async function request<T>(path: string, init: { method?: string; body?: u
 }
 
 // ---- Contract types (only the fields the web reads) ----
-type CUser = { id: string; display_name: string; avatar_url?: string | null; major?: string | null; grad_year?: number | null; school: { id: string }; reliability: UserPublic['reliability']; mutual_friend_count: number };
+export type CUser = { id: string; display_name: string; avatar_url?: string | null; major?: string | null; grad_year?: number | null; school: { id: string }; reliability: UserPublic['reliability']; mutual_friend_count: number };
 type CListing = {
   id: string; seller: CUser | null; external_seller?: { channel: string; handle: string; profile_url?: string | null } | null;
   category: string; title: string; description: string; price_cents: number; negotiable: boolean; condition: Listing['condition'];

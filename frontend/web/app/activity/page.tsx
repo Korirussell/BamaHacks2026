@@ -6,11 +6,17 @@ import { money } from '@/lib/money';
 import { meetups, placeById } from '@/lib/data';
 import { useDemo, useMockLoad } from '@/lib/store';
 import { ChipRow, EmptyState, ErrorState, PageTitle, PillLink, Skeleton } from '@/components/ui';
+import { USE_MOCKS } from '@/lib/api';
+import { LiveActivity } from '@/components/activity/LiveActivity';
 
 const TABS = ['Buying', 'Selling', 'Interests'] as const;
 type Row = { emoji: string; title: string; sub: string; status: string; action?: { label: string; href: string } };
 
 export default function Activity() {
+  return USE_MOCKS ? <MockActivity /> : <LiveActivity />;
+}
+
+function MockActivity() {
   const { order, lockedMeetupId, handedOff, listings, bids } = useDemo();
   const { status, retry } = useMockLoad();
   const [tab, setTab] = useState<(typeof TABS)[number]>('Buying');
