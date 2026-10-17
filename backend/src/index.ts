@@ -1,7 +1,8 @@
 import { serve } from "@hono/node-server";
 import { claudeTextbookIdentifier } from "./adapters/claude-vision.js";
 import { instagramGraph } from "./adapters/instagram.js";
-import { captionTextbookIdentifier, demoRoomBooker, manualRoomBooker } from "./adapters/stubs.js";
+import { libcalAvailability } from "./adapters/libcal.js";
+import { captionTextbookIdentifier, demoRoomBooker, manualRoomBooker, noRoomAvailability } from "./adapters/stubs.js";
 import { createApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import { instagramPoller } from "./workers/instagram-poller.js";
@@ -30,6 +31,7 @@ const instagram = config.INSTAGRAM === "graph" && config.INSTAGRAM_ACCESS_TOKEN
 const app = createApp({
   webOrigin: config.WEB_ORIGIN,
   rooms,
+  roomAvailability: config.LIBCAL === "on" ? libcalAvailability() : noRoomAvailability,
   identifier,
   instagram,
   payments: config.PAYMENTS,
@@ -38,6 +40,6 @@ const app = createApp({
 });
 
 serve({ fetch: app.fetch, port: config.PORT }, (info) => {
-  console.log(`API listening on http://localhost:${info.port}/api/v1 (rooms: ${config.ROOM_BOOKER}, payments: ${config.PAYMENTS}, identifier: ${useClaude ? "claude" : "caption"}, instagram: ${config.INSTAGRAM})`);
+  console.log(`API listening on http://localhost:${info.port}/api/v1 (rooms: ${config.ROOM_BOOKER}, libcal: ${config.LIBCAL}, payments: ${config.PAYMENTS}, identifier: ${useClaude ? "claude" : "caption"}, instagram: ${config.INSTAGRAM})`);
   instagram?.start();
 });

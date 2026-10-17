@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { adminClient } from "../lib/supabase.js";
 import { ApiError } from "../lib/errors.js";
-import { TutorAvailability, TutoringSession } from "../schemas/tutoring.js";
+import { libcalSpaceId } from "../adapters/libcal.js";
+import { TutorAvailability, TutoringSession, type RoomBooking } from "../schemas/tutoring.js";
 import type { BusyInterval, MeetingInput } from "../services/availability.js";
 import type { Eligibility, GradeRecord } from "../services/tutoring.js";
 import { ClassMeetingRow, ClassRecordRow, CourseRow, toCourse, toMeetingInput } from "./academics.js";
@@ -41,9 +42,21 @@ export function toSession(row: SessionRow, users: Map<string, UserPublicOut>) {
   return TutoringSession.parse({
     id: row.id, tutor, student, course: toCourse(row.course), start: row.start_at, end: row.end_at, price_cents: row.price_cents,
     location: { kind: row.location_kind, name: row.location_name, meeting_url: row.meeting_url },
-    room_booking: { status: row.room_booking_status, room: row.room, booking_url: row.booking_url },
+    room_booking: toRoomBooking(row),
     status: row.status, waiting_on: row.waiting_on, history: row.history, handoff_id: row.handoff_id,
   });
+}
+
+/**
+ * RoomBooking from the session's room columns. There's no room_id column: `room` holds the name and the id is
+ * read back from the LibCal booking URL (/space/{eid}); rooms without one (demo booker) use the name as id.
+ */
+export function toRoomBooking(row: Pick<SessionRow, "room_booking_status" | "room" | "booking_url">): RoomBooking {
+  return {
+    status: row.room_booking_status,
+    room: row.room ? { id: libcalSpaceId(row.booking_url) ?? row.room, name: row.room } : null,
+    booking_url: row.booking_url,
+  };
 }
 
 /** TutorProfile: the listed courses with the grade that earned each one. */

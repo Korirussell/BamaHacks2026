@@ -1,8 +1,10 @@
 import type {
   CampusDirectory,
   CourseMaterialsLookup,
+  FreeRoomSlot,
   LabelRenderer,
   PostSource,
+  RoomAvailability,
   RoomBooker,
   SellerOutreach,
   TextbookIdentifier,
@@ -43,9 +45,23 @@ export const manualOutreach: SellerOutreach = { send: async () => ({ sent: false
 /** No UA directory yet; buyers type their mail stop in their profile. */
 export const noDirectory: CampusDirectory = { mailStopFor: async () => null };
 
-/** No booking API yet; send people to the library's booking page. */
+/** No booking API yet: link to the free room we found (its LibCal page), or to the library's booking page. */
 export function manualRoomBooker(bookingUrl: string): RoomBooker {
-  return { book: async () => ({ status: "manual_required", room: null, bookingUrl }) };
+  return {
+    book: async ({ room }) => ({
+      status: "manual_required",
+      room: room ? { id: room.room_id, name: room.name } : null,
+      bookingUrl: room?.book_url ?? bookingUrl,
+    }),
+  };
+}
+
+/** No live availability (tests, LIBCAL=off): sessions fall back to the plain booking link. */
+export const noRoomAvailability: RoomAvailability = { freeRooms: async () => [] };
+
+/** Fixed free-room list, for tests. */
+export function staticRoomAvailability(slots: FreeRoomSlot[]): RoomAvailability {
+  return { freeRooms: async () => slots };
 }
 
 /** Label PDFs aren't rendered yet; the frontend can draw the label from the Shipment fields. */
@@ -59,10 +75,10 @@ export const placeholderLabelRenderer: LabelRenderer = {
  */
 export function demoRoomBooker(libraryName: string): RoomBooker {
   return {
-    book: async ({ start }) => ({
-      status: "booked",
-      room: `${libraryName} · Group Study Room ${201 + (new Date(start).getUTCHours() % 8)} (demo)`,
-      bookingUrl: null,
-    }),
+    book: async ({ start, room }) => {
+      if (room) return { status: "booked", room: { id: room.room_id, name: `${room.name} (demo)` }, bookingUrl: room.book_url };
+      const n = 201 + (new Date(start).getUTCHours() % 8);
+      return { status: "booked", room: { id: `demo-${n}`, name: `${libraryName} · Group Study Room ${n} (demo)` }, bookingUrl: null };
+    },
   };
 }

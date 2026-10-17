@@ -121,5 +121,6 @@ The services are **pure functions**: they take plain data in and return decision
 | `staticCourseMaterials` / seeded table | UA bookstore list |
 | `manualOutreach` (copy-paste DM) | Automated DM, or sellers tagging us |
 | `noDirectory` (buyer types their mail stop) | UA directory lookup |
-| `manualRoomBooker` (link to booking page) | Library booking API, if UA's system has one |
+| `manualRoomBooker` (link to the free LibCal room's page) | A `RoomBooker` that signs in to LibCal and books the room it's handed (e.g. Playwright), if UA allows it |
+| `noRoomAvailability` (tests, `LIBCAL=off`) | Live: `libcalAvailability` (`adapters/libcal.ts`, read-only, on by default) |
 | `placeholderLabelRenderer` | PDF label generation |
