@@ -4,9 +4,11 @@ Short, screen-by-screen notes for things the API expects the app to do. Shapes l
 
 ## Campus mail (UA)
 
+**This is optional scaffolding.** Students pick how to trade: **in person** at a safe zone (default, handoff flow) or **async by campus mail**. Only build these screens for the async path: they apply when an offer/order has `fulfillment: "campus_mail"` (the seller lists `campus_mail` in the listing's `fulfillment`, and the buyer picks it on the offer). In-person orders never touch shipments, MSC or `mail_name`.
+
 Background: [API_CONTRACT.md → Campus mail at UA](API_CONTRACT.md#campus-mail-at-ua). In short, the seller ships the package USPS at the **Crimson Mail & Shipping** window in the Student Center, addressed to the buyer's campus address; Campus Mail puts it in the buyer's locker; the buyer types our code to release the money.
 
-### 1. Profile: collect the buyer's mail info (before they choose campus mail)
+### 1. Profile: collect the buyer's mail info (only when they choose campus mail)
 
 `PATCH /me` with:
 
@@ -15,7 +17,7 @@ Background: [API_CONTRACT.md → Campus mail at UA](API_CONTRACT.md#campus-mail-
 | `mail_stop_code` | "Your MSC (6 digits)" | Help text: *myBama → Campus Mail Student Portal, at the top.* `"MSC 123456"` is accepted; anything that isn't 6 digits → `400 VALIDATION` with `field_errors.mail_stop_code`. |
 | `mail_name` | "First and last name (as on your UA record)" | Must be at least two words. Not the nickname: Campus Mail matches packages by this name + MSC. |
 
-`GET /me` returns both. If either is missing when the seller creates the shipment, the API returns `409 MAIL_INFO_REQUIRED`; send the buyer to this screen.
+Ask for these only when the buyer picks campus mail (or from an optional "Campus mail" section in settings); don't make them part of required onboarding. `GET /me` returns both. If either is missing when the seller creates the shipment, the API returns `409 MAIL_INFO_REQUIRED`; send the buyer to this screen.
 
 **Off-campus buyers:** show a one-liner when they pick campus mail: *"UA charges off-campus students $2.50 per package (max $25 per semester) on your student account."*
 

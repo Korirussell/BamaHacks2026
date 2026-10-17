@@ -271,6 +271,8 @@ Transcript parsing is **review-then-confirm**: grades only count as `grade_verif
 
 ### Campus mail at UA
 
+Campus mail is **one optional fulfillment method**, for when buyer and seller choose an async trade (`fulfillment: "campus_mail"` on the offer/order). In-person handoff at a safe zone (`in_person`) is still the default and needs none of this. Everything below only applies to `campus_mail` orders.
+
 How UA Campus Mail works (campusmail.ua.edu and the myBama Student Mail Portal), and what the app does about it:
 
 - **Address:** every student has a permanent 6-digit **MSC** (mailstop code), on or off campus. Packages are matched by **name + MSC**, so the label uses `mail_name` (first + last, as on the UA record), not `display_name`. A wrong name or MSC lands the package in Campus Mail's "mystery pile" with no notice.
