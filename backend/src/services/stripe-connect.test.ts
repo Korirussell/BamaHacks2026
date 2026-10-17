@@ -24,11 +24,11 @@ function fakes(initial?: Partial<ConnectProfile>, orders: Array<Partial<OrderRow
   };
   const pending = new Map(orders.map((o) => [o.id as string, o as OrderRow]));
   const pendingSessions = new Map(sessions.map((s) => [s.id as string, s as EscrowSession]));
-  const log = { created: [] as Array<{ params: Stripe.AccountCreateParams; key: string | undefined }>, links: [] as Stripe.AccountLinkCreateParams[], released: [] as string[], notes: [] as string[] };
+  const log = { created: [] as Array<{ params: Stripe.V2.Core.AccountCreateParams; key: string | undefined }>, links: [] as Stripe.AccountLinkCreateParams[], released: [] as string[], notes: [] as string[] };
   let account: Partial<Stripe.Account> = { id: "acct_1" };
   const stripe: ConnectStripe = {
+    v2: { core: { accounts: { create: async (params, o) => { log.created.push({ params, key: o?.idempotencyKey }); return { id: "acct_1" }; } } } },
     accounts: {
-      create: async (params, o) => { log.created.push({ params, key: o?.idempotencyKey }); return { id: "acct_1" } as Stripe.Account; },
       retrieve: async () => account as Stripe.Account,
     },
     accountLinks: { create: async (params) => { log.links.push(params); return { url: "https://connect.stripe.test/x" }; } },
@@ -58,7 +58,7 @@ test("account is created once with an idempotency key, then reused", async () =>
   assert.equal(await ensureConnectAccount(f.stripe, { id: uid }, f.deps), "acct_1");
   assert.equal(f.log.created.length, 1);
   assert.equal(f.log.created[0]?.key, `acct:${uid}`);
-  assert.equal(f.log.created[0]?.params.type, "express");
+  assert.equal(f.log.created[0]?.params.dashboard, "express");
   assert.deepEqual(f.log.created[0]?.params.metadata, { user_id: uid, school_id: school });
   assert.equal(f.p.stripe_status, "pending");
   const existing = fakes({ stripe_account_id: "acct_9", stripe_status: "pending" });

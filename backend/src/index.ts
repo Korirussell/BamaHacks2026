@@ -73,6 +73,7 @@ const app = createApp({
   payments: config.PAYMENTS,
   feeBps: config.PLATFORM_FEE_BPS,
   appName: config.APP_NAME,
+  groupme: { secret: config.GROUPME_WEBHOOK_SECRET || null, schoolId: config.GROUPME_SCHOOL_ID },
 });
 
 serve({ fetch: app.fetch, port: config.PORT }, (info) => {

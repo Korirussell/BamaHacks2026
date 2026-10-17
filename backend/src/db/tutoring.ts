@@ -30,7 +30,7 @@ export const SessionRow = z.object({
   status: z.enum(["requested", "accepted", "paid", "completed", "cancelled", "no_show"]), waiting_on: Side.nullable(),
   history: z.array(HistoryEntry), notes: z.string().nullable(), handoff_id: z.guid().nullable(), cancel_reason: z.string().nullable(),
   safe_zone_id: z.guid().nullable(), payment_intent_id: z.string().nullable(),
-  // 0013_tutoring_escrow; the defaults keep sessions readable on a database that doesn't have it yet.
+  // 0019_tutoring_escrow; the defaults keep sessions readable on a database that doesn't have it yet.
   payment_status: SessionPaymentStatus.default("none"), payout_status: SessionPayoutStatus.nullable().default(null),
   fee_cents: z.number().int().nullable().default(null), tutor_payout_cents: z.number().int().nullable().default(null),
   paid_at: tsNull.default(null), released_at: tsNull.default(null),

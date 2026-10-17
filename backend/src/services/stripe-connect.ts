@@ -7,13 +7,21 @@ import { releaseAwaitingPayout } from "./escrow.js";
 import { EscrowSession, releaseAwaitingSessionPayout } from "./tutoring-escrow.js";
 import { SESSION_SELECT } from "../db/tutoring.js";
 
-// Stripe Connect Express onboarding for sellers. Everything Stripe-facing goes through the small
+// Stripe Connect Express onboarding for sellers. New platforms must create connected accounts
+// with Accounts v2 (POST /v2/core/accounts); the account is still an acct_ id that v1 retrieve,
+// account links and transfers accept, so only creation uses v2. Everything Stripe-facing goes through the small
 // ConnectStripe interface (the real client satisfies it) and every database touch through
 // ConnectStore, so tests run with fakes and no network.
 
 export interface ConnectStripe {
+  v2: {
+    core: {
+      accounts: {
+        create(params: Stripe.V2.Core.AccountCreateParams, options?: { idempotencyKey?: string }): Promise<{ id: string }>;
+      };
+    };
+  };
   accounts: {
-    create(params: Stripe.AccountCreateParams, options?: { idempotencyKey?: string }): Promise<Stripe.Account>;
     retrieve(id: string): Promise<Stripe.Account>;
   };
   accountLinks: {
@@ -107,13 +115,14 @@ export async function ensureConnectAccount(
   if (profile.stripe_account_id) return profile.stripe_account_id;
 
   // The idempotency key makes two concurrent calls get the same Stripe account back.
-  const account = await stripe.accounts.create(
+  // Express dashboard, the platform collects fees and covers losses, and the seller can receive transfers.
+  const account = await stripe.v2.core.accounts.create(
     {
-      type: "express",
-      country: "US",
-      email: profile.email,
-      capabilities: { transfers: { requested: true } },
-      business_type: "individual",
+      contact_email: profile.email,
+      dashboard: "express",
+      identity: { country: "us", entity_type: "individual" },
+      defaults: { responsibilities: { fees_collector: "application", losses_collector: "application" } },
+      configuration: { recipient: { capabilities: { stripe_balance: { stripe_transfers: { requested: true } } } } },
       metadata: { user_id: profile.id, school_id: profile.school_id },
     },
     { idempotencyKey: `acct:${profile.id}` },

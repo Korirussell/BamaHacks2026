@@ -4,7 +4,7 @@ import type Stripe from "stripe";
 import { createApp } from "../app.js";
 import type { OrderRow } from "../db/market.js";
 import type { EscrowSession } from "../services/tutoring-escrow.js";
-import type { WebhookDeps } from "./webhooks.js";
+import type { StripeWebhookDeps } from "./stripe-webhook.js";
 
 process.env["SUPABASE_URL"] ??= "https://example.supabase.co";
 
@@ -17,7 +17,7 @@ const orderBase = {
 function harness(order: OrderRow | null = orderBase, session: EscrowSession | null = null) {
   const log: string[] = [];
   const seen = new Set<string>();
-  const deps: WebhookDeps = {
+  const deps: StripeWebhookDeps = {
     constructEvent: (raw, sig) => {
       if (sig !== "good") throw new Error("bad signature");
       return JSON.parse(raw) as Stripe.Event;
@@ -39,7 +39,7 @@ function harness(order: OrderRow | null = orderBase, session: EscrowSession | nu
     updateSession: async (s, patch) => { log.push(`updateSession:${JSON.stringify(patch)}`); return { ...s, ...patch } as EscrowSession; },
     markSessionPaid: async (s, ref) => { log.push(`markSessionPaid:${ref}`); return { ...s, status: "paid" } as EscrowSession; },
   };
-  const app = createApp({ webhooks: deps, log: false });
+  const app = createApp({ stripeWebhooks: deps, log: false });
   const post = (event: unknown, sig = "good") =>
     app.request("/api/v1/webhooks/stripe", { method: "POST", headers: { "stripe-signature": sig }, body: JSON.stringify(event) });
   return { log, post, app };
@@ -102,7 +102,7 @@ test("account.updated syncs the connect account; refunds and unknown events are 
 
 test("a handler failure frees the event for Stripe's retry and returns 500", async () => {
   const h = harness();
-  const app = createApp({ webhooks: { ...({} as WebhookDeps), constructEvent: (raw) => JSON.parse(raw) as Stripe.Event, events: { begin: async () => true, complete: async () => {}, abandon: async () => { h.log.push("abandoned"); } }, loadOrder: async () => { throw new Error("db down"); } }, log: false });
+  const app = createApp({ stripeWebhooks: { ...({} as StripeWebhookDeps), constructEvent: (raw) => JSON.parse(raw) as Stripe.Event, events: { begin: async () => true, complete: async () => {}, abandon: async () => { h.log.push("abandoned"); } }, loadOrder: async () => { throw new Error("db down"); } }, log: false });
   const res = await app.request("/api/v1/webhooks/stripe", { method: "POST", headers: { "stripe-signature": "x" }, body: JSON.stringify(pi("payment_intent.succeeded")) });
   assert.equal(res.status, 500);
   assert.deepEqual(h.log, ["abandoned"]);

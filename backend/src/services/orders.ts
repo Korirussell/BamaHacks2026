@@ -19,6 +19,7 @@ export type OrderEvent =
   | "label_created" // campus mail
   | "dropped_off"
   | "received"
+  | "ticket_sent" // app-transfer ticket: seller sent it; the buyer's "received" completes it
   | "cancel"
   | "no_show"
   | "dispute"
@@ -29,7 +30,7 @@ export type OrderEvent =
 // Contract → Part 2 → Order lifecycle. Anything not listed is INVALID_STATE.
 const TRANSITIONS: Record<OrderStatus, Partial<Record<OrderEvent, OrderStatus>>> = {
   awaiting_payment: { payment_succeeded: "paid", cancel: "cancelled" },
-  paid: { meetup_agreed: "scheduled", label_created: "scheduled", cancel: "refunded" },
+  paid: { meetup_agreed: "scheduled", label_created: "scheduled", ticket_sent: "in_transit", cancel: "refunded" },
   scheduled: { both_nearby: "handing_off", handoff_confirmed: "completed", dropped_off: "in_transit", no_show: "refunded", cancel: "refunded", dispute: "disputed" },
   handing_off: { handoff_confirmed: "completed", no_show: "refunded", dispute: "disputed" },
   in_transit: { received: "completed", auto_complete: "completed", dispute: "disputed" },

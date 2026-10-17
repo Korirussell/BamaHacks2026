@@ -25,6 +25,10 @@ const Env = z.object({
   VAPID_PUBLIC_KEY: optional,
   VAPID_PRIVATE_KEY: optional,
   GROUPME_BOT_TOKEN: optional,
+  // Shared secret in the bot's callback URL (/api/v1/webhooks/groupme?token=...). Unset → every callback is rejected.
+  GROUPME_WEBHOOK_SECRET: optional,
+  // Which school the bot's groups belong to (single-school MVP: the seeded UA school).
+  GROUPME_SCHOOL_ID: z.guid().default("00000000-0000-4000-a000-000000000001"),
   RESEND_API_KEY: optional,
   APP_URL_SCHEME: optional,
   // Library rooms: "manual" sends people to ROOM_BOOKING_URL; "demo" fakes a booked room for the pitch;

@@ -1,6 +1,8 @@
 import { z } from "zod";
 import type { KnownBook, TextbookIdentifier } from "../adapters/ports.js";
 import { CourseRow } from "../db/academics.js";
+import { loadListingRow } from "../db/market.js";
+import { notifyWishlistMatch } from "../db/wishlist.js";
 import { notify } from "../lib/notify.js";
 import { adminClient, publicMediaUrl } from "../lib/supabase.js";
 import { draftFromPost, type KnownMaterial } from "../services/ingest.js";
@@ -139,6 +141,8 @@ export async function runIngest(postId: string, identifier: TextbookIdentifier):
     })
     : 0;
   if (notified) events.push(pipelineEvent("notified", `Told ${notified} student${notified === 1 ? "" : "s"} who need it`));
+  const wished = result.status === "active" ? await notifyWishlistMatch(await loadListingRow(listing.id, post.school_id), `@${result.externalHandle}`) : 0;
+  if (wished) events.push(pipelineEvent("notified", `Told ${wished} student${wished === 1 ? "" : "s"} it's on their wishlist`));
   const posted = await db.from("ingested_posts").update({ status: "processed" }).eq("id", post.id);
   if (posted.error) throw posted.error;
   return {
@@ -146,4 +150,47 @@ export async function runIngest(postId: string, identifier: TextbookIdentifier):
     course_codes: codes, notified, title: result.textbookTitle ?? result.title, price_cents: result.priceCents,
     identified_by: guess.source ?? "caption", confidence: guess.confidence, events,
   };
+}
+
+export interface ExternalPostInput {
+  channel: "instagram" | "groupme" | "facebook" | "snapchat";
+  external_url: string;
+  author_handle: string;
+  caption: string;
+  media_ids: string[];
+  posted_at: string;
+}
+
+/**
+ * Stores one external post and runs ingest_classify on it inline (admin feed-in, GroupMe webhook).
+ * The same channel + URL twice is a no-op that returns the first post. `userId` owns the job (null for webhooks).
+ */
+export async function ingestExternalPost(input: {
+  schoolId: string; userId: string | null; post: ExternalPostInput; detected: string; identifier: TextbookIdentifier;
+}): Promise<{ jobId: string | null; postId: string; duplicate: boolean }> {
+  const { schoolId, post } = input;
+  const db = adminClient();
+  const inserted = await db.from("ingested_posts").insert({ school_id: schoolId, ...post }).select("id").single<{ id: string }>();
+  if (inserted.error?.code === "23505") {
+    const existing = z.object({ id: z.guid(), job_id: z.guid().nullable() })
+      .parse(check(await db.from("ingested_posts").select("id, job_id").eq("channel", post.channel).eq("external_url", post.external_url).single()));
+    return { jobId: existing.job_id, postId: existing.id, duplicate: true };
+  }
+  const postId = check(inserted).id;
+  const job = check(await db.from("jobs").insert({
+    school_id: schoolId, user_id: input.userId, kind: "ingest_classify", status: "running", payload: { ingested_post_id: postId },
+  }).select("id").single<{ id: string }>());
+  check(await db.from("ingested_posts").update({ job_id: job.id }).eq("id", postId));
+
+  // Inline for now (a few hundred ms with the caption identifier); the job row is what clients poll.
+  try {
+    const result = await runIngest(postId, input.identifier);
+    const events = [pipelineEvent("detected", input.detected), ...result.events];
+    check(await db.from("jobs").update({ status: "succeeded", result: { ...result, events } }).eq("id", job.id));
+  } catch (err) {
+    console.error("ingest_classify failed", postId, err);
+    await db.from("jobs").update({ status: "failed", error: "Couldn't turn this post into a listing" }).eq("id", job.id);
+    await db.from("ingested_posts").update({ status: "failed" }).eq("id", postId);
+  }
+  return { jobId: job.id, postId, duplicate: false };
 }

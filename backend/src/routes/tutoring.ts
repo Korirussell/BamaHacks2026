@@ -18,6 +18,7 @@ import { idempotent, type IdempotencyStore } from "../middleware/idempotency.js"
 import { PaySessionRes, CounterSessionReq, CreateSessionReq, PutTutorProfileReq, TutorAvailability, TutorsQuery } from "../schemas/tutoring.js";
 import { expandMeetings, freeBlocks, intersect, type BusyInterval, type FreeBlock, type Interval } from "../services/availability.js";
 import { freeBusy } from "../services/google.js";
+import type { Party } from "../services/slots.js";
 import { DAY, MINUTE, iso, localDate, localDatesBetween, weekdayOf, zonedToUtc } from "../services/time.js";
 import {
   EscrowSession, beginSessionPayment, defaultSessionEscrowDeps, settleSession, type SessionEscrowDeps,
@@ -91,6 +92,41 @@ async function freeTimeFor(userIds: string[], schoolId: string, tz: string, from
     const profile = tutorIds.includes(id) ? tutorProfiles.profiles.get(id) : undefined;
     return [id, profile ? applyTutorAvailability(free, profile.availability, from, to, tz) : free];
   }));
+}
+
+/** Everyone (but the student) who lists the course in their tutor profile; 404 when the course isn't at the school. */
+export async function tutorIdsForCourse(courseId: string, schoolId: string, studentId: string) {
+  const db = adminClient();
+  const [course, offered] = await Promise.all([
+    db.from("courses").select("id").eq("id", courseId).eq("school_id", schoolId).maybeSingle(),
+    db.from("tutor_courses").select("user_id").eq("course_id", courseId),
+  ]);
+  if (!check(course)) throw new ApiError(404, "NOT_FOUND", "Course not found");
+  return [...new Set(z.array(z.object({ user_id: z.guid() })).parse(check(offered)).map((r) => r.user_id))].filter((t) => t !== studentId);
+}
+
+/** Profiles, public users and per-course eligibility for a set of tutors. */
+export async function tutorPool(tutorIds: string[], schoolId: string, minGrade: string) {
+  const [tp, records, users] = await Promise.all([loadTutorProfiles(tutorIds), loadClassRecords(tutorIds, schoolId), loadUsersPublic(tutorIds, schoolId)]);
+  const eligibility = new Map(tutorIds.map((t) => [t, tutorEligibility((records.get(t) ?? []).map(toGradeRecord), minGrade)]));
+  return { tutorIds, tp, users, eligibility };
+}
+
+/** The pool as findTutorMatches candidates; `party` gives each tutor's free time. */
+export function tutorCandidates(pool: Awaited<ReturnType<typeof tutorPool>>, courseId: string, schoolId: string, party: (tutorId: string) => Party): TutorCandidate[] {
+  const { tp, users, eligibility } = pool;
+  return pool.tutorIds.flatMap((t) => {
+    const p = tp.profiles.get(t);
+    if (!p || p.school_id !== schoolId || !users.has(t)) return [];
+    const e = eligibility.get(t)?.get(courseId);
+    const stats = tp.stats.get(t);
+    return [{
+      userId: t, enabled: p.enabled && p.open_to_requests, courseIds: (tp.courses.get(t) ?? []).map((x) => x.id),
+      hourlyRateCents: p.hourly_rate_cents, rating: stats?.rating ?? 0, reviewCount: stats?.review_count ?? 0, sessionsCompleted: stats?.sessions_completed ?? 0,
+      record: e ? { grade: e.grade, verified: e.verified, term: e.term } : null,
+      party: party(t), meetsInPerson: p.modes.includes("in_person"),
+    }];
+  });
 }
 
 async function loadSessionRow(id: string, userId: string): Promise<EscrowSession> {
@@ -247,39 +283,15 @@ export const tutoringRoutes = (
     if (to <= from) throw new ApiError(400, "VALIDATION", "Invalid request", { to: "Must be after from" });
     if (to - from > MAX_SEARCH_DAYS * DAY) throw new ApiError(400, "VALIDATION", "Invalid request", { to: `Maximum range is ${MAX_SEARCH_DAYS} days` });
 
-    const db = adminClient();
-    const [school, library, course, offered] = await Promise.all([
-      loadSchool(schoolId),
-      loadLibrary(schoolId),
-      db.from("courses").select("*").eq("id", q.course_id).eq("school_id", schoolId).maybeSingle(),
-      db.from("tutor_courses").select("user_id").eq("course_id", q.course_id),
-    ]);
-    if (!check(course)) throw new ApiError(404, "NOT_FOUND", "Course not found");
-    const tutorIds = [...new Set(z.array(z.object({ user_id: z.guid() })).parse(check(offered)).map((r) => r.user_id))].filter((t) => t !== studentId);
-
-    const [tp, records, free, users] = await Promise.all([
-      loadTutorProfiles(tutorIds),
-      loadClassRecords(tutorIds, schoolId),
+    const [school, library, tutorIds] = await Promise.all([loadSchool(schoolId), loadLibrary(schoolId), tutorIdsForCourse(q.course_id, schoolId, studentId)]);
+    const [pool, free] = await Promise.all([
+      tutorPool(tutorIds, schoolId, school.tutor_min_grade),
       freeTimeFor([studentId, ...tutorIds], schoolId, school.timezone, from, to, tutorIds),
-      loadUsersPublic(tutorIds, schoolId),
     ]);
+    const { tp, users, eligibility } = pool;
     const fallback = { lat: school.center_lat, lng: school.center_lng };
     const place = library ? { lat: library.lat, lng: library.lng } : null;
-    const eligibility = new Map(tutorIds.map((t) => [t, tutorEligibility((records.get(t) ?? []).map(toGradeRecord), school.tutor_min_grade)]));
-
-    const candidates: TutorCandidate[] = [];
-    for (const t of tutorIds) {
-      const p = tp.profiles.get(t);
-      if (!p || p.school_id !== schoolId || !users.has(t)) continue;
-      const e = eligibility.get(t)?.get(q.course_id);
-      const stats = tp.stats.get(t);
-      candidates.push({
-        userId: t, enabled: p.enabled && p.open_to_requests, courseIds: (tp.courses.get(t) ?? []).map((x) => x.id),
-        hourlyRateCents: p.hourly_rate_cents, rating: stats?.rating ?? 0, reviewCount: stats?.review_count ?? 0, sessionsCompleted: stats?.sessions_completed ?? 0,
-        record: e ? { grade: e.grade, verified: e.verified, term: e.term } : null,
-        party: { free: free.get(t) ?? [], fallback }, meetsInPerson: p.modes.includes("in_person"),
-      });
-    }
+    const candidates = tutorCandidates(pool, q.course_id, schoolId, (t) => ({ free: free.get(t) ?? [], fallback }));
     const matchInput = {
       courseId: q.course_id, student: { userId: studentId, free: free.get(studentId) ?? [], fallback }, candidates,
       minGrade: school.tutor_min_grade, meetingPlace: place, durationMin: q.duration_min, now: Date.now(),
