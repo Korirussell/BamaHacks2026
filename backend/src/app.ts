@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { allowOrigin, primaryOrigin } from "./lib/origins.js";
 import { logger } from "hono/logger";
 import { ApiError, errorResponse } from "./lib/errors.js";
 import { supabaseVerifier, type TokenVerifier } from "./middleware/auth.js";
@@ -89,8 +90,7 @@ export function createApp(deps: Partial<AppDeps> = {}) {
   } = deps;
 
   // WEB_ORIGIN may list several origins (comma-separated, e.g. localhost and the Vercel deploy); the first is the app URL in links.
-  const origins = webOrigin.split(",").map((o) => o.trim()).filter(Boolean);
-  const market: MarketConfig = { feeBps, appUrl: origins[0] ?? webOrigin, appName, ...(instagram ? { outreach: instagram.outreach } : {}) };
+  const market: MarketConfig = { feeBps, appUrl: primaryOrigin(webOrigin), appName, ...(instagram ? { outreach: instagram.outreach } : {}) };
 
   const api = new Hono()
     .get("/health", (c) => c.json({ data: { ok: true } }))
@@ -132,7 +132,7 @@ export function createApp(deps: Partial<AppDeps> = {}) {
 
   const app = new Hono();
   if (log) app.use(logger());
-  app.use("/api/*", cors({ origin: origins }));
+  app.use("/api/*", cors({ origin: allowOrigin(webOrigin) }));
   app.route("/api/v1", api);
 
   app.notFound((c) => errorResponse(c, new ApiError(404, "NOT_FOUND", "Route not found")));
