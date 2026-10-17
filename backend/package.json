@@ -7,9 +7,10 @@
     "dev": "tsx watch --env-file-if-exists=.env src/index.ts",
     "build": "tsc",
     "start": "node --env-file-if-exists=.env dist/index.js",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p scripts",
     "test": "node --import tsx --test \"src/**/*.test.ts\"",
-    "seed:demo": "tsx --env-file-if-exists=.env src/scripts/seed-demo.ts"
+    "seed:demo": "tsx --env-file-if-exists=.env src/scripts/seed-demo.ts",
+    "live-check": "tsx --env-file-if-exists=.env scripts/live-check.ts"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.5",
