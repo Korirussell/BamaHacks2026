@@ -1,0 +1,7 @@
+[
+  { "id": "u_kori",  "display_name": "Kori R.",  "avatar_emoji": "🧑🏾‍💻", "major": "Computer Science", "grad_year": 2027, "school_id": "s_ua", "reliability": { "score": 4.9, "completed": 14, "no_shows": 0, "badge": "reliable" }, "mutual_friend_count": 0 },
+  { "id": "u_kayla", "display_name": "Kayla R.", "avatar_emoji": "👩🏼", "major": "Biology", "grad_year": 2028, "school_id": "s_ua", "reliability": { "score": 4.8, "completed": 9, "no_shows": 0, "badge": "reliable" }, "mutual_friend_count": 4 },
+  { "id": "u_maya",  "display_name": "Maya T.",  "avatar_emoji": "👩🏽", "major": "Marketing", "grad_year": 2026, "school_id": "s_ua", "reliability": { "score": 5.0, "completed": 31, "no_shows": 0, "badge": "top" }, "mutual_friend_count": 7 },
+  { "id": "u_dev",   "display_name": "Dev P.",   "avatar_emoji": "👨🏽", "major": "Mechanical Engineering", "grad_year": 2027, "school_id": "s_ua", "reliability": { "score": 0, "completed": 1, "no_shows": 0, "badge": "new" }, "mutual_friend_count": 1 },
+  { "id": "u_sam",   "display_name": "Sam W.",   "avatar_emoji": "🧑🏼", "major": "Finance", "grad_year": 2026, "school_id": "s_ua", "reliability": { "score": 4.6, "completed": 6, "no_shows": 0, "badge": "reliable" }, "mutual_friend_count": 2 }
+]
