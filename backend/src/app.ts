@@ -3,24 +3,25 @@ import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { ApiError, errorResponse } from "./lib/errors.js";
 import { supabaseVerifier, type TokenVerifier } from "./middleware/auth.js";
-import { auth } from "./routes/auth.js";
+import { authRoutes, supabaseSchoolLookup, type SchoolLookup } from "./routes/auth.js";
 import { academicsRoutes } from "./routes/academics.js";
 import { meRoutes } from "./routes/me.js";
 import { scheduleRoutes } from "./routes/schedule.js";
 
 export interface AppDeps {
   verify: TokenVerifier;
+  findSchool: SchoolLookup;
   webOrigin: string;
   log: boolean;
 }
 
 /** Builds the app. Tests pass fakes; index.ts passes the real Supabase pieces. */
 export function createApp(deps: Partial<AppDeps> = {}) {
-  const { verify = supabaseVerifier, webOrigin = "http://localhost:3000", log = true } = deps;
+  const { verify = supabaseVerifier, findSchool = supabaseSchoolLookup, webOrigin = "http://localhost:3000", log = true } = deps;
 
   const api = new Hono()
     .get("/health", (c) => c.json({ data: { ok: true } }))
-    .route("/auth", auth)
+    .route("/auth", authRoutes(findSchool))
     .route("/me", meRoutes(verify))
     .route("/", academicsRoutes(verify))
     .route("/", scheduleRoutes(verify));
