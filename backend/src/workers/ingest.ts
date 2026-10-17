@@ -1,6 +1,8 @@
 import { z } from "zod";
 import type { KnownBook, TextbookIdentifier } from "../adapters/ports.js";
 import { CourseRow } from "../db/academics.js";
+import { loadListingRow } from "../db/market.js";
+import { notifyWishlistMatch } from "../db/wishlist.js";
 import { notify } from "../lib/notify.js";
 import { adminClient, publicMediaUrl } from "../lib/supabase.js";
 import { draftFromPost, type KnownMaterial } from "../services/ingest.js";
@@ -139,6 +141,8 @@ export async function runIngest(postId: string, identifier: TextbookIdentifier):
     })
     : 0;
   if (notified) events.push(pipelineEvent("notified", `Told ${notified} student${notified === 1 ? "" : "s"} who need it`));
+  const wished = result.status === "active" ? await notifyWishlistMatch(await loadListingRow(listing.id, post.school_id), `@${result.externalHandle}`) : 0;
+  if (wished) events.push(pipelineEvent("notified", `Told ${wished} student${wished === 1 ? "" : "s"} it's on their wishlist`));
   const posted = await db.from("ingested_posts").update({ status: "processed" }).eq("id", post.id);
   if (posted.error) throw posted.error;
   return {
