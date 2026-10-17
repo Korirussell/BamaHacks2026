@@ -27,7 +27,7 @@ const TOOL = {
   },
 } as const;
 
-const Answer = z.object({
+export const Answer = z.object({
   is_textbook: z.boolean(),
   known_isbn: z.string().nullable(),
   isbn: z.string().nullable(),

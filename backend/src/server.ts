@@ -1,4 +1,5 @@
 import { claudeTextbookIdentifier } from "./adapters/claude-vision.js";
+import { geminiTextbookIdentifier } from "./adapters/gemini-vision.js";
 import { instagramGraph } from "./adapters/instagram.js";
 import { libcalAvailability } from "./adapters/libcal.js";
 import { libcalPlaywrightBooker } from "./adapters/libcal-booker.js";
@@ -25,9 +26,13 @@ export function buildServer(config: Config = loadConfig()) {
       ? libcalPlaywrightBooker({ profileDir: config.LIBCAL_PROFILE_DIR, cdpUrl: config.LIBCAL_CDP_URL || undefined, headless: config.LIBCAL_HEADLESS === "on", fallback: manualRooms })
       : manualRooms;
 
-  const useClaude = config.IDENTIFIER === "claude" || (config.IDENTIFIER === "auto" && !!config.ANTHROPIC_API_KEY);
+  const useGemini = config.IDENTIFIER === "gemini" || (config.IDENTIFIER === "auto" && !!config.GEMINI_API_KEY);
+  const useClaude = !useGemini && (config.IDENTIFIER === "claude" || (config.IDENTIFIER === "auto" && !!config.ANTHROPIC_API_KEY));
+  if (useGemini && !config.GEMINI_API_KEY) throw new Error("IDENTIFIER=gemini needs GEMINI_API_KEY");
   if (useClaude && !config.ANTHROPIC_API_KEY) throw new Error("IDENTIFIER=claude needs ANTHROPIC_API_KEY");
-  const identifier = useClaude && config.ANTHROPIC_API_KEY
+  const identifier = useGemini && config.GEMINI_API_KEY
+    ? geminiTextbookIdentifier({ apiKey: config.GEMINI_API_KEY, models: config.GEMINI_VISION_MODELS.split(",").map((m) => m.trim()).filter(Boolean), fallback: captionTextbookIdentifier })
+    : useClaude && config.ANTHROPIC_API_KEY
     ? claudeTextbookIdentifier({ apiKey: config.ANTHROPIC_API_KEY, model: config.CLAUDE_VISION_MODEL, fallback: captionTextbookIdentifier })
     : captionTextbookIdentifier;
 
@@ -86,6 +91,6 @@ export function buildServer(config: Config = loadConfig()) {
     (instagram ?? stories)?.start();
     timers?.start();
   };
-  const summary = `rooms: ${config.ROOM_BOOKER}, libcal: ${config.LIBCAL}, payments: ${config.PAYMENTS}, identifier: ${useClaude ? "claude" : "caption"}, instagram: ${config.INSTAGRAM}, timers: ${config.ORDER_TIMERS}, demo auth: ${config.DEMO_AUTH}`;
+  const summary = `rooms: ${config.ROOM_BOOKER}, libcal: ${config.LIBCAL}, payments: ${config.PAYMENTS}, identifier: ${useGemini ? "gemini" : useClaude ? "claude" : "caption"}, instagram: ${config.INSTAGRAM}, timers: ${config.ORDER_TIMERS}, demo auth: ${config.DEMO_AUTH}`;
   return { app, config, startWorkers, summary };
 }

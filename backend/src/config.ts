@@ -62,8 +62,11 @@ const Env = z.object({
   INSTAGRAM_AUTO_REPLY: z.enum(["on", "off"]).default("on"),
   // Which school polled posts belong to (single-school MVP: the seeded UA school).
   INSTAGRAM_SCHOOL_ID: z.guid().default("00000000-0000-4000-a000-000000000001"),
-  // Textbook identification: "claude" (vision) when ANTHROPIC_API_KEY is set, else the caption parser.
-  IDENTIFIER: z.enum(["auto", "claude", "caption"]).default("auto"),
+  // Textbook identification: "gemini" (vision) when GEMINI_API_KEY is set, else "claude" when ANTHROPIC_API_KEY is, else the caption parser.
+  IDENTIFIER: z.enum(["auto", "gemini", "claude", "caption"]).default("auto"),
+  GEMINI_API_KEY: optional,
+  /** Tried in order; a busy model (429/503) falls through to the next. */
+  GEMINI_VISION_MODELS: z.string().min(1).default("gemini-flash-latest,gemini-3.8-flash,gemini-3.5-flash"),
   CLAUDE_VISION_MODEL: z.string().min(1).default("claude-sonnet-5-5"),
   // Background timers: unpaid orders cancel, campus-mail orders auto-complete, offers expire.
   ORDER_TIMERS: z.enum(["on", "off"]).default("on"),
