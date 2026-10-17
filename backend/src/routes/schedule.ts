@@ -45,7 +45,8 @@ export function scheduleReferenceErrors(
 }
 
 export const scheduleRoutes = (verify: TokenVerifier) => new Hono<AuthEnv>()
-  .use(requireUser(verify))
+  .use("/me/class-schedule/*", requireUser(verify))
+  .use("/me/availability/*", requireUser(verify))
   .get("/me/class-schedule", async (c) => c.json(one((await loadMeetings(c.var.user.id, c.var.user.schoolId, parseQuery(c, ScheduleQuery).term)).map(toClassMeeting))))
   .put("/me/class-schedule", async (c) => {
     const input = await parseBody(c, PutClassScheduleReq);
@@ -62,7 +63,7 @@ export const scheduleRoutes = (verify: TokenVerifier) => new Hono<AuthEnv>()
     const courseSet = new Set(z.array(CourseRow.pick({ id: true })).parse(courses.data).map((course) => course.id));
     const buildingSet = new Set(z.array(BuildingRow.pick({ id: true })).parse(buildings.data).map((building) => building.id));
     const fieldErrors = scheduleReferenceErrors(input.meetings, courseSet, buildingSet);
-    if (Object.keys(fieldErrors).length) throw new ApiError(422, "VALIDATION", "Invalid request", fieldErrors);
+    if (Object.keys(fieldErrors).length) throw new ApiError(400, "VALIDATION", "Invalid request", fieldErrors);
     const terms = [...new Set(input.meetings.map((meeting) => meeting.term))];
     if (terms.length) {
       const deleted = await db.from("class_meetings").delete().eq("user_id", c.var.user.id).eq("school_id", c.var.user.schoolId).in("term", terms);

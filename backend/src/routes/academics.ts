@@ -11,6 +11,9 @@ const CoursesQuery = z.object({ q: z.string().default("") });
 const ClassesQuery = z.object({ status: z.enum(["current", "past", "planned"]).optional() });
 const CreateClassReq = z.object({ course_id: z.uuid(), term: z.string().min(1), status: z.enum(["current", "past", "planned"]), grade: z.string().nullable().optional() });
 
+// Free text goes inside PostgREST `.or()` filter strings, where , ( ) " and \ are syntax and % * are wildcards.
+export const filterText = (value: string) => value.replace(/[,()"\\%*]/g, " ").trim();
+
 const listClassRecords = async (userId: string, schoolId: string, status?: "current" | "past" | "planned") => {
   let query = adminClient().from("class_records").select("*, course:courses(*)").eq("user_id", userId).eq("school_id", schoolId);
   if (status) query = query.eq("status", status);
@@ -19,11 +22,16 @@ const listClassRecords = async (userId: string, schoolId: string, status?: "curr
   return z.array(ClassRecordRow).parse(result.data).map(toClassRecord);
 };
 
+// Path-scoped so routers mounted at "/" never put sign-in in front of public or unknown routes.
 export const academicsRoutes = (verify: TokenVerifier) => new Hono<AuthEnv>()
-  .use(requireUser(verify))
+  .use("/courses/*", requireUser(verify))
+  .use("/buildings/*", requireUser(verify))
+  .use("/safe-zones/*", requireUser(verify))
+  .use("/mail/*", requireUser(verify))
+  .use("/me/classes/*", requireUser(verify))
   .get("/courses", async (c) => {
     const { q } = parseQuery(c, CoursesQuery);
-    const pattern = `%${q}%`;
+    const pattern = `%${filterText(q)}%`;
     const result = await adminClient().from("courses").select("*").eq("school_id", c.var.user.schoolId).or(`code.ilike.${pattern},title.ilike.${pattern}`).limit(20);
     if (result.error) throw result.error;
     return c.json(one(z.array(CourseRow).parse(result.data).map(toCourse)));
@@ -35,7 +43,7 @@ export const academicsRoutes = (verify: TokenVerifier) => new Hono<AuthEnv>()
     if (!course.data) throw new ApiError(404, "NOT_FOUND", "Course not found");
     let materials = db.from("course_materials").select("isbn, title, required, term").eq("course_id", c.req.param("id")).eq("school_id", c.var.user.schoolId);
     const term = c.req.query("term");
-    if (term) materials = materials.or(`term.is.null,term.eq.${term}`);
+    if (term) materials = materials.or(`term.is.null,term.eq."${filterText(term)}"`);
     const materialResult = await materials;
     if (materialResult.error) throw materialResult.error;
     const rows = await Promise.all((materialResult.data ?? []).map(async (material) => {
@@ -47,7 +55,7 @@ export const academicsRoutes = (verify: TokenVerifier) => new Hono<AuthEnv>()
     return c.json(one(rows));
   })
   .get("/buildings", async (c) => {
-    const q = c.req.query("q") ?? "";
+    const q = filterText(c.req.query("q") ?? "");
     const result = await adminClient().from("buildings").select("*").eq("school_id", c.var.user.schoolId).or(`code.ilike.%${q}%,name.ilike.%${q}%`).limit(20);
     if (result.error) throw result.error;
     return c.json(one(z.array(BuildingRow).parse(result.data).map(toBuilding)));
@@ -68,7 +76,7 @@ export const academicsRoutes = (verify: TokenVerifier) => new Hono<AuthEnv>()
     const db = adminClient();
     const course = await db.from("courses").select("id").eq("id", input.course_id).eq("school_id", c.var.user.schoolId).maybeSingle();
     if (course.error) throw course.error;
-    if (!course.data) throw new ApiError(422, "VALIDATION", "Invalid request", { course_id: "Course must belong to your school" });
+    if (!course.data) throw new ApiError(400, "VALIDATION", "Invalid request", { course_id: "Course must belong to your school" });
     const inserted = await db.from("class_records").insert({ school_id: c.var.user.schoolId, user_id: c.var.user.id, course_id: input.course_id, term: input.term, status: input.status, grade: input.grade ?? null, grade_source: "self_reported", grade_verified: false }).select("*, course:courses(*)").single();
     if (inserted.error) throw inserted.error;
     return c.json(one(toClassRecord(ClassRecordRow.parse(inserted.data))));

@@ -4,6 +4,7 @@ import { createApp } from "../app.js";
 import { ClassMeetingRow, toClassMeeting, toMeetingInput } from "../db/academics.js";
 import type { TokenVerifier } from "../middleware/auth.js";
 import { PutClassScheduleReq } from "../schemas/schedule.js";
+import { filterText } from "./academics.js";
 import { scheduleReferenceErrors } from "./schedule.js";
 
 const schoolId = "00000000-0000-4000-a000-000000000001";
@@ -35,4 +36,16 @@ test("new authenticated routes reject missing tokens", async () => {
   assert.equal((await app.request("/api/v1/me/classes", { method: "POST" })).status, 401);
   assert.equal((await app.request("/api/v1/me/class-schedule", { method: "PUT" })).status, 401);
   assert.equal((await app.request("/api/v1/me/classes/00000000-0000-4000-a000-000000000010", { method: "DELETE" })).status, 401);
+});
+
+test("routers mounted at / keep unknown routes 404 instead of 401", async () => {
+  const app = createApp({ verify: async () => null, log: false });
+  assert.equal((await app.request("/api/v1/nope")).status, 404);
+  assert.equal((await app.request("/api/v1/claims/abc")).status, 404);
+});
+
+test("filterText strips PostgREST filter syntax", () => {
+  assert.equal(filterText("CH 101"), "CH 101");
+  assert.equal(filterText("a,code.eq.x)"), "a code.eq.x");
+  assert.equal(filterText('Fall "2026"%*'), "Fall  2026");
 });

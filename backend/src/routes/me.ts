@@ -5,6 +5,7 @@ import { MediaRef, ProfileRow, SchoolRow } from "../db/rows.js";
 import { ApiError } from "../lib/errors.js";
 import { one } from "../lib/respond.js";
 import { adminClient } from "../lib/supabase.js";
+import { parseBody } from "../lib/validate.js";
 import { requireUser, type AuthEnv, type TokenVerifier } from "../middleware/auth.js";
 
 const MeRow = ProfileRow.extend({ school: SchoolRow, avatar: MediaRef.nullable() });
@@ -60,13 +61,9 @@ export const meRoutes = (verify: TokenVerifier) =>
     .use(requireUser(verify))
     .get("/", async (c) => c.json(one(await loadMe(c.var.user.id))))
     .patch("/", async (c) => {
-      const parsed = PatchMeReq.safeParse(await c.req.json().catch(() => null));
-      if (!parsed.success) {
-        const fieldErrors = Object.fromEntries(parsed.error.issues.map((i) => [i.path.join(".") || "body", i.message]));
-        throw new ApiError(400, "VALIDATION", "Invalid request body", fieldErrors);
-      }
-      if (Object.keys(parsed.data).length > 0) {
-        const { error } = await adminClient().from("profiles").update(parsed.data).eq("id", c.var.user.id);
+      const patch = await parseBody(c, PatchMeReq);
+      if (Object.keys(patch).length > 0) {
+        const { error } = await adminClient().from("profiles").update(patch).eq("id", c.var.user.id);
         if (error) throw error;
       }
       return c.json(one(await loadMe(c.var.user.id)));

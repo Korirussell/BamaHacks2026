@@ -95,7 +95,7 @@ test("parseBody maps nested Zod paths to field_errors", async () => {
     }
   });
   const response = await app.request("http://localhost/", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ media_ids: ["bad"] }) });
-  assert.equal(response.status, 422);
+  assert.equal(response.status, 400);
   const errors: unknown = await response.json();
   assert.equal((errors as Record<string, string>)["media_ids.0"], "Invalid UUID");
 });

@@ -9,7 +9,7 @@ function fieldErrors(issues: z.core.$ZodIssue[]): Record<string, string> {
 function parse<T extends z.ZodType>(schema: T, input: unknown): z.output<T> {
   const result = schema.safeParse(input);
   if (result.success) return result.data;
-  throw new ApiError(422, "VALIDATION", "Invalid request", fieldErrors(result.error.issues));
+  throw new ApiError(400, "VALIDATION", "Invalid request", fieldErrors(result.error.issues));
 }
 
 export async function parseBody<T extends z.ZodType>(c: Context, schema: T): Promise<z.output<T>> {
