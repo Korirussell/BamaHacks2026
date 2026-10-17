@@ -1,5 +1,5 @@
 'use client';
-// Real mode only: email → 6-8 digit code (Supabase OTP length setting) (demo personas get theirs from `pnpm seed:demo otp <persona>`).
+// Real mode only: email → 6-8 digit code (Supabase OTP length setting) Demo personas have no inbox: get a code with `pnpm seed:demo otp <persona>`, then use "I already have a code".
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { USE_MOCKS } from '@/lib/api';
@@ -42,6 +42,7 @@ export default function SignIn() {
           )}
           {err && <p role="alert" className="text-[13px] font-bold text-accent-text">{err}</p>}
           <Pill type="submit" className="w-full" disabled={busy}>{busy ? 'One sec…' : step === 'email' ? 'Send code' : 'Sign in'}</Pill>
+          {step === 'email' && <button type="button" onClick={() => { if (email.trim()) { setStep('code'); setErr(''); } else setErr('Enter your email first'); }} className="w-full text-center text-[13px] font-semibold text-soft hover:text-ink">I already have a code</button>}
           {step === 'code' && <button type="button" onClick={() => { setStep('email'); setCode(''); setErr(''); }} className="w-full text-center text-[13px] font-semibold text-soft hover:text-ink">Use a different email</button>}
         </form>
       </StickerCard>
