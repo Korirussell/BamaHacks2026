@@ -5,6 +5,7 @@ import { CourseRow, toCourse } from "../db/academics.js";
 import {
   LISTING_SELECT, ListingRow, OfferRow, courseMatch, listingsOut, loadListingRow, loadViewer, offersOut, type Viewer,
 } from "../db/market.js";
+import { notifyWishlistMatch, suggestedTradesFor, wishedListingIds } from "../db/wishlist.js";
 import { ApiError } from "../lib/errors.js";
 import { one, page } from "../lib/respond.js";
 import { adminClient, publicMediaUrl } from "../lib/supabase.js";
@@ -120,13 +121,16 @@ async function myOpenOffer(listingId: string, buyerId: string, schoolId: string)
   return offer ?? null;
 }
 
-function feedItems(rows: ListingRow[], listings: Awaited<ReturnType<typeof listingsOut>>, viewer: Viewer) {
+const FEED_ORDER = ["wishlist_match", "your_class", "new"] as const;
+
+function feedItems(rows: ListingRow[], listings: Awaited<ReturnType<typeof listingsOut>>, viewer: Viewer, wished: Set<string>) {
   const items = rows.map((row, i) => {
     const match = courseMatch(row, viewer);
-    return { type: "listing" as const, item: listings[i], reason: match ? ("your_class" as const) : ("new" as const), reason_course: match ? toCourse(match) : null };
+    const reason = wished.has(row.id) ? ("wishlist_match" as const) : match ? ("your_class" as const) : ("new" as const);
+    return { type: "listing" as const, item: listings[i], reason, reason_course: reason === "your_class" && match ? toCourse(match) : null };
   });
-  // Stable: "your class" first, newest first inside each group (rows come newest first).
-  return [...items.filter((i) => i.reason === "your_class"), ...items.filter((i) => i.reason !== "your_class")];
+  // Stable: wishlist matches, then "your class", newest first inside each group (rows come newest first).
+  return FEED_ORDER.flatMap((reason) => items.filter((i) => i.reason === reason));
 }
 
 export const listingsRoutes = (verify: TokenVerifier, identifier: TextbookIdentifier) => new Hono<AuthEnv>()
@@ -144,7 +148,8 @@ export const listingsRoutes = (verify: TokenVerifier, identifier: TextbookIdenti
         .or(`seller_id.is.null,seller_id.neq.${id}`).order("created_at", { ascending: false }).limit(FEED_WINDOW),
     ]);
     const rows = z.array(ListingRow).parse(check(data));
-    const all = feedItems(rows, await listingsOut(rows, schoolId, viewer), viewer);
+    const [listings, wished] = await Promise.all([listingsOut(rows, schoolId, viewer), wishedListingIds(id, schoolId, rows)]);
+    const all = feedItems(rows, listings, viewer, wished);
     const { items, next } = slice(all, cursor, limit);
     return c.json(page(items, next));
   })
@@ -218,9 +223,10 @@ export const listingsRoutes = (verify: TokenVerifier, identifier: TextbookIdenti
     }
 
     const row = await loadListingRow(inserted.id, schoolId);
-    if (row.status === "active" && courseIds.length) {
+    if (row.status === "active") {
       const me = check(await db.from("profiles").select("display_name").eq("id", id).single()) as { display_name: string };
-      await notifyMaterialMatch({ schoolId, listingId: row.id, courseIds, title: row.title, priceCents: row.price_cents, sellerId: id, from: me.display_name });
+      if (courseIds.length) await notifyMaterialMatch({ schoolId, listingId: row.id, courseIds, title: row.title, priceCents: row.price_cents, sellerId: id, from: me.display_name });
+      await notifyWishlistMatch(row, me.display_name);
     }
     const [listing] = await listingsOut([row], schoolId, { id, courses: new Map() });
     return c.json(one(listing), 201);
@@ -271,8 +277,8 @@ export const listingsRoutes = (verify: TokenVerifier, identifier: TextbookIdenti
     const row = await loadListingRow(parseId(c.req.param("id")), schoolId);
     if (!visible(row, userId)) throw new ApiError(404, "NOT_FOUND", "Listing not found");
     const [viewer, myOffer] = await Promise.all([loadViewer(userId, schoolId), myOpenOffer(row.id, userId, schoolId)]);
-    const [listing] = await listingsOut([row], schoolId, viewer);
-    return c.json(one({ listing, is_mine: row.seller_id === userId, my_open_offer: myOffer, suggested_trades: [] }));
+    const [[listing], trades] = await Promise.all([listingsOut([row], schoolId, viewer), suggestedTradesFor(row, viewer, schoolId)]);
+    return c.json(one({ listing, is_mine: row.seller_id === userId, my_open_offer: myOffer, suggested_trades: trades }));
   })
 
   .patch("/listings/:id", async (c) => {
@@ -328,9 +334,10 @@ export const listingsRoutes = (verify: TokenVerifier, identifier: TextbookIdenti
 
     const saved = await loadListingRow(row.id, schoolId);
     const savedCourses = saved.listing_courses.map((lc) => lc.course.id);
-    if (row.status === "draft" && saved.status === "active" && savedCourses.length) {
+    if (row.status === "draft" && saved.status === "active") {
       const me = check(await db.from("profiles").select("display_name").eq("id", userId).single()) as { display_name: string };
-      await notifyMaterialMatch({ schoolId, listingId: saved.id, courseIds: savedCourses, title: saved.title, priceCents: saved.price_cents, sellerId: userId, from: me.display_name });
+      if (savedCourses.length) await notifyMaterialMatch({ schoolId, listingId: saved.id, courseIds: savedCourses, title: saved.title, priceCents: saved.price_cents, sellerId: userId, from: me.display_name });
+      await notifyWishlistMatch(saved, me.display_name);
     }
     const [listing] = await listingsOut([saved], schoolId, { id: userId, courses: new Map() });
     return c.json(one(listing));
