@@ -207,10 +207,10 @@ struct ListingCard: View {
                 } else if let reasonText {
                     Text(reasonText)
                         .font(.system(size: 10.5, weight: .heavy)).foregroundStyle(Color.hoInkOnLight)
-                        .lineLimit(1).minimumScaleFactor(0.8)
+                        .lineLimit(2).minimumScaleFactor(0.8)
                         .padding(.horizontal, 8).padding(.vertical, 3)
-                        .background(Capsule().fill(Color.hoMint))
-                        .overlay(Capsule().strokeBorder(Color.hoInk, lineWidth: 1.5))
+                        .background(RoundedRectangle(cornerRadius: 10).fill(Color.hoMint))
+                        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.hoInk, lineWidth: 1.5))
                 } else {
                     ReasonChip(reason: listing.reason)
                 }
@@ -223,7 +223,7 @@ struct ListingCard: View {
                     Text(Money.format(listing.priceCents))
                         .font(.display(17)).foregroundStyle(Color.hoInk)
                     Spacer(minLength: 4)
-                    Text(listing.isGhost ? "I want this" : (listing.negotiable ? "Offer" : "Buy"))
+                    Text(listing.isGhost ? "I want this" : listing.sellerId == "u_kori" ? "Yours" : (listing.negotiable ? "Offer" : "Buy"))
                         .font(.system(size: 10, weight: .heavy)).textCase(.uppercase)
                         .foregroundStyle(listing.isGhost ? Color.hoInkOnLight : (listing.negotiable ? Color.hoInk : .white))
                         .padding(.horizontal, 9).padding(.vertical, 5)

@@ -155,7 +155,7 @@ final class AppStore {
         Haptics.success()
         withAnimation(.spring(duration: 0.4)) { banner = Banner(title: n.title, body: n.body, opensRequest: opensRequest) }
         Task { @MainActor in
-            try? await Task.sleep(for: .seconds(5))
+            try? await Task.sleep(for: .seconds(8))
             if banner?.title == n.title { withAnimation(.easeOut) { banner = nil } }
         }
     }

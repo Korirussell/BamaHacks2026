@@ -28,6 +28,7 @@ struct HandoffView: View {
     @State private var code = ""
     @State private var celebration: Celebration?
     @State private var reviewing = false
+    @State private var reviewed = false
 
     private var orderId: String { context.orderId }
     private var shownMeetup: MeetupSuggestion? { meetup ?? (context.orderId == "o_fridge" ? store.lockedMeetup : nil) }
@@ -82,8 +83,8 @@ struct HandoffView: View {
             }
         }
         .onAppear { if role.isEmpty { role = context.defaultRole } }
-        .sheet(isPresented: $reviewing) {
-            ReviewSheet(partner: context.reviewPartner) { reviewing = false; dismiss() }
+        .sheet(isPresented: $reviewing, onDismiss: { if reviewed { dismiss() } }) {
+            ReviewSheet(partner: context.reviewPartner) { reviewed = true; reviewing = false }
         }
     }
 
@@ -115,6 +116,12 @@ struct HandoffView: View {
                     .font(.display(34)).monospacedDigit()
                     .foregroundStyle(Color.hoInk)
                 Text("New code in \(remaining)s").font(.system(size: 12.5, weight: .bold)).foregroundStyle(Color.hoSoft)
+                if context.defaultRole == "seller" {
+                    // Demo: the other phone scans this code.
+                    Button("\(context.reviewPartner) scanned it ✓") { complete() }
+                        .buttonStyle(.pill(.primary, full: true))
+                        .padding(.top, 6)
+                }
             }
         }
     }

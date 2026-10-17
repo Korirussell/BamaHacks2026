@@ -22,6 +22,9 @@ struct NotificationsView: View {
                     }
                     .padding(14)
                     .sticker(radius: 18, shadow: 3, fill: n.read ? .hoCard : .hoSunk)
+                    .onTapGesture {
+                        if n.id == "n4", store.buyRequest != nil, !store.requestAccepted { store.rootSheet = .request }
+                    }
                 }
             }
             .padding(16)

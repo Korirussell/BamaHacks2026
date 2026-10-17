@@ -14,7 +14,7 @@ struct RequestSheet: View {
 
             HStack(spacing: 12) {
                 Text(buyer?.avatarEmoji ?? "👩🏽").font(.system(size: 30))
-                    .frame(width: 56, height: 56)
+                    .frame(width: 50, height: 50)
                     .background(Circle().fill(Color.hoSunk))
                     .overlay(Circle().strokeBorder(Color.hoInk, lineWidth: 2))
                 VStack(alignment: .leading, spacing: 4) {
@@ -22,13 +22,13 @@ struct RequestSheet: View {
                     if let r = buyer?.reliability {
                         HStack(spacing: 6) {
                             ReliabilityBadge(reliability: r)
-                            Text("\(r.completed) trades · \(String(format: "%.1f", r.score))★")
+                            Text("\(r.completed) trades · \(String(format: "%.1f", r.score))★").lineLimit(1).fixedSize()
                                 .font(.system(size: 12, weight: .bold)).foregroundStyle(Color.hoSoft)
                         }
                     }
                 }
                 Spacer()
-                Text(Money.format(req?.amountCents ?? 2500)).font(.display(28)).foregroundStyle(Color.hoInk)
+                Text(Money.format(req?.amountCents ?? 2500)).font(.display(24)).foregroundStyle(Color.hoInk)
             }
             .padding(14)
             .sticker(radius: 18, shadow: 3)

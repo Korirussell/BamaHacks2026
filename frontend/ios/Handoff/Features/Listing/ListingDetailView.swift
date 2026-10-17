@@ -147,9 +147,14 @@ struct ListingDetailView: View {
                     Text(Copy.buyNote).font(.system(size: 12, weight: .bold)).foregroundStyle(Color.hoSoft)
                 }
             } else if listing.sellerId == store.me?.userId {
-                Text("This is your listing · \(store.requestAccepted ? "sold to Maya" : "live on the feed")")
-                    .font(.system(size: 14, weight: .heavy)).foregroundStyle(Color.hoSoft)
-                    .frame(maxWidth: .infinity).padding(.vertical, 12)
+                if listing.id == "l_mouse", store.buyRequest != nil, !store.requestAccepted {
+                    Button("Maya wants it · View request") { store.rootSheet = .request }
+                        .buttonStyle(.pill(.butter, full: true))
+                } else {
+                    Text("This is your listing · \(store.requestAccepted ? "sold to Maya" : "live on the feed")")
+                        .font(.system(size: 14, weight: .heavy)).foregroundStyle(Color.hoSoft)
+                        .frame(maxWidth: .infinity).padding(.vertical, 12)
+                }
             } else {
                 if listing.negotiable {
                     Button("Make offer") { openThread = true }

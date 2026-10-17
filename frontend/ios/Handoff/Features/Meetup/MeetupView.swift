@@ -124,7 +124,7 @@ struct MeetupView: View {
                             .buttonStyle(.pill(.neutral, small: true))
                         }
                         Button("Go to handoff →") { showHandoff = true }
-                            .buttonStyle(.pill(.primary, small: true, full: true))
+                            .buttonStyle(.pill(.primary, full: true))
                     }
                 }
             } else if waiting {
