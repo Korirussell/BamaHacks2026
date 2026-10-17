@@ -8,6 +8,11 @@ function key(): Buffer {
   return createHash("sha256").update(secret).digest();
 }
 
+/** Constant-time string comparison (hashing first so length differences don't leak either). */
+export function safeEqual(a: string, b: string): boolean {
+  return timingSafeEqual(createHash("sha256").update(a).digest(), createHash("sha256").update(b).digest());
+}
+
 // AES-256-GCM for OAuth refresh tokens at rest. Output: iv.tag.ciphertext (base64url).
 export function encrypt(plain: string): string {
   const iv = randomBytes(12);

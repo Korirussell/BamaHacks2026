@@ -14,11 +14,8 @@ import { claimUrlIn } from "../services/claims.js";
 import { settleOrder } from "../services/escrow.js";
 import { nextOrderStatus } from "../services/orders.js";
 import { DmWindowClosedError } from "../services/instagram-dm.js";
-import { pipelineEvent } from "../services/instagram.js";
-import { runIngest } from "../workers/ingest.js";
+import { ingestExternalPost } from "../workers/ingest.js";
 import type { InstagramPoller, StoryDms } from "../workers/instagram-poller.js";
-
-const UNIQUE_VIOLATION = "23505";
 
 // Instagram allows 1000 bytes per DM; 1000 characters is close enough for a by-hand message.
 const DmReq = z.object({ text: z.string().trim().min(1).max(1000) });
@@ -108,23 +105,6 @@ const requireAdmin: MiddlewareHandler<AuthEnv> = async (c, next) => {
   await next();
 };
 
-/** Owned by the admin who sent the post, so they can poll it with GET /jobs/{id}. */
-async function createJob(schoolId: string, userId: string, postId: string) {
-  const { data, error } = await adminClient().from("jobs")
-    .insert({ school_id: schoolId, user_id: userId, kind: "ingest_classify", status: "running", payload: { ingested_post_id: postId } })
-    .select("id").single<{ id: string }>();
-  if (error) throw error;
-  return data.id;
-}
-
-/** Existing post for a re-sent URL: posting the same URL twice is a no-op. */
-async function existingPost(channel: string, url: string) {
-  const { data, error } = await adminClient().from("ingested_posts").select("id, job_id").eq("channel", channel).eq("external_url", url)
-    .single<{ id: string; job_id: string | null }>();
-  if (error) throw error;
-  return data;
-}
-
 export const adminRoutes = (verify: TokenVerifier, identifier: TextbookIdentifier, instagram: InstagramPoller | null = null) => new Hono<AuthEnv>()
   .use("/*", requireUser(verify), requireAdmin)
 
@@ -161,33 +141,11 @@ export const adminRoutes = (verify: TokenVerifier, identifier: TextbookIdentifie
 
   .post("/ingested-posts", async (c) => {
     const body = await parseBody(c, AdminIngestPostReq);
-    const { schoolId } = c.var.user;
-    const db = adminClient();
-    const inserted = await db.from("ingested_posts").insert({
-      school_id: schoolId, channel: body.channel, external_url: body.external_url, author_handle: body.author_handle,
-      caption: body.caption, media_ids: body.media_ids, posted_at: body.posted_at,
-    }).select("id").single<{ id: string }>();
-    if (inserted.error?.code === UNIQUE_VIOLATION) {
-      const post = await existingPost(body.channel, body.external_url);
-      return c.json(one({ job_id: post.job_id, ingested_post_id: post.id }), 202);
-    }
-    if (inserted.error) throw inserted.error;
-    const postId = inserted.data.id;
-    const jobId = await createJob(schoolId, c.var.user.id, postId);
-    const linked = await db.from("ingested_posts").update({ job_id: jobId }).eq("id", postId);
-    if (linked.error) throw linked.error;
-
-    // Inline for now (a few hundred ms with the caption identifier); the job row is what clients poll.
-    try {
-      const result = await runIngest(postId, identifier);
-      const events = [pipelineEvent("detected", `Post from @${body.author_handle.replace(/^@+/, "")} sent in by the team`), ...result.events];
-      const done = await db.from("jobs").update({ status: "succeeded", result: { ...result, events } }).eq("id", jobId);
-      if (done.error) throw done.error;
-    } catch (err) {
-      console.error("ingest_classify failed", postId, err);
-      await db.from("jobs").update({ status: "failed", error: "Couldn't turn this post into a listing" }).eq("id", jobId);
-      await db.from("ingested_posts").update({ status: "failed" }).eq("id", postId);
-    }
+    const { jobId, postId } = await ingestExternalPost({
+      schoolId: c.var.user.schoolId, userId: c.var.user.id, identifier,
+      post: { channel: body.channel, external_url: body.external_url, author_handle: body.author_handle, caption: body.caption, media_ids: body.media_ids, posted_at: body.posted_at },
+      detected: `Post from @${body.author_handle.replace(/^@+/, "")} sent in by the team`,
+    });
     return c.json(one({ job_id: jobId, ingested_post_id: postId }), 202);
   })
 
