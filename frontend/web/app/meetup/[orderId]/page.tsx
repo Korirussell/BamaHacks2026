@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 import { copy } from '@/lib/copy';
 import { meetups, placeById } from '@/lib/data';
 import { useDemo, useMockLoad } from '@/lib/store';
-import { StickerMap } from '@/components/StickerMap';
+import { MeetupMap } from '@/components/MeetupMap';
 import { SpotRow } from '@/components/SpotRow';
 import { ErrorState, Pill, PillLink, Skeleton } from '@/components/ui';
 
@@ -38,7 +38,7 @@ export default function Meetup({ params }: { params: Promise<{ orderId: string }
           {status === 'loading' ? (
             <Skeleton className="aspect-[4/3] w-full rounded-[24px] lg:aspect-auto lg:min-h-[520px]" />
           ) : (
-            <StickerMap spots={meetups} selected={sel} onSelect={id => !locked && setSel(id)} className="aspect-[4/3] w-full lg:aspect-auto lg:min-h-[520px]" />
+            <MeetupMap spots={meetups} selected={sel} onSelect={id => !locked && setSel(id)} className="aspect-[4/3] w-full lg:aspect-auto lg:min-h-[520px]" />
           )}
           <motion.section
             initial={{ y: 40, opacity: 0 }}

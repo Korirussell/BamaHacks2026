@@ -8,7 +8,7 @@ import { googleCalendarUrl } from '@/lib/calendar';
 import { buyRequest, meetupsMaya, photoResult, placeById, userById } from '@/lib/data';
 import { money } from '@/lib/money';
 import { useDemo } from '@/lib/store';
-import { StickerMap } from '@/components/StickerMap';
+import { MeetupMap } from '@/components/MeetupMap';
 import { SpotRow } from '@/components/SpotRow';
 import { MeetupBreakdown } from '@/components/MeetupBreakdown';
 import { EmptyState, Pill, PillLink, ReliabilityBadge } from '@/components/ui';
@@ -63,7 +63,7 @@ export default function BuyRequest({ params }: { params: Promise<{ id: string }>
 
       {maya !== 'none' && maya !== 'requested' && (
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mt-6 grid gap-6 lg:grid-cols-[1.2fr_1fr]">
-          <StickerMap spots={meetupsMaya} selected={mayaSpot ?? sel} onSelect={id => maya === 'accepted' && setSel(id)} className="aspect-[4/3] w-full" />
+          <MeetupMap spots={meetupsMaya} selected={mayaSpot ?? sel} onSelect={id => maya === 'accepted' && setSel(id)} className="aspect-[4/3] w-full lg:aspect-auto lg:min-h-[520px]" />
           <section className="rounded-[28px] border-[2.5px] border-ink bg-card p-5 shadow-[5px_5px_0_var(--shadow)]">
             <p className="text-[11.5px] font-extrabold uppercase tracking-wide text-accent-text">{copy2.pick.you}</p>
             <h2 className="font-display mt-1 text-[21px] font-bold">{copy2.pick.title}</h2>

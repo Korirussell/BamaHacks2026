@@ -215,9 +215,9 @@ function Pillar({ pos, p, color, onClick }: { pos: THREE.Vector3; p: Pillar3D; c
   return (
     <group position={[pos.x, 0, pos.z]} onClick={e => { e.stopPropagation(); onClick?.(); }}>
       <group ref={ref}>
-        <mesh position-y={30}><cylinderGeometry args={[p.selected ? 14 : 10, p.selected ? 14 : 10, 60, 24, 1, true]} /><meshBasicMaterial color={color} transparent opacity={p.selected ? 0.55 : 0.32} blending={THREE.AdditiveBlending} side={THREE.DoubleSide} depthWrite={false} /></mesh>
+        <mesh position-y={60}><cylinderGeometry args={[p.selected ? 16 : 11, p.selected ? 16 : 11, 120, 24, 1, true]} /><meshBasicMaterial color={color} transparent opacity={p.selected ? 0.75 : 0.45} side={THREE.DoubleSide} depthWrite={false} /></mesh>
       </group>
-      <Html position={[0, 72, 0]} center distanceFactor={520}>
+      <Html position={[0, 138, 0]} center distanceFactor={520}>
         <button onClick={onClick} className={`flex flex-col items-center rounded-[14px] border-2 border-[#1A1414] px-2.5 py-1 shadow-[3px_3px_0_#1A1414] ${p.selected ? 'bg-[#FFD84D]' : 'bg-white'}`}>
           <span className="font-display text-[18px] font-bold leading-none text-[#1A1414]">{p.rank}</span>
           <span className="whitespace-nowrap text-[10px] font-extrabold uppercase text-[#1A1414]">{p.label}</span>
@@ -263,7 +263,7 @@ function Football({ from, to, onEnd }: { from: THREE.Vector3; to: THREE.Vector3;
   );
 }
 
-function CameraRig({ focus, intro }: { focus: THREE.Vector3 | null; intro: boolean }) {
+function CameraRig({ focus, intro, far }: { focus: THREE.Vector3 | null; intro: boolean; far?: boolean }) {
   const { camera, controls } = useThree() as unknown as { camera: THREE.PerspectiveCamera; controls: OrbitControlsImpl | null };
   const start = useRef<number | null>(null);
   const home = useMemo(() => ({ pos: new THREE.Vector3(-480, 470, 600), target: new THREE.Vector3(-120, 0, -150) }), []);
@@ -280,7 +280,7 @@ function CameraRig({ focus, intro }: { focus: THREE.Vector3 | null; intro: boole
     }
     if (focus) {
       controls.target.lerp(focus, 0.06);
-      const want = focus.clone().add(new THREE.Vector3(-200, 240, 300));
+      const want = focus.clone().add(far ? new THREE.Vector3(-320, 420, 520) : new THREE.Vector3(-200, 240, 300));
       camera.position.lerp(want, 0.04);
       controls.update();
     }
@@ -294,7 +294,15 @@ function Scene(props: Campus3DProps & { data: Campus; dark: boolean }) {
   const [interacted, setInteracted] = useState(false);
   const focus = useMemo(() => (focusPlaceId ? placePosition(data, focusPlaceId).setY(0) : null), [data, focusPlaceId]);
   const selected = pillars.find(p => p.selected);
-  const pillarFocus = useMemo(() => (selected ? placePosition(data, selected.placeId).setY(0) : null), [data, selected]);
+  const selId = selected?.placeId;
+  const pillarKey = pillars.map(p => p.placeId).join(',');
+  const pillarFocus = useMemo(() => {
+    if (!pillars.length) return null;
+    const pts = pillars.map(p => placePosition(data, p.placeId).setY(0));
+    const c = pts.reduce((a, p) => a.add(p), new THREE.Vector3()).multiplyScalar(1 / pts.length);
+    return selId ? c.lerp(placePosition(data, selId).setY(0), 0.35) : c;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, selId, pillarKey]);
   return (
     <>
       <hemisphereLight args={[dark ? '#6b6080' : '#ffffff', dark ? '#1F2A24' : '#B9F0D0', dark ? 0.9 : 1.1]} />
@@ -318,7 +326,7 @@ function Scene(props: Campus3DProps & { data: Campus; dark: boolean }) {
         autoRotateSpeed={0.3}
         onStart={() => setInteracted(true)}
       />
-      <CameraRig focus={focus ?? pillarFocus} intro />
+      <CameraRig focus={focus ?? pillarFocus} intro far={!focus && !!pillarFocus} />
     </>
   );
 }
