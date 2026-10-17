@@ -38,13 +38,13 @@ const check = <T>(r: { data: T | null; error: unknown }): T => {
   return r.data as T;
 };
 
-async function materialsFor(schoolId: string, isbn: string): Promise<KnownMaterial[]> {
+export async function materialsFor(schoolId: string, isbn: string): Promise<KnownMaterial[]> {
   const data = check(await adminClient().from("course_materials").select("course_id, isbn, title, authors, edition").eq("school_id", schoolId).eq("isbn", isbn));
   return z.array(MaterialRow).parse(data).map((m) => ({ courseId: m.course_id, title: m.title, authors: m.authors, edition: m.edition }));
 }
 
 /** Every book a class at the school requires, so vision can match a cover photo to an ISBN. */
-async function knownBooks(schoolId: string): Promise<KnownBook[]> {
+export async function knownBooks(schoolId: string): Promise<KnownBook[]> {
   const data = check(await adminClient().from("course_materials").select("course_id, isbn, title, authors, edition").eq("school_id", schoolId).limit(500));
   const byIsbn = new Map(z.array(MaterialRow).parse(data).map((m) => [m.isbn, { isbn: m.isbn, title: m.title, edition: m.edition, authors: m.authors }]));
   return [...byIsbn.values()];
