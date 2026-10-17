@@ -49,6 +49,8 @@ struct ListingDetailView: View {
             .hidesTabBar()
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.visible, for: .navigationBar)
+            .toolbarBackground(Color.hoBg, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
             .safeAreaInset(edge: .bottom) { actionBar(listing) }
             .navigationDestination(isPresented: $openThread) { HaggleThreadView(listingId: listing.id) }
             .dealFlow(isPaying: $buying, amountCents: listing.priceCents, listing: listing)

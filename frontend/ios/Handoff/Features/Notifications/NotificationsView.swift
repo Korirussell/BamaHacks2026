@@ -30,6 +30,8 @@ struct NotificationsView: View {
         .navigationTitle("Notifications")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
+            .toolbarBackground(Color.hoBg, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
         .hidesTabBar()
         .onDisappear { store.markNotificationsRead() }
     }

@@ -61,6 +61,8 @@ struct HaggleThreadView: View {
         .hidesTabBar()
             .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
+            .toolbarBackground(Color.hoBg, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
         .task {
             if script.isEmpty, let t = try? await store.api.thread(id: "t_fridge") { script = t.messages }
         }
