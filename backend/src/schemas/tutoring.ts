@@ -3,8 +3,16 @@ import { Cents, Timestamp, Uuid } from "./common.js";
 import { UserPublic } from "./me.js";
 import { Course, WallTime, Weekday } from "./schedule.js";
 
-const TimeBlock = z.object({ start: Timestamp, end: Timestamp, kind: z.enum(["free", "busy", "class"]) });
+export const TimeBlock = z.object({ start: Timestamp, end: Timestamp, kind: z.enum(["free", "busy", "class"]) });
 const TutorMode = z.enum(["in_person", "virtual"]);
+export const TutorAvailability = z.object({
+  recurring: z.array(z.object({ days: z.array(Weekday).min(1), start: WallTime, end: WallTime }).refine((window) => window.end > window.start, {
+    path: ["end"], message: "Must be after start",
+  })),
+  one_off: z.array(TimeBlock.refine((block) => Date.parse(block.end) > Date.parse(block.start), {
+    path: ["end"], message: "Must be after start",
+  })),
+});
 
 export const TutorProfile = z.object({
   user_id: Uuid, enabled: z.boolean(), courses: z.array(z.object({ course: Course, grade: z.string(), verified: z.boolean() })), hourly_rate_cents: Cents,
@@ -46,3 +54,5 @@ export type TutoringSession = z.infer<typeof TutoringSession>;
 export type CreateSessionReq = z.infer<typeof CreateSessionReq>;
 export type CounterSessionReq = z.infer<typeof CounterSessionReq>;
 export type TutorEligibilityItem = z.infer<typeof TutorEligibilityItem>;
+export type TimeBlock = z.infer<typeof TimeBlock>;
+export type TutorAvailability = z.infer<typeof TutorAvailability>;
