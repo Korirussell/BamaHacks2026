@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { SellerOutreach } from "../adapters/ports.js";
 import { ApiError } from "../lib/errors.js";
 import { adminClient } from "../lib/supabase.js";
 import { claimUrl, newClaimToken, sellerInviteMessage } from "../services/claims.js";
@@ -11,6 +12,8 @@ export interface MarketConfig {
   /** Where claim links point (the web app). */
   appUrl: string;
   appName: string;
+  /** Sends the claim link automatically (Instagram: a reply on the post). Unset = queued for a human. */
+  outreach?: SellerOutreach;
 }
 
 const UNIQUE_VIOLATION = "23505";
@@ -43,6 +46,14 @@ export async function ensureSellerInvite(listing: ListingRow, offerCents: number
   const { token, tokenHash, expiresAt } = newClaimToken(now);
   const url = claimUrl(cfg.appUrl, token);
   const course = [...listing.listing_courses].map((lc) => lc.course).sort((a, b) => a.code.localeCompare(b.code))[0];
+  const message = sellerInviteMessage({
+    handle: listing.external_handle,
+    itemTitle: listing.textbook_title ?? listing.title,
+    offerCents,
+    courseCode: course?.code ?? null,
+    appName: cfg.appName,
+    url,
+  });
   const inserted = await db.from("seller_invites").insert({
     school_id: listing.school_id,
     channel: listing.external_channel,
@@ -50,19 +61,23 @@ export async function ensureSellerInvite(listing: ListingRow, offerCents: number
     profile_url: listing.external_profile_url,
     listing_ids: [listing.id],
     token_hash: tokenHash,
-    message_text: sellerInviteMessage({
-      handle: listing.external_handle,
-      itemTitle: listing.textbook_title ?? listing.title,
-      offerCents,
-      courseCode: course?.code ?? null,
-      appName: cfg.appName,
-      url,
-    }),
+    message_text: message,
     trigger: "first_offer",
     expires_at: expiresAt,
-  });
+  }).select("id").single<{ id: string }>();
   // Another offer raced us to it; theirs is the open invite now.
-  if (inserted.error && inserted.error.code !== UNIQUE_VIOLATION) throw inserted.error;
+  if (inserted.error?.code === UNIQUE_VIOLATION) return;
+  if (inserted.error) throw inserted.error;
+  if (!cfg.outreach) return;
+  try {
+    const { sent } = await cfg.outreach.send({
+      channel: listing.external_channel, handle: listing.external_handle, message, listingId: listing.id,
+      offerCents, courseCode: course?.code ?? null, claimUrl: url,
+    });
+    if (sent) await db.from("seller_invites").update({ status: "sent", sent_at: new Date(now).toISOString() }).eq("id", inserted.data.id);
+  } catch (err) {
+    console.error("seller outreach failed; the invite stays queued", err);
+  }
 }
 
 /** Turns an accepted offer into an order and takes the listing off the market. */

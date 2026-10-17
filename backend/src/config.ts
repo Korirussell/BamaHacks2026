@@ -30,8 +30,23 @@ const Env = z.object({
   // Library rooms: "manual" sends people to ROOM_BOOKING_URL; "demo" fakes a booked room for the pitch.
   ROOM_BOOKER: z.enum(["manual", "demo"]).default("manual"),
   ROOM_BOOKING_URL: z.url().default("https://www.lib.ua.edu/"),
+  // Live free Gorgas study rooms from UA's LibCal (read-only). "off" → no rooms are suggested.
+  LIBCAL: z.enum(["on", "off"]).default("on"),
   // Marketplace: "demo" marks orders paid without a card until Stripe (step 10) lands.
   PAYMENTS: z.enum(["demo", "stripe"]).default("demo"),
+  // Instagram: "graph" polls the posts that tag our business account and lists them automatically.
+  INSTAGRAM: z.enum(["off", "graph"]).default("off"),
+  INSTAGRAM_ACCESS_TOKEN: optional,
+  INSTAGRAM_USER_ID: optional,
+  INSTAGRAM_GRAPH_URL: z.url().default("https://graph.instagram.com/v23.0"),
+  INSTAGRAM_POLL_SECONDS: z.coerce.number().int().min(5).default(15),
+  // Public replies on the seller's post ("listed", then the claim link on the first offer).
+  INSTAGRAM_AUTO_REPLY: z.enum(["on", "off"]).default("on"),
+  // Which school polled posts belong to (single-school MVP: the seeded UA school).
+  INSTAGRAM_SCHOOL_ID: z.guid().default("00000000-0000-4000-a000-000000000001"),
+  // Textbook identification: "claude" (vision) when ANTHROPIC_API_KEY is set, else the caption parser.
+  IDENTIFIER: z.enum(["auto", "claude", "caption"]).default("auto"),
+  CLAUDE_VISION_MODEL: z.string().min(1).default("claude-sonnet-5-5"),
   // Name used in the claim DM we send to Instagram sellers.
   APP_NAME: z.string().min(1).default("Campus Marketplace"),
 });

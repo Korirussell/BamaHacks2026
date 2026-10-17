@@ -19,19 +19,24 @@ import { listingsRoutes } from "./routes/listings.js";
 import { notificationsRoutes } from "./routes/notifications.js";
 import { offersRoutes } from "./routes/offers.js";
 import { ordersRoutes, type PaymentsMode } from "./routes/orders.js";
-import type { RoomBooker, TextbookIdentifier } from "./adapters/ports.js";
-import { captionTextbookIdentifier, manualRoomBooker } from "./adapters/stubs.js";
+import type { RoomAvailability, RoomBooker, TextbookIdentifier } from "./adapters/ports.js";
+import { captionTextbookIdentifier, manualRoomBooker, noRoomAvailability } from "./adapters/stubs.js";
+import { libraryRoutes } from "./routes/library.js";
 import type { MarketConfig } from "./db/market-actions.js";
 import { supabaseIdempotencyStore, type IdempotencyStore } from "./middleware/idempotency.js";
 import { handoffRoutes } from "./routes/handoffs.js";
 import { shipmentRoutes } from "./routes/shipments.js";
 import { reviewsRoutes } from "./routes/reviews.js";
+import type { InstagramPoller } from "./workers/instagram-poller.js";
 
 export interface AppDeps {
   verify: TokenVerifier;
   findSchool: SchoolLookup;
   rooms: RoomBooker;
+  /** Live library study-room availability (LibCal); tests default to none. */
+  roomAvailability: RoomAvailability;
   identifier: TextbookIdentifier;
+  instagram: InstagramPoller | null;
   idempotency: IdempotencyStore;
   payments: PaymentsMode;
   feeBps: number;
@@ -46,7 +51,9 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     verify = supabaseVerifier,
     findSchool = supabaseSchoolLookup,
     rooms = manualRoomBooker("https://www.lib.ua.edu/"),
+    roomAvailability = noRoomAvailability,
     identifier = captionTextbookIdentifier,
+    instagram = null,
     idempotency = supabaseIdempotencyStore(),
     payments = "demo",
     feeBps = 500,
@@ -55,7 +62,7 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     log = true,
   } = deps;
 
-  const market: MarketConfig = { feeBps, appUrl: webOrigin, appName };
+  const market: MarketConfig = { feeBps, appUrl: webOrigin, appName, ...(instagram ? { outreach: instagram.outreach } : {}) };
 
   const api = new Hono()
     .get("/health", (c) => c.json({ data: { ok: true } }))
@@ -68,8 +75,9 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     .route("/", scheduleImportRoutes(verify))
     .route("/", transcriptRoutes(verify))
     .route("/", jobsRoutes(verify))
-    .route("/", tutoringRoutes(verify, rooms))
-    .route("/admin", adminRoutes(verify, identifier))
+    .route("/", tutoringRoutes(verify, rooms, roomAvailability))
+    .route("/", libraryRoutes(verify, roomAvailability))
+    .route("/admin", adminRoutes(verify, identifier, instagram))
     .route("/claims", claimsRoutes(verify))
     .route("/", listingsRoutes(verify))
     .route("/", offersRoutes(verify, market))
