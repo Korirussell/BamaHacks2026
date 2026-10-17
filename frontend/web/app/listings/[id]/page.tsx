@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import { use, useState } from 'react';
+import { use, useCallback, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, ExternalLink, Heart, Share2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -13,6 +13,7 @@ import { realListing, realOffer } from '@/lib/real';
 import { useRealLoad } from '@/lib/useRealLoad';
 import { BidBubbles } from '@/components/BidBubbles';
 import { InterestSheet } from '@/components/InterestSheet';
+import { HaggleSheet } from '@/components/HaggleSheet';
 import { PaySheet } from '@/components/PaySheet';
 import { ListingGallery } from '@/components/ListingGallery';
 import { EmptyState, ErrorState, GhostBadge, Pill, PillLink, PriceTag, ReliabilityBadge, Skeleton, Tag } from '@/components/ui';
@@ -28,6 +29,7 @@ export default function ListingDetail({ params }: { params: Promise<{ id: string
   const real = useRealLoad(() => realListing(id), [id], !USE_MOCKS);
   const { status, retry } = USE_MOCKS ? mock : real;
   const [want, setWant] = useState(false);
+  const [haggling, setHaggling] = useState(false);
   const [saved, setSaved] = useState(false);
   const [buying, setBuying] = useState(false);
   const [offerSent, setOfferSent] = useState(false);
@@ -46,6 +48,8 @@ export default function ListingDetail({ params }: { params: Promise<{ id: string
       else toast((e as Error).message);
     } finally { setBuying(false); }
   };
+
+  const closeHaggle = useCallback(() => setHaggling(false), []);
 
   if (status === 'error') return <ErrorState onRetry={retry} />;
   if (status === 'loading')
@@ -71,11 +75,11 @@ export default function ListingDetail({ params }: { params: Promise<{ id: string
       <Pill className="flex-1" disabled={!USE_MOCKS && (buying || offerSent || real.data?.isMine || listing.status !== 'active')} onClick={USE_MOCKS ? () => setPay(true) : buyReal}>
         {!USE_MOCKS ? (offerSent ? 'Offer sent' : buying ? 'Sending…' : `Buy · ${money(listing.price_cents)}`) : listing.id === 'l_owala' ? copy2.buy.cta : `Buy · ${money(listing.price_cents)}`}
       </Pill>
-      {!USE_MOCKS ? null : listing.id === 'l_fridge' ? (
+      {USE_MOCKS && listing.id === 'l_fridge' ? (
         <PillLink href="/offers/t_fridge" variant="neutral" className="flex-1">Make offer</PillLink>
-      ) : (
-        <Pill variant="neutral" className="flex-1" onClick={() => toast(`Offer sent to ${seller?.display_name ?? 'the seller'}. Thread expires in 47h.`)}>Make offer</Pill>
-      )}
+      ) : (USE_MOCKS || (!real.data?.isMine && listing.status === 'active')) ? (
+        <Pill variant="neutral" className="flex-1" onClick={() => setHaggling(true)}>Haggle 🤝</Pill>
+      ) : null}
     </div>
   );
 
@@ -184,6 +188,7 @@ export default function ListingDetail({ params }: { params: Promise<{ id: string
       )}
 
       <InterestSheet listing={want ? listing : null} onClose={() => setWant(false)} />
+      <HaggleSheet listing={haggling ? listing : null} onClose={closeHaggle} />
       <PaySheet
         open={pay}
         amount={listing.price_cents}
