@@ -2,7 +2,7 @@ import type Stripe from "stripe";
 import { ApiError } from "../lib/errors.js";
 import { adminClient } from "../lib/supabase.js";
 import type { StripeLike } from "../lib/stripe.js";
-import type { PaymentProvider } from "./escrow.js";
+import type { Payable, PaymentProvider } from "./escrow.js";
 
 // Separate charges and transfers: the buyer is charged on the platform account (held there as
 // escrow), and the seller is paid with a Transfer when the trade is confirmed. Idempotency keys
@@ -15,6 +15,15 @@ const chargeIdOf = (pi: Stripe.PaymentIntent): string | null => {
   const c = pi.latest_charge;
   return typeof c === "string" ? c : c?.id ?? null;
 };
+
+// Orders keep their original keys and metadata; tutoring sessions get their own prefix so the
+// two can never share an idempotency key.
+const isSession = (p: Payable) => p.kind === "tutoring_session";
+const keyOf = (p: Payable, op: "pi" | "tr" | "re") => (isSession(p) ? `${op}:ts:${p.id}` : `${op}:${p.id}`);
+const refMeta = (p: Payable): Record<string, string> => (isSession(p) ? { tutoring_session_id: p.id } : { order_id: p.id });
+const intentMeta = (p: Payable): Record<string, string> => (isSession(p)
+  ? { kind: "tutoring_session", tutoring_session_id: p.id, school_id: p.school_id, student_id: p.buyer_id, tutor_id: p.seller_id }
+  : { kind: "order", order_id: p.id, school_id: p.school_id, buyer_id: p.buyer_id, seller_id: p.seller_id });
 
 export type SellerAccountLookup = (sellerId: string, schoolId: string) => Promise<string | null>;
 
@@ -29,7 +38,7 @@ export function stripeProvider(stripe: StripeLike, sellerAccount: SellerAccountL
     name: "stripe",
 
     async startPayment(order) {
-      let key = `pi:${order.id}`;
+      let key = keyOf(order, "pi");
       if (order.payment_intent_id) {
         const existing = await stripe.paymentIntents.retrieve(order.payment_intent_id);
         if (USABLE.includes(existing.status) && existing.client_secret) {
@@ -37,14 +46,14 @@ export function stripeProvider(stripe: StripeLike, sellerAccount: SellerAccountL
         }
         // Already charged: the caller marks the order paid (the webhook would do the same).
         if (existing.status === "succeeded") return { ref: existing.id, clientSecret: null, settled: true };
-        key = `pi:${order.id}:${existing.id}`; // cancelled earlier → a fresh intent needs a fresh key
+        key = `${keyOf(order, "pi")}:${existing.id}`; // cancelled earlier → a fresh intent needs a fresh key
       }
       const pi = await stripe.paymentIntents.create({
         amount: order.amount_cents,
         currency: "usd",
         automatic_payment_methods: { enabled: true },
         transfer_group: order.id,
-        metadata: { kind: "order", order_id: order.id, school_id: order.school_id, buyer_id: order.buyer_id, seller_id: order.seller_id },
+        metadata: intentMeta(order),
       }, { idempotencyKey: key });
       return { ref: pi.id, clientSecret: pi.client_secret, settled: false };
     },
@@ -70,16 +79,16 @@ export function stripeProvider(stripe: StripeLike, sellerAccount: SellerAccountL
       const charge = chargeIdOf(pi);
       if (!charge) throw new ApiError(409, "INVALID_STATE", "Payment has no charge to pay out from");
       const transfer = await stripe.transfers.create({
-        amount: amountCents, currency: "usd", destination, transfer_group: order.id, source_transaction: charge, metadata: { order_id: order.id },
-      }, { idempotencyKey: `tr:${order.id}` });
+        amount: amountCents, currency: "usd", destination, transfer_group: order.id, source_transaction: charge, metadata: refMeta(order),
+      }, { idempotencyKey: keyOf(order, "tr") });
       return { ref: transfer.id };
     },
 
     async refund(order, amountCents) {
       if (!order.payment_intent_id) throw new ApiError(409, "INVALID_STATE", "Order has no payment to refund");
       const refund = await stripe.refunds.create({
-        payment_intent: order.payment_intent_id, amount: amountCents, metadata: { order_id: order.id },
-      }, { idempotencyKey: `re:${order.id}` });
+        payment_intent: order.payment_intent_id, amount: amountCents, metadata: refMeta(order),
+      }, { idempotencyKey: keyOf(order, "re") });
       return { ref: refund.id };
     },
   };

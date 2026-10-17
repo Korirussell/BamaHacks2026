@@ -81,3 +81,22 @@ test("refund targets the PaymentIntent with a per-order idempotency key", async 
   assert.deepEqual(out, { ref: "re_1" });
   assert.deepEqual(calls[0]?.args, [{ payment_intent: "pi_1", amount: 5000, metadata: { order_id: order.id } }, { idempotencyKey: `re:${order.id}` }]);
 });
+
+test("tutoring sessions get their own metadata and idempotency keys", async () => {
+  const session = { ...order, kind: "tutoring_session" as const, id: "77777777-7777-4777-8777-777777777777" };
+  const { stripe, calls } = fake({ latest_charge: "ch_9" });
+  const p = stripeProvider(stripe, async (id) => (id === order.seller_id ? "acct_tutor" : null));
+  await p.startPayment(session, { idempotencyKey: "k" });
+  assert.deepEqual(calls[0]?.args, [{
+    amount: 5000, currency: "usd", automatic_payment_methods: { enabled: true }, transfer_group: session.id,
+    metadata: { kind: "tutoring_session", tutoring_session_id: session.id, school_id: order.school_id, student_id: order.buyer_id, tutor_id: order.seller_id },
+  }, { idempotencyKey: `pi:ts:${session.id}` }]);
+  const withPi = { ...session, payment_intent_id: "pi_1" };
+  await p.release(withPi, 4750);
+  assert.deepEqual(calls.find((c) => c.fn === "tr.create")?.args[1], { idempotencyKey: `tr:ts:${session.id}` });
+  assert.equal((calls.find((c) => c.fn === "tr.create")?.args[0] as Stripe.TransferCreateParams).destination, "acct_tutor");
+  await p.refund(withPi, 5000);
+  assert.deepEqual(calls.find((c) => c.fn === "re.create")?.args, [
+    { payment_intent: "pi_1", amount: 5000, metadata: { tutoring_session_id: session.id } }, { idempotencyKey: `re:ts:${session.id}` },
+  ]);
+});

@@ -12,7 +12,7 @@ import { academicsRoutes } from "./routes/academics.js";
 import { mediaRoutes } from "./routes/media.js";
 import { meRoutes } from "./routes/me.js";
 import { scheduleRoutes } from "./routes/schedule.js";
-import { tutoringRoutes } from "./routes/tutoring.js";
+import { tutoringRoutes, type TutoringPayments } from "./routes/tutoring.js";
 import { adminRoutes } from "./routes/admin.js";
 import { claimsRoutes } from "./routes/claims.js";
 import { listingsRoutes } from "./routes/listings.js";
@@ -56,6 +56,8 @@ export interface AppDeps {
   payments: PaymentsMode;
   /** Stripe webhook collaborators; tests inject fakes. */
   stripeWebhooks: Partial<StripeWebhookDeps>;
+  /** Tutoring payment collaborators (session loader, escrow store); tests inject fakes. */
+  tutoringPayments: Partial<Pick<TutoringPayments, "escrow" | "loadSession">>;
   feeBps: number;
   appName: string;
   webOrigin: string;
@@ -77,6 +79,7 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     idempotency = supabaseIdempotencyStore(),
     payments = "demo",
     stripeWebhooks = {},
+    tutoringPayments = {},
     feeBps = 500,
     appName = "Campus Marketplace",
     webOrigin = "http://localhost:3000",
@@ -100,7 +103,7 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     .route("/", scheduleImportRoutes(verify))
     .route("/", transcriptRoutes(verify))
     .route("/", jobsRoutes(verify))
-    .route("/", tutoringRoutes(verify, rooms, roomAvailability))
+    .route("/", tutoringRoutes(verify, rooms, roomAvailability, { idempotency, mode: payments, feeBps, ...tutoringPayments }))
     .route("/", libraryRoutes(verify, roomAvailability))
     .route("/admin", adminRoutes(verify, identifier, instagram))
     .route("/claims", claimsRoutes(verify))

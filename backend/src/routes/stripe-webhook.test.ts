@@ -3,6 +3,7 @@ import test from "node:test";
 import type Stripe from "stripe";
 import { createApp } from "../app.js";
 import type { OrderRow } from "../db/market.js";
+import type { EscrowSession } from "../services/tutoring-escrow.js";
 import type { StripeWebhookDeps } from "./stripe-webhook.js";
 
 process.env["SUPABASE_URL"] ??= "https://example.supabase.co";
@@ -13,7 +14,7 @@ const orderBase = {
   seller_id: "66666666-6666-4666-8666-666666666666", status: "awaiting_payment", payment_intent_id: "pi_1",
 } as OrderRow;
 
-function harness(order: OrderRow | null = orderBase) {
+function harness(order: OrderRow | null = orderBase, session: EscrowSession | null = null) {
   const log: string[] = [];
   const seen = new Set<string>();
   const deps: StripeWebhookDeps = {
@@ -33,6 +34,10 @@ function harness(order: OrderRow | null = orderBase) {
     afterPaid: async (o) => { log.push("afterPaid"); return o; },
     notify: async (n) => { log.push(`notify:${n.userId}:${n.title}`); },
     syncConnectAccount: async (a) => { log.push(`sync:${a.id}`); },
+    loadSession: async () => session,
+    loadSessionByPaymentIntent: async () => session,
+    updateSession: async (s, patch) => { log.push(`updateSession:${JSON.stringify(patch)}`); return { ...s, ...patch } as EscrowSession; },
+    markSessionPaid: async (s, ref) => { log.push(`markSessionPaid:${ref}`); return { ...s, status: "paid" } as EscrowSession; },
   };
   const app = createApp({ stripeWebhooks: deps, log: false });
   const post = (event: unknown, sig = "good") =>
@@ -106,4 +111,37 @@ test("a handler failure frees the event for Stripe's retry and returns 500", asy
 test("pay still needs auth and an Idempotency-Key (demo-compatible)", async () => {
   const app = createApp({ verify: async () => null, log: false });
   assert.equal((await app.request("/api/v1/orders/11111111-1111-4111-8111-111111111111/pay", { method: "POST" })).status, 401);
+});
+
+const sessionBase = {
+  id: "77777777-7777-4777-8777-777777777777", school_id: school, student_id: "55555555-5555-4555-8555-555555555555",
+  tutor_id: "66666666-6666-4666-8666-666666666666", status: "accepted", payment_intent_id: "pi_1",
+} as EscrowSession;
+const tutoringMeta = { kind: "tutoring_session", tutoring_session_id: sessionBase.id, school_id: school };
+
+test("a tutoring payment marks the session paid once; other schools and finished sessions are ignored", async () => {
+  const h = harness(null, sessionBase);
+  assert.equal((await h.post(pi("payment_intent.succeeded", tutoringMeta))).status, 200);
+  assert.deepEqual(h.log, ["markSessionPaid:pi_1", "complete:evt_payment_intent.succeeded"]);
+  await h.post(pi("payment_intent.succeeded", tutoringMeta));
+  assert.equal(h.log.length, 2);
+
+  const other = harness(null, sessionBase);
+  await other.post(pi("payment_intent.succeeded", { ...tutoringMeta, school_id: "99999999-9999-4999-8999-999999999999" }));
+  const cancelled = harness(null, { ...sessionBase, status: "cancelled" });
+  await cancelled.post(pi("payment_intent.succeeded", tutoringMeta));
+  for (const x of [other, cancelled]) assert.equal(x.log.some((l) => l.startsWith("markSessionPaid") || l.startsWith("markPaid")), false);
+});
+
+test("a failed tutoring payment keeps the session payable and tells the student", async () => {
+  const h = harness(null, sessionBase);
+  await h.post(pi("payment_intent.payment_failed", tutoringMeta));
+  assert.deepEqual(h.log.slice(0, 2), ['updateSession:{"payment_status":"failed"}', `notify:${sessionBase.student_id}:Payment didn't go through`]);
+});
+
+test("a chargeback on a tutoring payment notifies both sides and changes nothing", async () => {
+  const h = harness(null, { ...sessionBase, status: "paid" });
+  await h.post({ id: "evt_d2", type: "charge.dispute.created", data: { object: { id: "dp_2", payment_intent: "pi_1" } } });
+  assert.equal(h.log.filter((l) => l.startsWith("notify")).length, 2);
+  assert.equal(h.log.some((l) => l.startsWith("update")), false);
 });

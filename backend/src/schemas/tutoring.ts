@@ -53,6 +53,13 @@ export const TutoringSession = z.object({
   room_booking: RoomBooking,
   status: z.enum(["requested", "accepted", "paid", "completed", "cancelled", "no_show"]), waiting_on: z.enum(["tutor", "student"]).nullable(),
   history: z.array(z.object({ by: z.enum(["tutor", "student"]), action: z.enum(["propose", "counter", "accept", "decline"]), start: Timestamp, end: Timestamp, at: Timestamp })), handoff_id: Uuid.nullable(),
+  payment: z.object({ status: z.enum(["none", "requires_payment", "succeeded", "failed", "refunded"]), paid_at: Timestamp.nullable() }),
+  payout: z.object({
+    status: z.enum(["held", "awaiting_onboarding", "released", "reversed"]).nullable(), released_at: Timestamp.nullable(), tutor_payout_cents: Cents.nullable(),
+  }),
+});
+export const PaySessionRes = z.object({
+  client_secret: z.string().nullable(), payment_intent_id: z.string().nullable(), demo: z.boolean(), session: TutoringSession,
 });
 export const CreateSessionReq = z.object({ tutor_id: Uuid, course_id: Uuid, start: Timestamp, end: Timestamp, location_pref: z.enum(["library_room", "safe_zone", "virtual"]), notes: z.string().optional() });
 export const CounterSessionReq = z.object({ start: Timestamp, end: Timestamp, message: z.string().optional() });
@@ -63,6 +70,7 @@ export type PutTutorProfileReq = z.infer<typeof PutTutorProfileReq>;
 export type TutorsQuery = z.infer<typeof TutorsQuery>;
 export type TutorMatch = z.infer<typeof TutorMatch>;
 export type TutoringSession = z.infer<typeof TutoringSession>;
+export type PaySessionRes = z.infer<typeof PaySessionRes>;
 export type CreateSessionReq = z.infer<typeof CreateSessionReq>;
 export type CounterSessionReq = z.infer<typeof CounterSessionReq>;
 export type TutorEligibilityItem = z.infer<typeof TutorEligibilityItem>;

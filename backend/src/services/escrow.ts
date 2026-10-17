@@ -20,16 +20,30 @@ export interface StartedPayment {
   settled: boolean;
 }
 
+/**
+ * What a provider charges and pays out. An OrderRow fits as is (kind defaults to "order"); a tutoring
+ * session maps student → buyer_id, tutor → seller_id, price → amount_cents (services/tutoring-escrow.ts).
+ */
+export interface Payable {
+  kind?: "order" | "tutoring_session";
+  id: string;
+  school_id: string;
+  buyer_id: string;
+  seller_id: string;
+  amount_cents: number;
+  payment_intent_id: string | null;
+}
+
 export interface PaymentProvider {
   readonly name: "demo" | "stripe";
   /** Start collecting the buyer's money. Must be idempotent per order (retries return the same payment). */
-  startPayment(order: OrderRow, opts: { idempotencyKey: string }): Promise<StartedPayment>;
+  startPayment(order: Payable, opts: { idempotencyKey: string }): Promise<StartedPayment>;
   /** Abandon a payment that never succeeded (order cancelled while awaiting_payment). */
-  cancelPayment(order: OrderRow): Promise<void>;
+  cancelPayment(order: Payable): Promise<void>;
   /** Pay the seller their share of a held payment. */
-  release(order: OrderRow, amountCents: number): Promise<{ ref: string }>;
+  release(order: Payable, amountCents: number): Promise<{ ref: string }>;
   /** Give the buyer their money back. */
-  refund(order: OrderRow, amountCents: number): Promise<{ ref: string }>;
+  refund(order: Payable, amountCents: number): Promise<{ ref: string }>;
 }
 
 /** Money "moves" instantly and nothing leaves the platform. */
