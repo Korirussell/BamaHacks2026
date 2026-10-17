@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { claudeTextbookIdentifier, visionPrompt } from "../adapters/claude-vision.js";
+import { claudeTextbookIdentifier } from "../adapters/claude-vision.js";
+import { itemPrompt } from "../adapters/local-ai.js";
 import { instagramGraph, parseTagged } from "../adapters/instagram.js";
 import { captionTextbookIdentifier } from "../adapters/stubs.js";
 import { claimUrlIn } from "./claims.js";
@@ -66,11 +67,11 @@ describe("instagram pipeline", () => {
 });
 
 describe("claude vision identifier", () => {
-  const toolReply = (input: Record<string, unknown>) => json({ content: [{ type: "tool_use", name: "record_textbook", input }] });
-  const answer = { is_textbook: true, known_isbn: null, isbn: null, title: "Chem book", authors: [], edition: null, price_usd: 45, condition: "good", confidence: 0.9, evidence: "Cover title" };
+  const toolReply = (input: Record<string, unknown>) => json({ stop_reason: "end_turn", content: [{ type: "text", text: JSON.stringify(input) }] });
+  const answer = { is_textbook: true, known_isbn: null, isbn: null, category: "textbook", title: "Chem book", authors: [], edition: null, price_usd: 45, estimated_price_usd: 50, price_reason: "Used copies go for ~$50", condition: "good", confidence: 0.9, evidence: "Cover title" };
 
   it("matches a cover photo to a required book's ISBN and sends the photo by URL", async () => {
-    let sent: { model: string; tool_choice: unknown; messages: { content: { type: string }[] }[] } | undefined;
+    let sent: { model: string; tool_choice?: unknown; output_config: { format: { type: string } }; messages: { content: { type: string }[] }[] } | undefined;
     const id = claudeTextbookIdentifier({
       apiKey: "k", model: "claude-test", fallback: captionTextbookIdentifier,
       fetch: async (_url, init) => {
@@ -85,7 +86,9 @@ describe("claude vision identifier", () => {
     assert.equal(g.priceCents, 4500);
     assert.equal(g.source, "vision");
     assert.equal(sent?.model, "claude-test");
-    assert.deepEqual(sent?.tool_choice, { type: "tool", name: "record_textbook" });
+    assert.equal(sent?.tool_choice, undefined); // forced tool use 400s on current models
+    assert.equal(sent?.output_config.format.type, "json_schema");
+    assert.equal(g.estimatedPriceCents, 5000);
     assert.deepEqual(sent?.messages[0]?.content.map((c) => c.type), ["image", "text"]);
   });
 
@@ -102,8 +105,16 @@ describe("claude vision identifier", () => {
     assert.equal(g.priceCents, 6000);
   });
 
+  it("reads a non-book item into its category", async () => {
+    const id = claudeTextbookIdentifier({ apiKey: "k", model: "m", fallback: captionTextbookIdentifier, fetch: async () => toolReply({ ...answer, is_textbook: false, category: "dorm", title: "Galanz mini fridge", price_usd: null }) });
+    const g = await id.identify({ imageUrls: ["https://x/fridge.jpg"], caption: "" });
+    assert.equal(g.category, "dorm");
+    assert.equal(g.isbn, null);
+    assert.equal(g.estimatedPriceCents, 5000);
+  });
+
   it("the prompt lists the known books and the caption", () => {
-    const p = visionPrompt("my caption", [chem]);
+    const p = itemPrompt("my caption", [chem]);
     assert.match(p, /9780134414232: Chemistry: The Central Science, 14th ed\./);
     assert.match(p, /my caption/);
   });

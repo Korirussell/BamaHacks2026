@@ -2,7 +2,8 @@ import { z } from "zod";
 import { adminClient } from "../lib/supabase.js";
 import { toDecisions, toWire } from "../services/decisions.js";
 import { toGuess } from "./claude-vision.js";
-import type { Decider, KnownBook, TextbookIdentifier } from "./ports.js";
+import { captionTextbookIdentifier } from "./stubs.js";
+import type { Decider, KnownBook, TextbookGuess, TextbookIdentifier } from "./ports.js";
 
 // The laptop AI worker (ai-worker/) as adapters. The API never runs a model: it writes an ai_tasks row,
 // the worker on the laptop runs Gemma 4 (vision) or JEV-9B (decisions) and writes the answer back.
@@ -126,11 +127,12 @@ export const ITEM_SCHEMA = {
     price_usd: { type: ["number", "null"] },
     estimated_price_usd: { type: ["number", "null"] },
     price_reason: { type: "string" },
-    condition: { type: ["string", "null"], enum: ["new", "like_new", "good", "fair", "poor", null] },
+    condition: { anyOf: [{ type: "string", enum: ["new", "like_new", "good", "fair", "poor"] }, { type: "null" }] },
     confidence: { type: "number" },
     evidence: { type: "string" },
   },
   required: ["is_textbook", "known_isbn", "isbn", "category", "title", "authors", "edition", "price_usd", "estimated_price_usd", "price_reason", "condition", "confidence", "evidence"],
+  additionalProperties: false,
 } as const;
 
 const ItemAnswer = z.object({
@@ -162,29 +164,35 @@ export function itemPrompt(caption: string, knownBooks: KnownBook[]): string {
   ].filter(Boolean).join("\n\n");
 }
 
+/** A vision model's ITEM_SCHEMA answer → a guess (null if it doesn't parse). Shared by Gemma and Claude. */
+export function itemGuess(json: unknown, knownBooks: KnownBook[], fallback: TextbookGuess, by: string): TextbookGuess | null {
+  const parsed = ItemAnswer.safeParse(json);
+  if (!parsed.success) return null;
+  const a = parsed.data;
+  const guess = toGuess(a, knownBooks, fallback);
+  return {
+    ...guess,
+    evidence: a.evidence ? `${by}: ${a.evidence}` : `Read by ${by}`,
+    category: guess.isbn ? "textbook" : a.category === "textbook" ? "other" : a.category,
+    estimatedPriceCents: a.estimated_price_usd !== null && a.estimated_price_usd > 0 ? Math.round(a.estimated_price_usd * 100) : null,
+    ...(a.price_reason ? { priceReason: a.price_reason } : {}),
+  };
+}
+
 /** Gemma 4 on the laptop reads any item (not just books) and estimates a price. Falls back when offline. */
 export function gemmaIdentifier(opts: { queue: AiQueue; fallback: TextbookIdentifier; timeoutMs?: number }): TextbookIdentifier {
   return {
     async identify(input) {
-      const fallback = await opts.fallback.identify(input);
-      if (!input.imageUrls.length && !input.caption.trim()) return fallback;
+      // The fallback (Claude, or the caption parser) only runs when Gemma didn't answer.
+      if (!input.imageUrls.length && !input.caption.trim()) return opts.fallback.identify(input);
       const knownBooks = input.knownBooks ?? [];
       const raw = await opts.queue.run("gemma_vision", {
         image_urls: input.imageUrls.slice(0, 4),
         prompt: itemPrompt(input.caption, knownBooks),
         schema: ITEM_SCHEMA,
       }, opts.timeoutMs ?? 45_000);
-      const parsed = ItemAnswer.safeParse((raw as { json?: unknown } | null)?.json);
-      if (!parsed.success) return fallback;
-      const a = parsed.data;
-      const guess = toGuess(a, knownBooks, fallback);
-      return {
-        ...guess,
-        evidence: a.evidence ? `Gemma: ${a.evidence}` : "Read by Gemma",
-        category: guess.isbn ? "textbook" : a.category === "textbook" ? "other" : a.category,
-        estimatedPriceCents: a.estimated_price_usd !== null && a.estimated_price_usd > 0 ? Math.round(a.estimated_price_usd * 100) : null,
-        ...(a.price_reason ? { priceReason: a.price_reason } : {}),
-      };
+      const guess = raw ? itemGuess((raw as { json?: unknown }).json, knownBooks, await captionTextbookIdentifier.identify(input), "Gemma") : null;
+      return guess ?? opts.fallback.identify(input);
     },
   };
 }
