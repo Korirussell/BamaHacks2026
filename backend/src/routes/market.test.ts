@@ -77,10 +77,10 @@ test("listings show the viewer's matching class, hide the floor and private medi
 test("marketplace routes reject missing tokens; a malformed claim link is CLAIM_INVALID without one", async () => {
   const app = createApp({ verify: async () => null, log: false });
   const id = "00000000-0000-4000-a000-000000000010";
-  for (const path of ["/feed", "/explore/listings", `/listings/${id}`, "/me/listings", "/me/offers", "/me/orders", `/orders/${id}`, "/admin/seller-invites"]) {
+  for (const path of ["/feed", "/explore/listings", `/listings/${id}`, "/me/listings", "/me/offers", "/me/orders", `/orders/${id}`, "/admin/seller-invites", "/me/notifications"]) {
     assert.equal((await app.request(`/api/v1${path}`)).status, 401, path);
   }
-  for (const path of ["/listings", `/listings/${id}/offers`, `/offers/${id}/accept`, `/orders/${id}/pay`, `/orders/${id}/cancel`, "/admin/ingested-posts", "/claims/abcdefghijklmnopqrstuvwx"]) {
+  for (const path of ["/listings", `/listings/${id}/offers`, `/offers/${id}/accept`, `/orders/${id}/pay`, `/orders/${id}/cancel`, "/admin/ingested-posts", "/claims/abcdefghijklmnopqrstuvwx", "/me/notifications/read"]) {
     assert.equal((await app.request(`/api/v1${path}`, { method: "POST" })).status, 401, path);
   }
   const bad = await app.request("/api/v1/claims/short");

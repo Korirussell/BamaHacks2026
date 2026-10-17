@@ -6,6 +6,7 @@ import { supabaseVerifier, type TokenVerifier } from "./middleware/auth.js";
 import { integrationsRoutes } from "./routes/integrations.js";
 import { jobsRoutes } from "./routes/jobs.js";
 import { scheduleImportRoutes } from "./routes/schedule-import.js";
+import { transcriptRoutes } from "./routes/transcripts.js";
 import { authRoutes, supabaseSchoolLookup, type SchoolLookup } from "./routes/auth.js";
 import { academicsRoutes } from "./routes/academics.js";
 import { mediaRoutes } from "./routes/media.js";
@@ -15,6 +16,7 @@ import { tutoringRoutes } from "./routes/tutoring.js";
 import { adminRoutes } from "./routes/admin.js";
 import { claimsRoutes } from "./routes/claims.js";
 import { listingsRoutes } from "./routes/listings.js";
+import { notificationsRoutes } from "./routes/notifications.js";
 import { offersRoutes } from "./routes/offers.js";
 import { ordersRoutes, type PaymentsMode } from "./routes/orders.js";
 import type { RoomBooker, TextbookIdentifier } from "./adapters/ports.js";
@@ -61,13 +63,15 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     .route("/", mediaRoutes(verify))
     .route("/", scheduleRoutes(verify))
     .route("/", scheduleImportRoutes(verify))
+    .route("/", transcriptRoutes(verify))
     .route("/", jobsRoutes(verify))
     .route("/", tutoringRoutes(verify, rooms))
     .route("/admin", adminRoutes(verify, identifier))
     .route("/claims", claimsRoutes(verify))
     .route("/", listingsRoutes(verify))
     .route("/", offersRoutes(verify, market))
-    .route("/", ordersRoutes(verify, idempotency, payments));
+    .route("/", ordersRoutes(verify, idempotency, payments))
+    .route("/", notificationsRoutes(verify));
 
   const app = new Hono();
   if (log) app.use(logger());
