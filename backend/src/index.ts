@@ -2,13 +2,19 @@ import { serve } from "@hono/node-server";
 import { claudeTextbookIdentifier } from "./adapters/claude-vision.js";
 import { instagramGraph } from "./adapters/instagram.js";
 import { libcalAvailability } from "./adapters/libcal.js";
+import { libcalPlaywrightBooker } from "./adapters/libcal-booker.js";
 import { captionTextbookIdentifier, demoRoomBooker, manualRoomBooker, noRoomAvailability } from "./adapters/stubs.js";
 import { createApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import { instagramPoller } from "./workers/instagram-poller.js";
 
 const config = loadConfig();
-const rooms = config.ROOM_BOOKER === "demo" ? demoRoomBooker("Gorgas Library") : manualRoomBooker(config.ROOM_BOOKING_URL);
+const manualRooms = manualRoomBooker(config.ROOM_BOOKING_URL);
+const rooms = config.ROOM_BOOKER === "demo"
+  ? demoRoomBooker("Gorgas Library")
+  : config.ROOM_BOOKER === "playwright"
+    ? libcalPlaywrightBooker({ profileDir: config.LIBCAL_PROFILE_DIR, headless: config.LIBCAL_HEADLESS === "on", fallback: manualRooms })
+    : manualRooms;
 
 const useClaude = config.IDENTIFIER === "claude" || (config.IDENTIFIER === "auto" && !!config.ANTHROPIC_API_KEY);
 if (useClaude && !config.ANTHROPIC_API_KEY) throw new Error("IDENTIFIER=claude needs ANTHROPIC_API_KEY");

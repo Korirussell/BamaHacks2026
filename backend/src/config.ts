@@ -27,8 +27,11 @@ const Env = z.object({
   GROUPME_BOT_TOKEN: optional,
   RESEND_API_KEY: optional,
   APP_URL_SCHEME: optional,
-  // Library rooms: "manual" sends people to ROOM_BOOKING_URL; "demo" fakes a booked room for the pitch.
-  ROOM_BOOKER: z.enum(["manual", "demo"]).default("manual"),
+  // Library rooms: "manual" sends people to ROOM_BOOKING_URL; "demo" fakes a booked room for the pitch;
+  // "playwright" really books the free room on LibCal through a Chrome profile signed into UA (`pnpm libcal login`).
+  ROOM_BOOKER: z.enum(["manual", "demo", "playwright"]).default("manual"),
+  LIBCAL_PROFILE_DIR: z.string().min(1).default(".libcal-profile"),
+  LIBCAL_HEADLESS: z.enum(["on", "off"]).default("on"),
   ROOM_BOOKING_URL: z.url().default("https://www.lib.ua.edu/"),
   // Live free Gorgas study rooms from UA's LibCal (read-only). "off" → no rooms are suggested.
   LIBCAL: z.enum(["on", "off"]).default("on"),
