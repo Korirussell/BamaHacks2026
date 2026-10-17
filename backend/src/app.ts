@@ -32,6 +32,8 @@ import { usersRoutes } from "./routes/users.js";
 import { wishlistRoutes } from "./routes/wishlist.js";
 import { eventsRoutes } from "./routes/events.js";
 import { ridesRoutes } from "./routes/rides.js";
+import { syllabiRoutes } from "./routes/syllabi.js";
+import { studyGroupsRoutes } from "./routes/study-groups.js";
 import type { InstagramPoller } from "./workers/instagram-poller.js";
 
 export interface AppDeps {
@@ -95,6 +97,8 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     .route("/", wishlistRoutes(verify))
     .route("/", eventsRoutes(verify, idempotency))
     .route("/", ridesRoutes(verify, idempotency, payments))
+    .route("/", syllabiRoutes(verify))
+    .route("/", studyGroupsRoutes(verify))
     .route("/", notificationsRoutes(verify));
 
   const app = new Hono();
