@@ -49,7 +49,8 @@ type CListing = {
 };
 export type COrder = {
   id: string; listing: CListing; buyer: CUser; seller: CUser; amount_cents: number; fee_cents: number;
-  status: string; payment: { status: 'requires_payment' | 'succeeded' | 'failed' | 'refunded'; paid_at?: string | null }; created_at: string;
+  status: string; payment: { status: 'requires_payment' | 'succeeded' | 'failed' | 'refunded'; paid_at?: string | null };
+  payout?: { status: 'held' | 'awaiting_onboarding' | 'released' | 'reversed'; released_at?: string | null } | null; created_at: string;
 };
 export type PayResult = { client_secret: string | null; payment_intent_id: string; demo?: boolean; order?: COrder };
 
@@ -105,3 +106,8 @@ export async function realOffer(listingId: string, amount_cents: number) {
 export const realOrder = async (id: string) => (await request<COrder>(`/orders/${id}`)).data;
 export const realPay = async (id: string, idempotencyKey: string) =>
   (await request<PayResult>(`/orders/${id}/pay`, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey } })).data;
+
+// Seller payouts (Stripe Connect Express). Onboarding comes back to /settings/payments?stripe=return|refresh.
+export type PayoutStatus = { charges_enabled: boolean; payouts_enabled: boolean; requirements_due: string[] };
+export const realPaymentsStatus = async () => (await request<PayoutStatus>('/payments/status')).data;
+export const realOnboard = async () => (await request<{ onboarding_url: string }>('/payments/onboard', { method: 'POST' })).data;
