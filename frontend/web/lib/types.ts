@@ -3,9 +3,9 @@ export type Reliability = { score: number; completed: number; no_shows: number; 
 export type School = { id: string; name: string; domain: string };
 export type UserPublic = { id: string; display_name: string; avatar_emoji: string; major?: string; grad_year?: number; school_id: string; reliability: Reliability; mutual_friend_count: number };
 export type Me = { user: UserPublic; email: string; budget_cents: number; theme: 'system' | 'light' | 'dark' };
-export type Place = { id: string; name: string; kind: 'class' | 'dorm' | 'library' | 'student_center' | 'police'; is_safe_zone: boolean; map: { x: number; y: number; w: number; h: number } };
+export type Place = { id: string; name: string; kind: 'class' | 'dorm' | 'library' | 'student_center' | 'police' | 'locker'; is_safe_zone: boolean; map: { x: number; y: number; w: number; h: number } };
 export type Listing = {
-  id: string; title: string; description: string; category: 'textbook' | 'lab_supplies' | 'dorm' | 'ticket' | 'bike' | 'other';
+  id: string; title: string; description: string; category: 'textbook' | 'lab_supplies' | 'dorm' | 'ticket' | 'bike' | 'tech' | 'other';
   price_cents: Cents; negotiable: boolean; condition: 'new' | 'like_new' | 'good' | 'fair' | 'poor';
   emoji: string; tile: 'peach' | 'mint' | 'butter'; tag?: string | null; location_label?: string;
   status: 'ghost' | 'active' | 'pending' | 'sold';
@@ -20,7 +20,7 @@ export type Bid = { id: string; listing_id: string; user_id: string; amount_cent
 export type ThreadMessage = { id: string; from: 'me' | 'them' | 'system'; kind: 'offer' | 'counter' | 'text' | 'accepted'; amount_cents?: Cents; text: string; at: string };
 export type OfferThread = { id: string; listing_id: string; buyer_id: string; seller_id: string; status: 'open' | 'accepted' | 'declined'; expires_in_hours: number; messages: ThreadMessage[]; agreed_cents?: Cents };
 export type Order = { id: string; listing_id: string; amount_cents: Cents; fee_cents: Cents; total_cents: Cents; status: 'awaiting_payment' | 'paid' | 'scheduled' | 'handing_off' | 'completed' };
-export type MeetupSuggestion = { id: string; start_label: string; start_iso: string; place_id: string; reason: string; walk_minutes: { me: number; them: number }; score: number };
+export type MeetupSuggestion = { id: string; method?: 'locker' | 'in_person'; start_label: string; start_iso: string; place_id: string; reason: string; walk_minutes: { me: number; them: number }; score: number };
 export type ClassMeeting = { course: string; days: ('mon' | 'tue' | 'wed' | 'thu' | 'fri')[]; start: string; end: string; place_id: string };
 export type ClaimPage = { token: string; listing_id: string; headline: string; bids: Bid[] };
 export type Notification = { id: string; title: string; body: string; deep_link: string; ago: string; read: boolean };

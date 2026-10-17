@@ -1,0 +1,3 @@
+[{ "id": "p_locker_ridgecrest", "name": "Ridgecrest Lockers", "kind": "locker", "is_safe_zone": true, "map": { "x": 70, "y": 64, "w": 22, "h": 6 } },
+{ "id": "p_locker_ferguson", "name": "Ferguson Lockers", "kind": "locker", "is_safe_zone": true, "map": { "x": 34, "y": 36, "w": 18, "h": 5 } },
+{ "id": "p_ridgecrest", "name": "Ridgecrest South", "kind": "dorm", "is_safe_zone": false, "map": { "x": 72, "y": 74, "w": 20, "h": 6 } }]

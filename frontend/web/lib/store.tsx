@@ -16,6 +16,13 @@ type DemoState = {
   dm: DmLog[];
   mockMode: boolean;
   scrapeTick: number;
+  /** Flow B (Owala → locker) stage */
+  zoe: 'none' | 'bought' | 'picked' | 'confirmed' | 'dropped' | 'done';
+  zoeSpot: string | null;
+  /** Flow A: Maya's buy request for the posted mouse */
+  maya: 'none' | 'requested' | 'accepted' | 'picked' | 'confirmed' | 'done';
+  mayaSpot: string | null;
+  extraHistory: { id: string; emoji: string; title: string; partner: string; place_id: string; date: string; method: string; amount_cents: number; role: string }[];
 };
 
 const seedDm = (): DmLog[] => [
@@ -36,9 +43,14 @@ const seed = (): DemoState => ({
   dm: seedDm(),
   mockMode: true,
   scrapeTick: 0,
+  zoe: 'none',
+  zoeSpot: null,
+  maya: 'none',
+  mayaSpot: null,
+  extraHistory: [],
 });
 
-const KEY = 'handoff-demo-v1';
+const KEY = 'handoff-demo-v2';
 const statusRank: DmStatus[] = ['queued', 'sent', 'clicked', 'claimed'];
 
 type CelebrateOpts = { kind: CelebrationKind; title: string; line: string; onDone?: () => void };

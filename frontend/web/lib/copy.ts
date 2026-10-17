@@ -49,3 +49,18 @@ export const copy = {
   post: { screenshot: 'Paste a screenshot (⌘V), drop it here, or pick a file' },
   job: { steps: ['Reading your post… 🔍', 'Spotting the item…', '💸 Estimating a fair price…'] },
 };
+
+// features-v2.md §7
+export const copy2 = {
+  sell: { snap: 'Snap it', snapSub: "One photo. We'll do the rest.", fast: 'Sell fast · $25 · ~1 day', max: 'Max · $32 · ~5 days', post: 'Post it', posted: 'Live on the feed' },
+  job: { photo: ['Looking at your photo… 👀', "That's a Logitech MX Master 3S 🖱️", 'Checking what these sell for on campus… 📈', 'Writing your listing… ✍️'] },
+  req: { title: 'Maya wants your mouse', money: 'Her $25 is ready to hold', accept: '✓ Accept', decline: 'Decline', held: "Maya's $25 is held 🔒" },
+  pick: { title: '3 handoff spots that fit both your schedules', you: 'You confirmed the price, so you pick the spot.', waiting: 'Waiting for Maya to confirm…', confirmed: 'Maya said looks good ✓' },
+  cal: { added: "📅 Added to your calendar and Maya's", addedZoe: '📅 Pickup window added for you and Zoe' },
+  buy: { cta: 'Buy · $15', note: "You're agreeing to Zoe's price." },
+  locker: { ready: 'Your Owala is ready', where: 'Locker 14 · Ridgecrest Lockers', code: 'Pickup code', done: 'I picked it up' },
+  td: { locker: 'Got it. $15 released to Zoe.', inpersonSeller: 'Clean handoff. $25 is on its way to you.' },
+  foryou: { title: 'For you', why: "Why you're seeing this" },
+  history: { title: 'Handoff history' },
+  ai: { priced: 'How Handoff priced this', spots: 'How we picked these spots' },
+};
