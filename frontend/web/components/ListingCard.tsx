@@ -6,7 +6,7 @@ import { money } from '@/lib/money';
 import { userById } from '@/lib/data';
 import { GhostBadge, ItemTile, ReasonChip, Tag } from './ui';
 
-export function ListingCard({ listing, onWant, className = '', static: isStatic }: { listing: Listing; onWant?: (l: Listing) => void; className?: string; static?: boolean }) {
+export function ListingCard({ listing, onWant, className = '', static: isStatic, reasonText, onWhy }: { listing: Listing; onWant?: (l: Listing) => void; className?: string; static?: boolean; reasonText?: string; onWhy?: () => void }) {
   const router = useRouter();
   const ghost = listing.status === 'ghost';
   const seller = userById(listing.seller_id);
@@ -26,7 +26,16 @@ export function ListingCard({ listing, onWant, className = '', static: isStatic 
         )}
       </ItemTile>
       <div className="pointer-events-none flex flex-1 flex-col gap-1.5 p-3">
-        <div className="min-h-[20px]"><ReasonChip reason={listing.reason} /></div>
+        <div className="min-h-[20px]">
+          {reasonText ? (
+            <span className="inline-flex items-center gap-1">
+              <span className="inline-flex rounded-full border-2 border-ink bg-mint px-2 py-0.5 text-[10.5px] font-extrabold text-dark-ink">{reasonText}</span>
+              {onWhy && (
+                <button onClick={e => { e.preventDefault(); onWhy(); }} aria-label="Why you're seeing this" className="pointer-events-auto relative z-10 flex h-5 w-5 items-center justify-center rounded-full border-2 border-ink bg-card text-[10px] font-extrabold">i</button>
+              )}
+            </span>
+          ) : <ReasonChip reason={listing.reason} />}
+        </div>
         <h3 className="font-display text-[15px] font-bold leading-tight">{listing.title}</h3>
         <p className="truncate text-[12px] font-semibold text-soft">{meta || ' '}</p>
         <div className="mt-auto flex items-center justify-between gap-2 pt-1">
