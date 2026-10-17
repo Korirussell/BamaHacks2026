@@ -184,6 +184,9 @@ async function resetDemoState() {
   await run("offers", db.from("offers").delete().or(`buyer_id.in.${list},seller_id.in.${list}`));
   await run("seller invites", db.from("seller_invites").delete().eq("school_id", SCHOOL).eq("handle", INSTAGRAM_HANDLE));
   if (listingIds.length) await run("listings", db.from("listings").delete().in("id", listingIds));
+  // So the demo post can be ingested again: re-sending a known URL is a no-op.
+  await run("ingested posts", db.from("ingested_posts").delete().eq("school_id", SCHOOL).ilike("author_handle", `%${INSTAGRAM_HANDLE}`));
+  await run("ingest jobs", db.from("jobs").delete().eq("kind", "ingest_classify").in("user_id", ids));
   await run("tutoring sessions", db.from("tutoring_sessions").delete().or(`tutor_id.in.${list},student_id.in.${list}`));
   await run("reviews", db.from("reviews").delete().or(`from_id.in.${list},to_id.in.${list}`));
   await run("notifications", db.from("notifications").delete().in("user_id", ids));
