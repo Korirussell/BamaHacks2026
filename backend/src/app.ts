@@ -19,6 +19,7 @@ import { listingsRoutes } from "./routes/listings.js";
 import { notificationsRoutes } from "./routes/notifications.js";
 import { offersRoutes } from "./routes/offers.js";
 import { ordersRoutes, type PaymentsMode } from "./routes/orders.js";
+import { stripeWebhookRoutes, type StripeWebhookDeps } from "./routes/stripe-webhook.js";
 import type { RoomAvailability, RoomBooker, TextbookIdentifier } from "./adapters/ports.js";
 import { captionTextbookIdentifier, manualRoomBooker, noRoomAvailability } from "./adapters/stubs.js";
 import { libraryRoutes } from "./routes/library.js";
@@ -27,6 +28,7 @@ import { supabaseIdempotencyStore, type IdempotencyStore } from "./middleware/id
 import { handoffRoutes } from "./routes/handoffs.js";
 import { shipmentRoutes } from "./routes/shipments.js";
 import { reviewsRoutes } from "./routes/reviews.js";
+import { paymentsRoutes } from "./routes/payments.js";
 import { socialRoutes } from "./routes/social.js";
 import { usersRoutes } from "./routes/users.js";
 import { wishlistRoutes } from "./routes/wishlist.js";
@@ -52,6 +54,8 @@ export interface AppDeps {
   instagram: InstagramPoller | null;
   idempotency: IdempotencyStore;
   payments: PaymentsMode;
+  /** Stripe webhook collaborators; tests inject fakes. */
+  stripeWebhooks: Partial<StripeWebhookDeps>;
   feeBps: number;
   appName: string;
   webOrigin: string;
@@ -72,6 +76,7 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     instagram = null,
     idempotency = supabaseIdempotencyStore(),
     payments = "demo",
+    stripeWebhooks = {},
     feeBps = 500,
     appName = "Campus Marketplace",
     webOrigin = "http://localhost:3000",
@@ -108,9 +113,11 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     .route("/", ingestedPostsRoutes(verify))
     .route("/webhooks", webhookRoutes({ identifier, groupmeSecret: groupme.secret, groupmeSchoolId: groupme.schoolId, instagramVerifyToken: instagramWebhookToken }))
     .route("/", ordersRoutes(verify, idempotency, payments))
+    .route("/", stripeWebhookRoutes(stripeWebhooks))
     .route("/", handoffRoutes(verify, idempotency))
     .route("/", shipmentRoutes(verify, idempotency))
     .route("/", reviewsRoutes(verify))
+    .route("/", paymentsRoutes(verify))
     .route("/", usersRoutes(verify))
     .route("/", socialRoutes(verify))
     .route("/", wishlistRoutes(verify))

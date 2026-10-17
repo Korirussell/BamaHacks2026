@@ -20,6 +20,9 @@ importers:
       playwright-core:
         specifier: ^1.64.1
         version: 1.64.1
+      stripe:
+        specifier: ^23.0.0
+        version: 23.0.0(@types/node@26.6.5)
       unpdf:
         specifier: ^1.9.0
         version: 1.9.0
@@ -379,6 +382,15 @@ packages:
     engines: {node: '>=20'}
     hasBin: true
 
+  stripe@23.0.0:
+    resolution: {integrity: sha512-MDE2A5ZVVluYURORaZEVghSmnLJc3w6aHAlZSxDQMsOjOb3V0O6ro/CiaeFlJS4N7uIVmsg98ocRsPmUK6YfyA==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      '@types/node': '>=20'
+    peerDependenciesMeta:
+      '@types/node':
+        optional: true
+
   tslib@2.8.1:
     resolution: {integrity: sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w==}
 
@@ -624,6 +636,10 @@ snapshots:
   iceberg-js@0.8.1: {}
 
   playwright-core@1.64.1: {}
+
+  stripe@23.0.0(@types/node@26.6.5):
+    optionalDependencies:
+      '@types/node': 26.6.5
 
   tslib@2.8.1: {}
 

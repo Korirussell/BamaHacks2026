@@ -5,13 +5,18 @@ import { libcalAvailability } from "./adapters/libcal.js";
 import { libcalPlaywrightBooker } from "./adapters/libcal-booker.js";
 import { captionTextbookIdentifier, demoRoomBooker, manualRoomBooker, noRoomAvailability } from "./adapters/stubs.js";
 import { createApp } from "./app.js";
-import { loadConfig } from "./config.js";
+import { assertPaymentsConfig, loadConfig } from "./config.js";
 import { sweepOverdueHandoffs } from "./db/handoff-actions.js";
+import { stripeClient } from "./lib/stripe.js";
+import { setPaymentProvider } from "./services/escrow.js";
+import { stripeProvider } from "./services/stripe-provider.js";
 import { orderTimers } from "./workers/order-timers.js";
 import { instagramPoller } from "./workers/instagram-poller.js";
 import { instagramStoriesPoller } from "./workers/instagram-stories.js";
 
 const config = loadConfig();
+assertPaymentsConfig(config);
+if (config.PAYMENTS === "stripe") setPaymentProvider(stripeProvider(stripeClient()));
 const manualRooms = manualRoomBooker(config.ROOM_BOOKING_URL);
 const rooms = config.ROOM_BOOKER === "demo"
   ? demoRoomBooker("Gorgas Library")

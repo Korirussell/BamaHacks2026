@@ -98,4 +98,26 @@ On the order screen, `GET /orders/{id}/escrow` drives a three-step timeline from
 - **Released**: a `release` entry. Seller sees *"Paid out"*. If the order is `completed` with `payout.status: "awaiting_onboarding"` there's no release yet: *"Finish payout setup to get paid."*
 - **Refunded**: a `refund` entry (no-show, cancel, unpaid timeout, or admin ruling). Buyer sees *"Refunded"*.
 
-`provider` is `demo` for now, no real charges; don't show it. Reload the timeline on `order.updated` (user channel). Either party can open a dispute from `scheduled`, `handing_off` or `in_transit`: `POST /orders/{id}/dispute` with `reason`, `details` and optional photos (`purpose: handoff_proof` uploads), plus an `Idempotency-Key`. The order shows `disputed` with money still held until the team resolves it; you then get a *"Dispute resolved"* notification and the order lands on `completed` or `refunded`.
+`provider` is `demo` or `stripe`; don't show it. Reload the timeline on `order.updated` (user channel). Either party can open a dispute from `scheduled`, `handing_off` or `in_transit`: `POST /orders/{id}/dispute` with `reason`, `details` and optional photos (`purpose: handoff_proof` uploads), plus an `Idempotency-Key`. The order shows `disputed` with money still held until the team resolves it; you then get a *"Dispute resolved"* notification and the order lands on `completed` or `refunded`.
+
+## Card payments (Stripe)
+
+Shapes: [API_CONTRACT.md](API_CONTRACT.md) → `POST /orders/{id}/pay`, `/payments/*`. The app only ever holds the **publishable** key (`STRIPE_PUBLISHABLE_KEY`, `pk_test_…`); never a secret key.
+
+### 1. Buyer pays
+
+`POST /orders/{id}/pay` with an `Idempotency-Key`, then branch on `demo`:
+
+- `demo: true`: the order comes back `paid`. No sheet, go straight to the order screen.
+- `demo: false`: present **PaymentSheet** (iOS) / **Payment Element** (web) with `client_secret`. When the sheet reports success, show *"Payment processing…"* and wait for `order.updated` (or refetch `GET /orders/{id}`) to see `paid`; the server marks it paid from Stripe's webhook, not from the app. If the sheet is dismissed, calling `pay` again returns the same payment, so a "Pay" button can just retry.
+- `payment.status: "failed"` on the order (buyer also gets *"Payment didn't go through"*): let them pay again with another card.
+
+Test cards: `4242 4242 4242 4242` (works), `4000 0000 0000 9995` (declined), any future date and CVC.
+
+### 2. Seller payout setup
+
+- Settings → "Get paid": `GET /payments/status`. If `payouts_enabled` is false, show **Set up payouts** (also show it on the order screen when `payout.status` is `awaiting_onboarding`).
+- Tap → `POST /payments/onboard` (`?client=ios` from the app) → open `onboarding_url` (web: redirect; iOS: `ASWebAuthenticationSession`/Safari view).
+- Stripe sends them back to `/settings/payments?stripe=return` (web) or `<scheme>://payments?stripe=return` (iOS). Then refetch `GET /payments/status`. `?stripe=refresh` means the link expired: call `onboard` again and reopen.
+- `requirements_due` non-empty → *"Stripe needs a bit more info"* with the same button.
+- Once payouts turn on, anything that was waiting is paid out automatically and the seller gets *"Payouts are on"*.
