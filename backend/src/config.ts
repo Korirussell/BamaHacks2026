@@ -17,6 +17,7 @@ const Env = z.object({
   GOOGLE_CLIENT_SECRET: optional,
   GOOGLE_REDIRECT_URI: optional,
   TOKEN_ENCRYPTION_KEY: optional,
+  HANDOFF_SECRET: z.string().min(32).optional(),
   APNS_KEY_ID: optional,
   APNS_TEAM_ID: optional,
   APNS_PRIVATE_KEY: optional,

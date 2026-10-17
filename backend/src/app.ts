@@ -21,6 +21,8 @@ import type { RoomBooker, TextbookIdentifier } from "./adapters/ports.js";
 import { captionTextbookIdentifier, manualRoomBooker } from "./adapters/stubs.js";
 import type { MarketConfig } from "./db/market-actions.js";
 import { supabaseIdempotencyStore, type IdempotencyStore } from "./middleware/idempotency.js";
+import { handoffRoutes } from "./routes/handoffs.js";
+import { shipmentRoutes } from "./routes/shipments.js";
 
 export interface AppDeps {
   verify: TokenVerifier;
@@ -67,7 +69,9 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     .route("/claims", claimsRoutes(verify))
     .route("/", listingsRoutes(verify))
     .route("/", offersRoutes(verify, market))
-    .route("/", ordersRoutes(verify, idempotency, payments));
+    .route("/", ordersRoutes(verify, idempotency, payments))
+    .route("/", handoffRoutes(verify))
+    .route("/", shipmentRoutes(verify));
 
   const app = new Hono();
   if (log) app.use(logger());
