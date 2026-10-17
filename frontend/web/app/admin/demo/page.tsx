@@ -36,7 +36,7 @@ export default function DemoPanel() {
   return (
     <div className="mx-auto max-w-[1000px]">
       <PageTitle title="Demo panel" sub="Backstage. Judges don't see this." right={<span className="rounded-full border-2 border-ink bg-butter px-3 py-1 text-[11px] font-extrabold uppercase text-dark-ink">Mock mode {mockMode ? 'on' : 'off'}</span>} />
-      <div className="grid gap-6 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 [&>*]:min-w-0">
         <StickerCard className="p-5">
           <h2 className="font-display text-[21px] font-bold">Instagram scraper</h2>
           <p className="mt-1 text-[13.5px] font-semibold text-soft">Pulls the latest UA buy/sell posts and turns them into ghost listings.</p>
