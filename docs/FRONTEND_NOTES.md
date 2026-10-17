@@ -98,4 +98,44 @@ On the order screen, `GET /orders/{id}/escrow` drives a three-step timeline from
 - **Released**: a `release` entry. Seller sees *"Paid out"*. If the order is `completed` with `payout.status: "awaiting_onboarding"` there's no release yet: *"Finish payout setup to get paid."*
 - **Refunded**: a `refund` entry (no-show, cancel, unpaid timeout, or admin ruling). Buyer sees *"Refunded"*.
 
-`provider` is `demo` for now, no real charges; don't show it. Reload the timeline on `order.updated` (user channel). Either party can open a dispute from `scheduled`, `handing_off` or `in_transit`: `POST /orders/{id}/dispute` with `reason`, `details` and optional photos (`purpose: handoff_proof` uploads), plus an `Idempotency-Key`. The order shows `disputed` with money still held until the team resolves it; you then get a *"Dispute resolved"* notification and the order lands on `completed` or `refunded`.
+`provider` is `demo` or `stripe`; don't show it. Reload the timeline on `order.updated` (user channel). Either party can open a dispute from `scheduled`, `handing_off` or `in_transit`: `POST /orders/{id}/dispute` with `reason`, `details` and optional photos (`purpose: handoff_proof` uploads), plus an `Idempotency-Key`. The order shows `disputed` with money still held until the team resolves it; you then get a *"Dispute resolved"* notification and the order lands on `completed` or `refunded`.
+
+## Card payments (Stripe)
+
+Shapes: [API_CONTRACT.md](API_CONTRACT.md) → `POST /orders/{id}/pay`, `/payments/*`. The app only ever holds the **publishable** key (`STRIPE_PUBLISHABLE_KEY`, `pk_test_…`); never a secret key.
+
+### 1. Buyer pays
+
+`POST /orders/{id}/pay` with an `Idempotency-Key`, then branch on `demo`:
+
+- `demo: true`: the order comes back `paid`. No sheet, go straight to the order screen.
+- `demo: false`: present **PaymentSheet** (iOS) / **Payment Element** (web) with `client_secret`. When the sheet reports success, show *"Payment processing…"* and wait for `order.updated` (or refetch `GET /orders/{id}`) to see `paid`; the server marks it paid from Stripe's webhook, not from the app. If the sheet is dismissed, calling `pay` again returns the same payment, so a "Pay" button can just retry.
+- `payment.status: "failed"` on the order (buyer also gets *"Payment didn't go through"*): let them pay again with another card.
+
+Test cards: `4242 4242 4242 4242` (works), `4000 0000 0000 9995` (declined), any future date and CVC.
+
+### 2. Seller payout setup
+
+- Settings → "Get paid": `GET /payments/status`. If `payouts_enabled` is false, show **Set up payouts** (also show it on the order screen when `payout.status` is `awaiting_onboarding`).
+- Tap → `POST /payments/onboard` (`?client=ios` from the app) → open `onboarding_url` (web: redirect; iOS: `ASWebAuthenticationSession`/Safari view).
+- Stripe sends them back to `/settings/payments?stripe=return` (web) or `<scheme>://payments?stripe=return` (iOS). Then refetch `GET /payments/status`. `?stripe=refresh` means the link expired: call `onboard` again and reopen.
+- `requirements_due` non-empty → *"Stripe needs a bit more info"* with the same button.
+- Once payouts turn on, anything that was waiting is paid out automatically and the seller gets *"Payouts are on"*.
+
+### 3. Tutoring payments
+
+Shapes: [API_CONTRACT.md](API_CONTRACT.md) → `POST /tutoring/sessions/{id}/pay`, *Tutoring escrow*. Same sheet and same key as orders.
+
+- Once a session is `accepted`, show **Pay $X** to the student only. `POST /tutoring/sessions/{id}/pay` with an `Idempotency-Key`; branch on `demo` exactly like orders (`demo: true` → `session` is already `paid`; `demo: false` → PaymentSheet with `client_secret`, then wait for `tutoring.updated` / refetch the session to see `paid`). `session.payment.status: "failed"` → let them try another card.
+- Paid **in person**: `session.handoff_id` is set. Open the normal meetup screen (`GET /handoffs/{id}`); it's already `agreed` at the session time and library spot, so skip suggest/propose. The tutor is the giver (shows the code), the student the receiver (scans / taps with `item_ok`). Confirming pays the tutor; a no-show refunds the student.
+- Paid **virtual**: after the start time the student taps **Mark as done** → `POST /tutoring/sessions/{id}/complete`, which pays the tutor. Hide that button for the tutor on paid sessions (it's FORBIDDEN for them).
+- Cancelling a paid session refunds the student: show *"You'll be refunded $X"* in the confirm dialog.
+- Tutor side: `session.payout.status` `held` → *"You'll be paid $Y after the session"* (`payout.tutor_payout_cents`); `awaiting_onboarding` → **Set up payouts** (same flow as sellers); `released` → *"Paid out"*.
+
+## Demo sign-in and no-login claims (`DEMO_AUTH=on` only)
+
+Until real sign-in is wired, the API can hand out sessions directly. Both return a Supabase session; send `access_token` as `Authorization: Bearer …`.
+
+- **Buyer (or anyone) signs in:** `POST /demo/login { "email": "bamahacks.buyer@crimson.ua.edu" }` → `{ data: { access_token, refresh_token, expires_at, user_id } }`. The account must already exist (`pnpm seed:demo`).
+- **Seller claims from the Instagram DM link:** the DM links to `/claim/{token}` on the web app. Show the preview from `GET /claims/{token}` (no login), and the "Claim it" button calls `POST /claims/{token}/demo` (no login, no body). That creates the seller an account for their handle, hands them the listing and its offers, and returns `{ data: { session, listings, pending_offers } }`. Keep `session` and use it for `POST /offers/{id}/accept` → order `awaiting_payment` → buyer `POST /orders/{id}/pay`.
+- The link is single use: a second claim is `410 CLAIM_INVALID`. With `DEMO_AUTH=off` both routes are `404`.

@@ -25,3 +25,12 @@ describe("config", () => {
     assert.throws(() => loadConfig({ ...base, INSTAGRAM: "dms" }), /INSTAGRAM/);
   });
 });
+
+describe("payments config", () => {
+  it("demo needs no Stripe keys; stripe mode needs both", async () => {
+    const { assertPaymentsConfig } = await import("./config.js");
+    assertPaymentsConfig(loadConfig(base));
+    assert.throws(() => assertPaymentsConfig(loadConfig({ ...base, PAYMENTS: "stripe", STRIPE_SECRET_KEY: "k" })), /STRIPE_WEBHOOK_SECRET/);
+    assertPaymentsConfig(loadConfig({ ...base, PAYMENTS: "stripe", STRIPE_SECRET_KEY: "k", STRIPE_WEBHOOK_SECRET: "w" }));
+  });
+});

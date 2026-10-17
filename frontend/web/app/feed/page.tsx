@@ -8,14 +8,21 @@ import { copy, copy2 } from '@/lib/copy';
 import { notifications, wishlist } from '@/lib/data';
 import { WhyPanel } from '@/components/WhyPanel';
 import { useDemo, useMockLoad } from '@/lib/store';
+import { USE_MOCKS } from '@/lib/api';
+import { realFeed } from '@/lib/real';
+import { useRealLoad } from '@/lib/useRealLoad';
 import { ListingCard, ListingCardSkeleton } from '@/components/ListingCard';
 import { ChipRow, EmptyState, ErrorState, PageTitle, PillLink } from '@/components/ui';
 
 type Chip = (typeof copy.chips)[number];
 
 export default function Feed() {
-  const { listings, scrapeTick } = useDemo();
-  const { status, retry } = useMockLoad();
+  const demo = useDemo();
+  const mock = useMockLoad();
+  const real = useRealLoad(realFeed, [], !USE_MOCKS);
+  const { scrapeTick } = demo;
+  const listings = USE_MOCKS ? demo.listings : real.data ?? [];
+  const { status, retry } = USE_MOCKS ? mock : real;
   const [chip, setChip] = useState<Chip>('All');
   const [q, setQ] = useState('');
   const [view, setView] = useState<'all' | 'foryou'>('all');

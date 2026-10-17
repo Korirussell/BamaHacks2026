@@ -1,10 +1,11 @@
 import { Hono } from "hono";
+import { primaryOrigin } from "../lib/origins.js";
 import { encrypt, signState, verifyState } from "../lib/crypto.js";
 import { one } from "../lib/respond.js";
 import { requireUser, type AuthEnv, type TokenVerifier } from "../middleware/auth.js";
 import { buildAuthUrl, disconnect, exchangeCode, primaryTimezone, requireGoogleConfigured, saveConnection } from "../services/google.js";
 
-const settingsUrl = (status: "connected" | "error") => `${process.env["WEB_ORIGIN"] ?? "http://localhost:3000"}/settings?google=${status}`;
+const settingsUrl = (status: "connected" | "error") => `${primaryOrigin(process.env["WEB_ORIGIN"])}/settings?google=${status}`;
 
 interface OAuthState {
   uid: string;

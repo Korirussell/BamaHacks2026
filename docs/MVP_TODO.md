@@ -1,15 +1,17 @@
 # MVP TODO
 
-Status as of 2026-10-17. Every endpoint in `API_CONTRACT.md` now exists except Katelyn's four Stripe ones. Hosted Supabase has migrations 0001–0018. 284 tests pass. **None of the new modules (social, wishlist, rides, tickets, study groups, misc) has run against the live database yet**, so item 1 matters most.
+Status as of 2026-10-17 (evening). Every endpoint in `API_CONTRACT.md` exists except Katelyn's four Stripe ones. Hosted Supabase has 0001–0018 from main, plus Katelyn's `0019_tutoring_escrow` (applied from `feat/stripe-tutoring`, not merged yet). 284 tests pass, and `pnpm smoke` runs every new module against the live DB and passes.
 
 ## 1. Demo blockers (do first)
 
-- [ ] **Live smoke test of every new module (backend).** Run `pnpm dev` against hosted Supabase. As two demo users, hit each new endpoint once, then fix what breaks. The tests only cover pure logic and request validation, so SQL, RLS and the joins are unproven. Listings are the riskiest: `LISTING_SELECT` now joins `events`, and the wishlist and ticket hooks run on publish.
-- [ ] **Instagram tokens (buddy, then Alex).** Follow `instagram-steps-for-buddy.md`. handoff.scout is the app account and darealkorirussell is the seller. Paste the two tokens into `backend/.env` (`INSTAGRAM_ACCESS_TOKEN`, `INSTAGRAM_SELLER_TOKEN`), then do one live run: post a story → it lists → DM. That will surface whatever differs between the real API and our code (story `media_url`, conversations shape, window error codes).
-- [ ] **AI worker live run (Kori).** Code is in: `gemmaIdentifier` + `jevDecider` (`backend/src/adapters/local-ai.ts`) and the laptop worker in `ai-worker/`. Left: apply `0020_ai_tasks.sql`, install Ollama + `ollama pull gemma4:e4b`, fill `ai-worker/.env`, run `uv run python worker.py`, and check that `GET /ai/status` goes online. Then try one screenshot → listing and one `POST /listings/{id}/haggle`.
+- [x] **Live smoke test of every new module.** `pnpm smoke` (as Jordan and Ava; cleans up after itself). Fixed review timestamps and digital_transfer offers on ticket listings.
+- [ ] **Deploy for the demo: API on a laptop behind ngrok, web stays on Vercel.** Stable URL: `https://sled-maker-outshoot.ngrok-free.dev/api/v1`. Run `pnpm dev` in `backend/` and `ngrok http --url=sled-maker-outshoot.ngrok-free.dev 8787`, and keep both running. iOS `apiBaseURL` already points there. Still to do: Vercel `NEXT_PUBLIC_API_BASE` (with `NEXT_PUBLIC_USE_MOCKS=false`), and the Meta webhook Callback URL `https://sled-maker-outshoot.ngrok-free.dev/api/v1/webhooks/instagram`. Don't put the backend on Vercel: serverless kills the Instagram poller, the order timers and the fire-and-forget AI jobs, and the LibCal booker needs the signed-in Chrome on the same machine.
+- [x] **Instagram tokens.** Both are in `backend/.env` and valid (handoff.scout = app account, darealkorirussell = seller, both Creator). A story posted from darealkorirussell's phone reaches the poller and the image is saved to storage; text typed on the story comes through baked into the image.
+- [x] **Instagram DMs.** Sending works both ways through the API, and the webhook (`/webhooks/instagram`) logs every DM. `INSTAGRAM_SELLER_IGSID` is set. Sends only work within 24 h of the other side's last message.
+- [ ] **AI worker live run (Kori).** Done: `0020_ai_tasks.sql` applied on hosted Supabase; `gemmaIdentifier` + `jevDecider` (`backend/src/adapters/local-ai.ts`); laptop worker in `ai-worker/`. Left: Ollama + `ollama pull gemma4:e4b`, `uv run python worker.py`, check `GET /ai/status` is online, then one screenshot → listing and one `POST /listings/{id}/haggle`.
 - [ ] **Stripe (Katelyn).**
   - Merge `feat/stripe-marketplace` and `feat/stripe-tutoring`.
-  - Renumber `0013_tutoring_escrow.sql` to **0019** first: 0013 is wishlist on the hosted DB. Her `0012_stripe_events.sql` is already applied and already on main, unchanged.
+  - Migrations are sorted: her 0012 is on main unchanged, and `0019_tutoring_escrow` is already applied to the hosted DB.
   - Endpoints left: `POST /payments/onboard`, `GET /payments/status`, `POST /webhooks/stripe`, `POST /tutoring/sessions/{id}/pay`.
   - Make sure `PAYMENTS=demo` still works for the demo.
 - [ ] **Frontend (Codex).** Paste prompts A (Live Sources) and B (library rooms) from `codex-prompts-instagram-library.md`. Then add screens for:
@@ -58,6 +60,5 @@ Status as of 2026-10-17. Every endpoint in `API_CONTRACT.md` now exists except K
 
 ## 4. Ops
 
-- [ ] Decide where the API runs for the demo (laptop or Fly/Railway). The LibCal booker needs the booking Chrome on the same machine as the API.
 - [ ] Delete the merged `worktree-agent-*` branches and worktrees, plus the leftover remote branches (`codex/*`, old `feat/*`).
 - [ ] Rotate the Instagram account passwords after the hackathon (they were shared in chat).
