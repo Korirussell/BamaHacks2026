@@ -149,7 +149,11 @@ Sign-in: the frontend calls `/auth/check-email`, then Supabase `signInWithOtp`. 
   "GET /courses":             { "query": { "q": "string" }, "res": ["Course"] },
   "GET /courses/{id}/materials": { "query": { "term": "string?" }, "res": [{ "isbn": "string", "title": "string", "required": "bool", "active_listings": "int", "lowest_price_cents": "cents?" }] },
 
+  "GET /me/class-schedule":   { "res": { "meetings": ["ClassMeeting"] } },
   "PUT /me/class-schedule":   { "req": { "meetings": ["ClassMeeting"] }, "res": { "meetings": ["ClassMeeting"] } },
+  "GET /me/class-schedule/suggested": { "note": "from Google Calendar; nothing saved, confirm via PUT", "res": { "meetings": ["ClassMeeting"], "unmatched": [{ "title": "string", "days": ["string"], "start": "HH:MM", "end": "HH:MM", "location_label": "string?" }] } },
+  "POST /me/calendar/ics":   { "note": "no-Google-Cloud path: upload an .ics export; replaces earlier upload; nothing saved to the schedule", "req": { "ics": "string" }, "res": { "events_imported": "int", "timezone": "string", "meetings": ["ClassMeeting"], "unmatched": [{ "title": "string", "days": ["string"], "start": "HH:MM", "end": "HH:MM", "location_label": "string?" }] } },
+  "DELETE /me/calendar/ics": { "res": "204" },
   "POST /integrations/google/connect": { "res": { "auth_url": "string" } },
   "GET /integrations/google/callback": { "note": "server-side OAuth redirect, stores refresh token, redirects to /settings" },
   "DELETE /integrations/google":       { "res": "204" },
@@ -158,6 +162,10 @@ Sign-in: the frontend calls `/auth/check-email`, then Supabase `signInWithOtp`. 
 ```
 
 Transcript parsing is **review-then-confirm**: grades only count as `grade_verified` after the user confirms the parsed result from an uploaded transcript, and only verified grades unlock tutoring.
+
+Class schedule import is also **review-then-confirm**: the backend reads the user's recurring weekly events (from Google Calendar if connected, else from an uploaded `.ics` export via `POST /me/calendar/ics`; Google, Outlook, Apple or registrar calendars all work, and users can export from Google Calendar via Settings → Import & export → Export; max 5 MB, must contain `BEGIN:VCALENDAR` else `400 VALIDATION` on `ics`), matches titles containing a course code (e.g. "CS 101") to the school catalog, and turns the event location into `place` (known campus buildings get real coordinates; unknown locations keep the label with campus-center coordinates). Codes not in the catalog come back in `unmatched`. Returns `409 INVALID_STATE` only if neither Google Calendar nor an .ics upload exists.
+
+`GET /me/availability` returns `class` blocks from saved meetings, `busy` from Google free/busy plus events from the uploaded .ics (weekly/daily repeats expanded; all-day, cancelled and free/transparent events ignored), and `free` only inside 08:00–22:00 in the user's timezone; range max 31 days. Class meeting `HH:MM` times are in the user's own timezone: their primary Google Calendar's timezone once connected, else the uploaded .ics file's timezone, else the server default (`SCHOOL_TIMEZONE`, else the server's local timezone).
 
 ### Endpoints — feed, listings, wishlist, offers, orders, handoff, mail
 
@@ -392,7 +400,7 @@ Set up **Supabase, the API host, Stripe, the Claude API and an Apple Developer a
 
 | Service | Used for | Setup checklist |
 |---|---|---|
-| Google Cloud | Calendar free/busy | OAuth client (web type, redirect to `/integrations/google/callback`) · scope `calendar.readonly` (or `calendar.freebusy`) · consent screen in Testing mode, add team + demo users as test users · iOS opens the backend's `auth_url` in `ASWebAuthenticationSession` |
+| Google Cloud | Calendar free/busy | OAuth client (web type, redirect to `/integrations/google/callback`) · scope `calendar.readonly` (required: the schedule import reads events, not just free/busy) · consent screen in Testing mode, add team + demo users as test users · iOS opens the backend's `auth_url` in `ASWebAuthenticationSession` |
 | Push delivery | iOS + web notifications | APNs from the API (token-based .p8) · Web Push with VAPID keys |
 | Maps | Campus map, safe zones, distance | MapKit on iOS · Mapbox or Leaflet + OSM on web · distance checks done **server-side with PostGIS**, not in clients |
 | Book metadata | ISBN → title, cover, edition | Open Library or Google Books API |
@@ -438,3 +446,4 @@ The first four change what gets built for the demo; the rest can be answered as 
 - [ ] **Campus mail:** what's the UA mail stop format, and how many days after drop-off should a mail order auto-complete?
 - [ ] **Library booking:** which system does UA use for study rooms, and does it allow automated booking?
 - [ ] **GroupMe:** can we get the Joyride group admins to add our bot?
+- [ ] **Google OAuth return on iOS:** callback redirects to `WEB_ORIGIN/settings`; does iOS need an `APP_URL_SCHEME` redirect instead for `ASWebAuthenticationSession`?

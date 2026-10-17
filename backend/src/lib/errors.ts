@@ -14,6 +14,7 @@ export const ERROR_CODES = [
   "PAYMENT_FAILED",
   "NOT_NEARBY",
   "RATE_LIMITED",
+  "INTERNAL",
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

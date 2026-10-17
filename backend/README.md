@@ -13,4 +13,6 @@ pnpm dev               # http://localhost:8787/api/v1
 - `src/schemas/`: Zod schemas for the contract's shared objects
 - `src/lib/errors.ts`: `ApiError` + the contract's error codes
 
-Scripts: `pnpm dev`, `pnpm typecheck`, `pnpm build`, `pnpm start`.
+Scripts: `pnpm dev`, `pnpm typecheck`, `pnpm build`, `pnpm start`, `pnpm test`.
+
+**Dev mode:** until Supabase is set up the API uses an in-memory store (`src/db/store.ts`, seeded from `src/db/seed.ts`, resets on restart). When `SUPABASE_JWT_SECRET` is empty, auth accepts `Authorization: Bearer dev` (demo user) or `Bearer dev:<uuid>`.

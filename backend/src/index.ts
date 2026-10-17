@@ -3,11 +3,17 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { ApiError, errorResponse } from "./lib/errors.js";
+import { academics } from "./routes/academics.js";
 import { auth } from "./routes/auth.js";
+import { google } from "./routes/integrations.js";
+import { schedule } from "./routes/schedule.js";
 
 const api = new Hono()
   .get("/health", (c) => c.json({ data: { ok: true } }))
-  .route("/auth", auth);
+  .route("/auth", auth)
+  .route("/integrations/google", google)
+  .route("/", academics)
+  .route("/", schedule);
 
 const app = new Hono()
   .use(logger())
