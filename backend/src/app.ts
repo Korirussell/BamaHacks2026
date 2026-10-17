@@ -15,6 +15,7 @@ import { tutoringRoutes } from "./routes/tutoring.js";
 import { adminRoutes } from "./routes/admin.js";
 import { claimsRoutes } from "./routes/claims.js";
 import { listingsRoutes } from "./routes/listings.js";
+import { notificationsRoutes } from "./routes/notifications.js";
 import { offersRoutes } from "./routes/offers.js";
 import { ordersRoutes, type PaymentsMode } from "./routes/orders.js";
 import type { RoomBooker, TextbookIdentifier } from "./adapters/ports.js";
@@ -67,7 +68,8 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     .route("/claims", claimsRoutes(verify))
     .route("/", listingsRoutes(verify))
     .route("/", offersRoutes(verify, market))
-    .route("/", ordersRoutes(verify, idempotency, payments));
+    .route("/", ordersRoutes(verify, idempotency, payments))
+    .route("/", notificationsRoutes(verify));
 
   const app = new Hono();
   if (log) app.use(logger());

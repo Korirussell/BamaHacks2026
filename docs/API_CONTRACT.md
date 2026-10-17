@@ -237,7 +237,7 @@ Transcript parsing is **review-then-confirm**: grades only count as `grade_verif
 
   "GET /orders/{id}":         { "res": "Order" },
   "GET /me/orders":           { "query": { "role": "buyer|seller", "status": "string?" }, "res": ["Order"] },
-  "POST /orders/{id}/pay":    { "headers": ["Idempotency-Key"], "res": { "client_secret": "string", "payment_intent_id": "string" } },
+  "POST /orders/{id}/pay":    { "headers": ["Idempotency-Key"], "note": "buyer only. With PAYMENTS=demo (until Stripe lands) the order is paid at once: client_secret is null, demo is true and the paid Order comes back; skip the payment sheet. In-person orders get handoff_id here.", "res": { "client_secret": "string?", "payment_intent_id": "string", "demo": "bool?", "order": "Order?" } },
   "POST /orders/{id}/cancel": { "req": { "reason": "string" }, "res": "Order" },
   "POST /orders/{id}/dispute":{ "req": { "reason": "not_as_described|no_show|never_received|other", "details": "string", "media_ids": ["uuid"] }, "res": "Order" },
   "POST /payments/onboard":   { "res": { "onboarding_url": "string" } },
@@ -369,7 +369,7 @@ Tickets reuse Listings, Offers and Orders (`category: ticket`); only the transfe
   "POST /me/push-subscriptions":      { "req": { "platform": "web|ios|android", "subscription": "object" }, "res": "204" },
 
   "GET /ingested-posts/{id}":         { "res": { "id": "uuid", "channel": "string", "raw_text": "string", "author_handle": "string?", "posted_at": "ts", "listing": "Listing?", "ride_request": "RideRequest?" } },
-  "POST /admin/ingested-posts":       { "note": "admin/scraper; feeds one external post in; 202 → ingest_classify job → Listing with source.claimed=false", "req": { "channel": "instagram|groupme|facebook|snapchat", "external_url": "string", "author_handle": "string", "caption": "string", "media_ids": ["uuid"], "posted_at": "ts" }, "res": { "job_id": "uuid", "ingested_post_id": "uuid" } },
+  "POST /admin/ingested-posts":       { "note": "admin (profiles.is_admin) or scraper; feeds one external post in; the same URL twice is a no-op; 202 → ingest_classify job (owned by the caller, so GET /jobs/{id} works; result: { listing_id, status, isbn, missing, matched_course_ids, notified }) → Listing with source.claimed=false", "req": { "channel": "instagram|groupme|facebook|snapchat", "external_url": "string", "author_handle": "string", "caption": "string", "media_ids": ["uuid"], "posted_at": "ts" }, "res": { "job_id": "uuid", "ingested_post_id": "uuid" } },
   "GET /admin/seller-invites":        { "note": "admin; DMs to send by hand until outreach is automated", "query": { "status": "queued|sent|claimed?" }, "res": ["SellerInvite"] },
   "POST /admin/seller-invites/{id}/sent": { "res": "SellerInvite" },
 
