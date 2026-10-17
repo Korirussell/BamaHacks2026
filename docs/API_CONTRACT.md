@@ -40,7 +40,7 @@ All traffic is **JSON REST under `/api/v1`**, authenticated with the Supabase ac
 - **Lists:** `?cursor=&limit=` (default 20, max 50) → `{ "data": [T], "next_cursor": "string?" }`.
 - **Single objects:** `{ "data": T }`.
 - **Errors:** HTTP status + `{ "error": { "code": "string", "message": "string", "field_errors": { "<field>": "string" }? } }`.
-- **Error codes:** `UNAUTHENTICATED`, `NOT_EDU_EMAIL`, `SCHOOL_NOT_SUPPORTED`, `FORBIDDEN`, `NOT_FOUND`, `VALIDATION`, `INVALID_STATE` (illegal status change), `STRIPE_ONBOARDING_REQUIRED`, `PAYMENT_FAILED`, `NOT_NEARBY`, `RATE_LIMITED`, `INTERNAL` (500, unexpected server error).
+- **Error codes:** `UNAUTHENTICATED`, `NOT_EDU_EMAIL`, `SCHOOL_NOT_SUPPORTED`, `FORBIDDEN`, `NOT_FOUND`, `VALIDATION`, `INVALID_STATE` (illegal status change), `STRIPE_ONBOARDING_REQUIRED`, `PAYMENT_FAILED`, `NOT_NEARBY`, `MAIL_INFO_REQUIRED` (buyer has no mail stop on file), `CLAIM_INVALID` (claim link expired, used or unknown), `RATE_LIMITED`, `INTERNAL` (500, unexpected server error).
 - **Idempotency:** any call that moves money or advances an order or handoff takes an `Idempotency-Key` header.
 - **AI jobs:** return `202 { "job_id" }`; the frontend listens on its user channel or polls `GET /jobs/{id}`.
 
@@ -50,7 +50,7 @@ All traffic is **JSON REST under `/api/v1`**, authenticated with the Supabase ac
 
 ```jsonc
 {
-  "School":       { "id": "uuid", "name": "string", "domain": "string", "center": "LatLng", "campus_mail_supported": "bool" },
+  "School":       { "id": "uuid", "name": "string", "domain": "string", "center": "LatLng", "timezone": "string (IANA)", "campus_mail_supported": "bool", "tutor_min_grade": "string (e.g. A-)" },
   "LatLng":       { "lat": "number", "lng": "number" },
   "Place":        { "label": "string", "location": "LatLng" },
   "Media":        { "id": "uuid", "url": "string", "kind": "image|pdf", "width": "int?", "height": "int?" },
@@ -90,10 +90,19 @@ All traffic is **JSON REST under `/api/v1`**, authenticated with the Supabase ac
     "source": "manual|ics|screenshot|google"
   },
   "TimeBlock":    { "start": "ts", "end": "ts", "kind": "free|busy|class" },
-  "SafeZone":     { "id": "uuid", "name": "string", "kind": "police|student_center|library|other", "location": "LatLng", "radius_m": "int", "hours": "string?" },
-  "MeetupSuggestion": { "start": "ts", "end": "ts", "safe_zone": "SafeZone", "walk_minutes": { "me": "int", "them": "int" }, "reason": "string" },
+  "OpeningHours": { "days": ["mon|tue|wed|thu|fri|sat|sun"], "open": "HH:MM", "close": "HH:MM" },
+  "SafeZone":     { "id": "uuid", "name": "string", "kind": "police|student_center|library|other", "location": "LatLng", "radius_m": "int", "hours": ["OpeningHours"], "hours_note": "string?" },
+  "MeetupSuggestion": {
+    "start": "ts", "end": "ts", "safe_zone": "SafeZone",
+    "walk_minutes": { "me": "int", "them": "int" },
+    "context": { "me": { "before": "string?", "after": "string?" }, "them": { "before": "string?", "after": "string?" } },
+    "reason": "string", "score": "number"
+  },
+  "DropOffPoint": { "id": "uuid", "name": "string", "location": "LatLng", "radius_m": "int", "hours": ["OpeningHours"], "instructions": "string" },
+  "ExternalSeller": { "channel": "instagram|groupme|facebook|snapchat", "handle": "string", "profile_url": "string?" },
   "Listing": {
-    "id": "uuid", "seller": "UserPublic",
+    "id": "uuid", "seller": "UserPublic? (null until an ingested listing is claimed)",
+    "external_seller": "ExternalSeller? (set for ingested listings)",
     "category": "textbook|lab_supplies|dorm|ticket|other",
     "title": "string", "description": "string", "price_cents": "cents", "negotiable": "bool",
     "floor_price_cents": "cents? (seller only)", "condition": "new|like_new|good|fair|poor",
@@ -102,22 +111,26 @@ All traffic is **JSON REST under `/api/v1`**, authenticated with the Supabase ac
     "ticket": { "event": "Event", "section": "string", "row": "string?", "seat": "string?", "transfer": "app_transfer|in_person" },
     "fulfillment": ["in_person|campus_mail|digital_transfer"],
     "status": "draft|active|pending|sold|removed",
-    "source": { "channel": "native|screenshot|groupme|facebook|snapchat", "external_url": "string?", "claimed": "bool" },
+    "source": { "channel": "native|screenshot|instagram|groupme|facebook|snapchat", "external_url": "string?", "claimed": "bool" },
+    "course_match": "Course? (viewer-specific: a class the viewer is in that requires this item)",
     "created_at": "ts"
   },
   "Event":        { "id": "uuid", "name": "string", "kind": "athletics|concert|other", "starts_at": "ts", "venue": "string" },
   "Offer": {
-    "id": "uuid", "listing_id": "uuid", "buyer": "UserPublic", "seller": "UserPublic",
+    "id": "uuid", "listing_id": "uuid", "buyer": "UserPublic", "seller": "UserPublic? (null while listing is unclaimed)",
     "kind": "cash|trade|cash_plus_trade", "amount_cents": "cents", "trade_listing_ids": ["uuid"],
-    "message": "string?", "counter_of": "uuid?", "auto_generated": "bool",
-    "status": "pending|countered|accepted|declined|withdrawn|expired", "expires_at": "ts"
+    "fulfillment": "in_person|campus_mail|digital_transfer",
+    "message": "string?", "counter_of": "uuid?", "auto_generated": "bool", "made_by": "buyer|seller",
+    "status": "pending|countered|accepted|declined|withdrawn|expired",
+    "waiting_on": "buyer|seller|seller_claim?", "seller_notified_at": "ts?", "expires_at": "ts"
   },
   "Order": {
     "id": "uuid", "listing": "Listing", "buyer": "UserPublic", "seller": "UserPublic", "offer_id": "uuid?",
     "amount_cents": "cents", "fee_cents": "cents", "seller_payout_cents": "cents",
     "fulfillment": "in_person|campus_mail|digital_transfer",
-    "status": "awaiting_payment|paid|scheduled|handing_off|completed|cancelled|disputed|refunded",
+    "status": "awaiting_payment|paid|scheduled|handing_off|in_transit|completed|cancelled|disputed|refunded",
     "payment": { "status": "requires_payment|succeeded|failed|refunded", "paid_at": "ts?" },
+    "payout": { "status": "held|awaiting_onboarding|released|reversed", "released_at": "ts?" },
     "handoff_id": "uuid?", "shipment": "Shipment?", "created_at": "ts"
   },
   "Handoff": {
@@ -126,12 +139,17 @@ All traffic is **JSON REST under `/api/v1`**, authenticated with the Supabase ac
     "suggestions": ["MeetupSuggestion"], "agreed": { "start": "ts", "end": "ts", "safe_zone": "SafeZone" },
     "status": "proposing|agreed|arriving|completed|no_show|cancelled|expired",
     "presence": { "giver_nearby": "bool", "receiver_nearby": "bool" },
-    "confirmations": { "giver_at": "ts?", "receiver_at": "ts?" }
+    "confirmations": { "giver_at": "ts?", "receiver_at": "ts?", "item_ok": "bool?" }
   },
-  "Shipment":     { "id": "uuid", "label_pdf_url": "string", "to": { "name": "string", "mail_stop_code": "string" }, "status": "label_created|dropped_off|received", "dropped_off_at": "ts?" },
+  "Shipment": {
+    "id": "uuid", "order_id": "uuid", "label_pdf_url": "string", "label_code": "string (printed on label as QR + text)",
+    "to": { "name": "string", "mail_stop_code": "string" },
+    "drop_off": "DropOffPoint", "status": "label_created|dropped_off|received",
+    "dropped_off_at": "ts?", "drop_off_proof_media_id": "uuid?", "received_at": "ts?", "auto_complete_at": "ts?"
+  },
   "Review":       { "id": "uuid", "from": "UserPublic", "to_user_id": "uuid", "context": { "type": "order|tutoring_session|ride", "id": "uuid" }, "stars": "int", "on_time": "bool", "as_described": "bool", "comment": "string?", "created_at": "ts" },
   "Notification": { "id": "uuid", "type": "string", "title": "string", "body": "string", "deep_link": "string", "read_at": "ts?", "created_at": "ts" },
-  "Job":          { "id": "uuid", "kind": "transcript_parse|syllabus_parse|schedule_import|screenshot_to_listing|textbook_identify", "status": "queued|running|succeeded|failed", "result": "object?", "error": "string?" }
+  "Job":          { "id": "uuid", "kind": "transcript_parse|syllabus_parse|schedule_import|screenshot_to_listing|textbook_identify|ingest_classify", "status": "queued|running|succeeded|failed", "result": "object?", "error": "string?" }
 }
 ```
 
@@ -188,7 +206,7 @@ Transcript parsing is **review-then-confirm**: grades only count as `grade_verif
 
 ```jsonc
 {
-  "GET /feed":                { "query": { "cursor": "string?" }, "res": [{ "type": "listing|tutor|ride|ticket|study_group", "item": "object", "reason": "wishlist_match|your_class|friend|nearby|new?" }] },
+  "GET /feed":                { "query": { "cursor": "string?" }, "res": [{ "type": "listing|tutor|ride|ticket|study_group", "item": "object", "reason": "wishlist_match|your_class|friend|nearby|new?", "reason_course": "Course? (set when reason=your_class)" }] },
   "GET /explore/listings":    { "query": { "q": "string?", "category": "string?", "course_id": "uuid?", "isbn": "string?", "min_cents": "int?", "max_cents": "int?", "condition": "string?", "fulfillment": "string?", "source": "string?", "within_budget": "bool?", "sort": "relevance|newest|price_asc|price_desc" }, "res": ["Listing"] },
 
   "POST /listings":           { "req": { "category": "string", "title": "string", "description": "string", "price_cents": "cents", "negotiable": "bool", "floor_price_cents": "cents?", "condition": "string", "media_ids": ["uuid"], "isbn": "string?", "course_ids": ["uuid"], "ticket": "object?", "fulfillment": ["string"], "publish": "bool" }, "res": "Listing" },
@@ -206,7 +224,7 @@ Transcript parsing is **review-then-confirm**: grades only count as `grade_verif
   "GET /me/upcoming-materials": { "query": { "term": "string" }, "res": [{ "course": "Course", "isbn": "string", "title": "string", "on_wishlist": "bool", "best_listing": "Listing?" }] },
   "GET /listings/{id}/suggested-trades": { "res": ["SuggestedTrade"] },
 
-  "POST /listings/{id}/offers": { "req": { "kind": "cash|trade|cash_plus_trade", "amount_cents": "cents", "trade_listing_ids": ["uuid"], "message": "string?" }, "res": "Offer" },
+  "POST /listings/{id}/offers": { "req": { "kind": "cash|trade|cash_plus_trade", "amount_cents": "cents", "trade_listing_ids": ["uuid"], "fulfillment": "in_person|campus_mail", "message": "string?" }, "res": { "offer": "Offer", "order": "Order? (set when auto-accepted, see rule below)" } },
   "GET /me/offers":           { "query": { "role": "buyer|seller", "status": "string?" }, "res": ["Offer"] },
   "POST /offers/{id}/counter":  { "req": { "amount_cents": "cents", "message": "string?" }, "res": "Offer" },
   "POST /offers/{id}/accept":   { "res": { "offer": "Offer", "order": "Order" } },
@@ -229,13 +247,17 @@ Transcript parsing is **review-then-confirm**: grades only count as `grade_verif
   "POST /handoffs/{id}/propose": { "req": { "start": "ts", "safe_zone_id": "uuid" }, "res": "Handoff" },
   "POST /handoffs/{id}/agree":   { "req": { "start": "ts", "safe_zone_id": "uuid" }, "res": "Handoff" },
   "POST /handoffs/{id}/location":{ "req": { "location": "LatLng", "accuracy_m": "int" }, "res": { "giver_nearby": "bool", "receiver_nearby": "bool" } },
-  "GET /handoffs/{id}/code":     { "note": "giver only", "res": { "qr_token": "string", "short_code": "string", "expires_at": "ts" } },
-  "POST /handoffs/{id}/confirm": { "headers": ["Idempotency-Key"], "req": { "qr_token": "string?", "short_code": "string?", "location": "LatLng" }, "res": "Handoff" },
+  "POST /handoffs/{id}/code":    { "note": "giver only; giver must be inside the zone, which records confirmations.giver_at", "req": { "location": "LatLng", "accuracy_m": "int" }, "res": { "qr_token": "string", "short_code": "string", "expires_at": "ts" } },
+  "POST /handoffs/{id}/confirm": { "note": "receiver only", "headers": ["Idempotency-Key"], "req": { "qr_token": "string?", "short_code": "string?", "location": "LatLng", "accuracy_m": "int", "item_ok": "bool" }, "res": "Handoff" },
   "POST /handoffs/{id}/no-show": { "res": "Handoff" },
 
-  "POST /orders/{id}/shipment":      { "res": "Shipment" },
-  "POST /shipments/{id}/dropped-off":{ "res": "Shipment" },
-  "POST /shipments/{id}/received":   { "res": { "shipment": "Shipment", "order": "Order" } },
+  "GET /mail/drop-off-points":      { "res": ["DropOffPoint"] },
+  "POST /orders/{id}/shipment":      { "note": "seller; needs buyer mail stop else MAIL_INFO_REQUIRED", "req": { "drop_off_point_id": "uuid?" }, "res": "Shipment" },
+  "POST /shipments/{id}/dropped-off":{ "note": "seller; must be inside the drop-off point radius", "headers": ["Idempotency-Key"], "req": { "location": "LatLng", "accuracy_m": "int", "photo_media_id": "uuid" }, "res": "Shipment" },
+  "POST /shipments/{id}/received":   { "note": "buyer; scan or type the label code", "headers": ["Idempotency-Key"], "req": { "label_code": "string", "item_ok": "bool" }, "res": { "shipment": "Shipment", "order": "Order" } },
+
+  "GET /claims/{token}":             { "note": "NO auth; landing page for the link we DM to an external seller", "res": { "external_seller": "ExternalSeller", "listings": ["Listing"], "pending_offers": ["Offer"], "expires_at": "ts" } },
+  "POST /claims/{token}":            { "note": "auth; links every listing from that handle to the signed-in user", "res": { "listings": ["Listing"], "pending_offers": ["Offer"] } },
 
   "WishlistItem":   { "id": "uuid", "kind": "string", "isbn": "string?", "course": "Course?", "keyword": "string?", "max_price_cents": "cents?", "alert": "bool", "match_count": "int" },
   "SuggestedTrade": { "their_listing": "Listing", "my_listings": ["Listing"], "cash_delta_cents": "cents", "score": "number" }
@@ -243,6 +265,10 @@ Transcript parsing is **review-then-confirm**: grades only count as `grade_verif
 ```
 
 > **Sync confirm rule (anti-scam):** the giver shows a QR (or 6-digit code) that rotates every 60 s; the receiver scans it and sends their location. The server completes the handoff only if the token is valid **and** the receiver is inside the agreed safe zone's radius. That completion is what releases money to the seller.
+
+> **Auto-accept rule:** an offer with `kind: cash` and `amount_cents >= price_cents` on a **claimed** listing is accepted immediately and the response includes the new `Order`. On an unclaimed listing every offer waits with `waiting_on: seller_claim` and triggers a claim invite to the external seller.
+
+> **Claim rule:** a claim link is single-use, expires after 7 days, and is only ever sent to the handle that posted the item, so holding the token is the proof of ownership. Claiming doesn't need Stripe; payouts stay `awaiting_onboarding` until the seller finishes `/payments/onboard`.
 
 > **Auto-bargain rule:** the agent never goes above the buyer's max or below the seller's private floor; if those ranges overlap it proposes a price between them, otherwise `no_deal`. The result is a normal `Offer` with `auto_generated: true` that a human still taps to accept.
 
@@ -254,10 +280,11 @@ Transcript parsing is **review-then-confirm**: grades only count as `grade_verif
   "PUT /me/tutor-profile":      { "req": { "enabled": "bool", "course_ids": ["uuid"], "hourly_rate_cents": "cents", "bio": "string?", "modes": ["in_person|virtual"], "open_to_requests": "bool" }, "res": "TutorProfile" },
   "GET /me/tutor-availability/suggested": { "query": { "week_of": "ts" }, "res": ["TimeBlock"] },
   "PUT /me/tutor-availability": { "req": { "recurring": [{ "days": ["string"], "start": "HH:MM", "end": "HH:MM" }], "one_off": ["TimeBlock"] }, "res": "TutorProfile" },
-  "GET /tutors":                { "query": { "course_id": "uuid", "from": "ts?", "to": "ts?", "max_rate_cents": "int?", "sort": "match|rating|price|grade" }, "res": [{ "tutor": "UserPublic", "profile": "TutorProfile", "grade": "string", "grade_verified": "bool", "rating": "number", "open_slots": ["TimeBlock"] }] },
+  "GET /tutors":                { "query": { "course_id": "uuid", "from": "ts?", "to": "ts? (default from + 7 days)", "duration_min": "int? (default 60)", "max_rate_cents": "int?", "include_unverified": "bool? (default false)", "sort": "match|rating|price|grade" }, "res": ["TutorMatch"] },
   "POST /tutoring/requests":    { "req": { "course_id": "uuid", "windows": ["TimeBlock"], "max_rate_cents": "cents", "notes": "string?" }, "res": { "request_id": "uuid", "matched_tutor_count": "int" } },
-  "POST /tutoring/sessions":    { "req": { "tutor_id": "uuid", "course_id": "uuid", "start": "ts", "end": "ts", "location_pref": "library_room|safe_zone|virtual" }, "res": "TutoringSession" },
-  "POST /tutoring/sessions/{id}/accept":   { "res": "TutoringSession" },
+  "POST /tutoring/sessions":    { "note": "student proposes; waiting_on=tutor", "req": { "tutor_id": "uuid", "course_id": "uuid", "start": "ts", "end": "ts", "location_pref": "library_room|safe_zone|virtual", "notes": "string?" }, "res": "TutoringSession" },
+  "POST /tutoring/sessions/{id}/counter":  { "note": "either side proposes a different time; flips waiting_on", "req": { "start": "ts", "end": "ts", "message": "string?" }, "res": "TutoringSession" },
+  "POST /tutoring/sessions/{id}/accept":   { "note": "only the party in waiting_on; library_room triggers room booking", "res": "TutoringSession" },
   "POST /tutoring/sessions/{id}/decline":  { "res": "TutoringSession" },
   "POST /tutoring/sessions/{id}/pay":      { "res": { "client_secret": "string" } },
   "POST /tutoring/sessions/{id}/book-room":{ "res": { "status": "booked|manual_required", "room": "string?", "booking_url": "string?" } },
@@ -289,13 +316,29 @@ Transcript parsing is **review-then-confirm**: grades only count as `grade_verif
   "POST /study-groups/{id}/leave": { "res": "204" },
 
   "TutorProfile":    { "user_id": "uuid", "enabled": "bool", "courses": [{ "course": "Course", "grade": "string", "verified": "bool" }], "hourly_rate_cents": "cents", "bio": "string?", "modes": ["string"], "open_to_requests": "bool", "rating": "number", "sessions_completed": "int" },
-  "TutoringSession": { "id": "uuid", "tutor": "UserPublic", "student": "UserPublic", "course": "Course", "start": "ts", "end": "ts", "price_cents": "cents", "location": { "kind": "library_room|safe_zone|virtual", "name": "string?", "meeting_url": "string?" }, "status": "requested|accepted|paid|completed|cancelled|no_show", "handoff_id": "uuid?" },
+  "TutorMatch": {
+    "tutor": "UserPublic", "profile": "TutorProfile",
+    "grade": "string", "grade_verified": "bool", "term_taken": "string",
+    "rating": "number", "review_count": "int", "hourly_rate_cents": "cents",
+    "open_slots": ["TimeBlock"], "mutual_slots": ["TimeBlock (both free, fits duration_min)"],
+    "match": { "score": "number", "mutual_minutes": "int", "reasons": ["string"] }
+  },
+  "TutoringSession": {
+    "id": "uuid", "tutor": "UserPublic", "student": "UserPublic", "course": "Course", "start": "ts", "end": "ts", "price_cents": "cents",
+    "location": { "kind": "library_room|safe_zone|virtual", "name": "string?", "meeting_url": "string?" },
+    "room_booking": { "status": "not_needed|pending|booked|manual_required", "room": "string?", "booking_url": "string?" },
+    "status": "requested|accepted|paid|completed|cancelled|no_show",
+    "waiting_on": "tutor|student?", "history": [{ "by": "tutor|student", "action": "propose|counter|accept|decline", "start": "ts", "end": "ts", "at": "ts" }],
+    "handoff_id": "uuid?"
+  },
   "Ride":            { "id": "uuid", "driver": "UserPublic", "origin": "Place", "destination": "Place", "depart_at": "ts", "seats_total": "int", "seats_left": "int", "price_per_seat_cents": "cents", "riders": ["UserPublic"], "status": "open|full|en_route|completed|cancelled", "driver_location": "LatLng?" },
   "RideRequest":     { "id": "uuid", "rider": "UserPublic", "pickup": "Place", "dropoff": "Place", "depart_at": "ts", "seats": "int", "max_price_cents": "cents?", "status": "open|matched|cancelled", "ride_id": "uuid?" },
   "CourseEvent":     { "id": "uuid", "course_id": "uuid", "kind": "string", "title": "string", "due_at": "ts", "source": "syllabus|manual", "confirmations": "int" },
   "StudyGroup":      { "id": "uuid", "course": "Course", "title": "string", "host": "UserPublic", "target_event": "CourseEvent?", "mode": "string", "place": "Place?", "meeting_url": "string?", "start": "ts", "end": "ts", "capacity": "int", "members": ["UserPublic"], "cross_campus": "bool" }
 }
 ```
+
+> **Tutor eligibility rule:** a user shows up in `/tutors` for a course when they have a `past` `ClassRecord` for it with a grade ≥ `School.tutor_min_grade` (verified only, unless `include_unverified=true`), and an enabled `TutorProfile` that lists the course. `mutual_slots` apply the walk-time rule to the tutor and student, using the library (or chosen safe zone) as the meeting spot.
 
 Tickets reuse Listings, Offers and Orders (`category: ticket`); only the transfer confirmation is new. Funds for tickets stay held until the buyer confirms receipt or the event starts with no dispute.
 
@@ -321,7 +364,11 @@ Tickets reuse Listings, Offers and Orders (`category: ticket`); only the transfe
   "POST /me/push-subscriptions":      { "req": { "platform": "web|ios|android", "subscription": "object" }, "res": "204" },
 
   "GET /ingested-posts/{id}":         { "res": { "id": "uuid", "channel": "string", "raw_text": "string", "author_handle": "string?", "posted_at": "ts", "listing": "Listing?", "ride_request": "RideRequest?" } },
-  "POST /ingested-posts/{id}/claim":  { "note": "poster links it to their account to sell through us", "res": "Listing" }
+  "POST /admin/ingested-posts":       { "note": "admin/scraper; feeds one external post in; 202 → ingest_classify job → Listing with source.claimed=false", "req": { "channel": "instagram|groupme|facebook|snapchat", "external_url": "string", "author_handle": "string", "caption": "string", "media_ids": ["uuid"], "posted_at": "ts" }, "res": { "job_id": "uuid", "ingested_post_id": "uuid" } },
+  "GET /admin/seller-invites":        { "note": "admin; DMs to send by hand until outreach is automated", "query": { "status": "queued|sent|claimed?" }, "res": ["SellerInvite"] },
+  "POST /admin/seller-invites/{id}/sent": { "res": "SellerInvite" },
+
+  "SellerInvite": { "id": "uuid", "external_seller": "ExternalSeller", "listing_ids": ["uuid"], "claim_url": "string", "message_text": "string", "status": "queued|sent|claimed|expired", "trigger": "first_offer|manual", "sent_at": "ts?", "claimed_at": "ts?", "expires_at": "ts" }
 }
 ```
 
@@ -333,7 +380,7 @@ Every message is `{ "event": "string", "at": "ts", "data": object }`. Channels a
 
 | Channel | Events | Payload `data` |
 |---|---|---|
-| `user:{id}` | `notification.created`, `offer.created`, `offer.updated`, `order.updated`, `job.finished`, `wishlist.match`, `tutoring.updated` | `Notification`, `Offer`, `Offer`, `Order`, `Job`, `{ wishlist_item_id, listing }`, `TutoringSession` |
+| `user:{id}` | `notification.created`, `offer.created`, `offer.updated`, `order.updated`, `job.finished`, `wishlist.match`, `material.match`, `tutoring.updated`, `shipment.updated` | `Notification`, `Offer`, `Offer`, `Order`, `Job`, `{ wishlist_item_id, listing }`, `{ listing, course }`, `TutoringSession`, `Shipment` |
 | `handoff:{id}` | `handoff.updated`, `handoff.presence`, `handoff.completed` | `Handoff`, `{ giver_nearby, receiver_nearby }`, `Handoff` |
 | `ride:{id}` | `ride.location`, `ride.updated` | `{ location: LatLng }`, `Ride` |
 | `auto-bargain:{id}` | `round`, `finished` | `{ by, amount_cents }`, `{ status, proposed_offer }` |
@@ -345,6 +392,29 @@ Every message is `{ "event": "string", "at": "ts", "data": object }`. Channels a
 | `POST /webhooks/stripe` | Stripe | `payment_intent.succeeded`, `payment_intent.payment_failed`, `charge.refunded`, `charge.dispute.created`, `account.updated` |
 | `POST /webhooks/groupme` | GroupMe bot callback | New group messages → `ingested_posts` → AI classify into listing or ride request |
 | `POST /webhooks/google-calendar` | Google push notifications | Calendar changed → refresh cached free/busy |
+
+### Demo flows (call sequences)
+
+These are the two P0 demo moments, end to end. If a step here can't be done with the endpoints above, the contract is wrong.
+
+**Demo 1 — tutor match → schedule → library room**
+
+1. Student (has a schedule saved) opens course A → `GET /tutors?course_id=A&from=…&to=…`.
+2. Server: users with a past grade in A ≥ `tutor_min_grade` and an enabled `TutorProfile` → expands both schedules into free time → `mutual_slots` (with walk time to the library) → ranked `TutorMatch[]` with grade, rating, rate, slots.
+3. Student picks a tutor + slot → `POST /tutoring/sessions` (`waiting_on: tutor`). Tutor gets `tutoring.updated`.
+4. Tutor `accept`s, or `counter`s with another time (then the student accepts).
+5. On accept with `library_room`: room booking runs → `room_booking.status` = `booked`, or `manual_required` with a `booking_url` (stub for now).
+6. Payment + in-person check-in reuse the order/handoff pieces (stretch for the demo).
+
+**Demo 2 — Instagram post → matched buyer → claim → fulfil**
+
+1. Scraper (stubbed: `POST /admin/ingested-posts`) feeds in a post → `ingest_classify` job identifies the textbook (ISBN, title, edition), looks up the courses that require it, and creates a `Listing` with `external_seller` set and `source.claimed: false`.
+2. Matching: every student with a `current`/`planned` `ClassRecord` in one of those courses gets `material.match` + a notification; the listing shows in their `/feed` with `reason: your_class` and `reason_course`.
+3. Buyer `POST /listings/{id}/offers` (their price, or the asking price) with `fulfillment`. Listing is unclaimed → offer `waiting_on: seller_claim`, and a `SellerInvite` is queued with a ready-to-send DM + claim link.
+4. Seller taps the link → `GET /claims/{token}` (preview, no login) → signs in with .edu → `POST /claims/{token}` → the listing + pending offers are now theirs.
+5. Seller accepts (or counters) → `Order` (`awaiting_payment`) → buyer `POST /orders/{id}/pay` → `paid` (money held on the platform).
+6. **In person:** `POST /handoffs/{id}/suggest` → safe zone + time picked from both schedules (classes near each other, both free) → `propose`/`agree` → at the zone, giver `POST /handoffs/{id}/code`, receiver scans → `confirm` with `item_ok` → `completed` → payout released.
+7. **Campus mail:** seller `POST /orders/{id}/shipment` → printable label (buyer name + mail stop + label code) + `drop_off` directions → seller drops it off: `dropped-off` with photo + location inside the drop-off point → order `in_transit` → buyer scans the label code: `received` → `completed` → payout released (or auto-complete after N days).
 
 ---
 
@@ -385,7 +455,8 @@ awaiting_payment --pay--> paid --agree time/place--> scheduled --both nearby--> 
 
 - `paid` = buyer charged; money sits on the platform balance.
 - `completed` = Stripe transfer to the seller minus `fee_cents`, then reviews unlock and reliability updates.
-- Campus mail swaps the handoff steps for `label_created → dropped_off → received`; tickets swap them for `ticket-sent → ticket-received`.
+- Campus mail swaps the handoff steps: `paid --label created--> scheduled --dropped off (geofence + photo)--> in_transit --buyer scans label--> completed`. Tickets swap them for `ticket-sent → ticket-received`.
+- Payout: `held` while the order is open; on `completed` it becomes `released` (Stripe transfer), or `awaiting_onboarding` if the seller hasn't finished Stripe yet; a refund makes it `reversed`.
 - Timers (job runner): offers expire after 48 h, unpaid orders cancel after 30 min, mail orders auto-complete N days after drop-off (N is an open question).
 
 ### Build order
@@ -463,3 +534,5 @@ The first four change what gets built for the demo; the rest can be answered as 
 - [ ] **Campus mail:** what's the UA mail stop format, and how many days after drop-off should a mail order auto-complete?
 - [ ] **Library booking:** which system does UA use for study rooms, and does it allow automated booking?
 - [ ] **GroupMe:** can we get the Joyride group admins to add our bot?
+- [ ] **Instagram:** scraping and cold DMs are against Instagram's terms. For the demo, use posts from consenting team accounts fed in through `/admin/ingested-posts`, and send the claim DM by hand. Long-term: the share-sheet / screenshot flow, or sellers tagging us.
+- [ ] **Payout before onboarding:** OK that a claimed seller can accept and the buyer can pay before the seller sets up Stripe (payout waits as `awaiting_onboarding`)?

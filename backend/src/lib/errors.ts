@@ -13,7 +13,10 @@ export const ERROR_CODES = [
   "STRIPE_ONBOARDING_REQUIRED",
   "PAYMENT_FAILED",
   "NOT_NEARBY",
+  "MAIL_INFO_REQUIRED",
+  "CLAIM_INVALID",
   "RATE_LIMITED",
+  "INTERNAL",
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];
