@@ -6,7 +6,7 @@ import { adminClient } from "../lib/supabase.js";
 import { requireUser, type AuthEnv, type TokenVerifier } from "../middleware/auth.js";
 import { Job } from "../schemas/jobs.js";
 
-const JobRow = z.object({ id: z.uuid(), kind: Job.shape.kind, status: Job.shape.status, result: z.record(z.string(), z.unknown()).nullable(), error: z.string().nullable() });
+const JobRow = z.object({ id: z.guid(), kind: Job.shape.kind, status: Job.shape.status, result: z.record(z.string(), z.unknown()).nullable(), error: z.string().nullable() });
 
 /** Job per the API contract: `result` and `error` are omitted while null. */
 export const toJob = (row: z.infer<typeof JobRow>) => ({
@@ -20,7 +20,7 @@ export const toJob = (row: z.infer<typeof JobRow>) => ({
 export const jobsRoutes = (verify: TokenVerifier) => new Hono<AuthEnv>()
   .use("/jobs/*", requireUser(verify))
   .get("/jobs/:id", async (c) => {
-    const id = z.uuid().safeParse(c.req.param("id"));
+    const id = z.guid().safeParse(c.req.param("id"));
     if (!id.success) throw new ApiError(404, "NOT_FOUND", "Job not found");
     const result = await adminClient().from("jobs").select("id, kind, status, result, error").eq("id", id.data).eq("user_id", c.var.user.id).eq("school_id", c.var.user.schoolId).maybeSingle();
     if (result.error) throw result.error;

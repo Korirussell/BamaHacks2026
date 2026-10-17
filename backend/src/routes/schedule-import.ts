@@ -27,7 +27,7 @@ export interface ScheduleImportStore {
   loadSchool(schoolId: string): Promise<{ timezone: string; courses: ImportCourse[]; buildings: ImportBuilding[] }>;
 }
 
-const MediaRow = z.object({ id: z.uuid(), bucket: z.string(), path: z.string(), kind: z.string(), purpose: z.string(), uploaded: z.boolean() });
+const MediaRow = z.object({ id: z.guid(), bucket: z.string(), path: z.string(), kind: z.string(), purpose: z.string(), uploaded: z.boolean() });
 
 export const supabaseScheduleImportStore: ScheduleImportStore = {
   async findMedia(mediaId, userId, schoolId) {
@@ -38,7 +38,7 @@ export const supabaseScheduleImportStore: ScheduleImportStore = {
   async createJob({ userId, schoolId, status, payload }) {
     const result = await adminClient().from("jobs").insert({ kind: "schedule_import", status, payload, user_id: userId, school_id: schoolId }).select("id").single();
     if (result.error) throw result.error;
-    return z.object({ id: z.uuid() }).parse(result.data).id;
+    return z.object({ id: z.guid() }).parse(result.data).id;
   },
   async finishJob(jobId, outcome) {
     const update = outcome.status === "succeeded" ? { status: "succeeded", result: outcome.result, error: null } : { status: "failed", error: outcome.error };

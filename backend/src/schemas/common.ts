@@ -1,7 +1,8 @@
 import { z } from "zod";
 
 // Shared primitives from docs/API_CONTRACT.md → Shared objects.
-export const Uuid = z.uuid();
+// Any 8-4-4-4-12 hex id: Postgres accepts it, and the seed uses non-RFC ids like ...-e000-... .
+export const Uuid = z.guid({ error: "Invalid UUID" });
 export const Timestamp = z.iso.datetime();
 export const Cents = z.number().int().nonnegative();
 

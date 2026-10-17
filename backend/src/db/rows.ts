@@ -4,7 +4,7 @@ import { z } from "zod";
 // client out of the routes. Replace with `supabase gen types` output once the project exists.
 
 export const SchoolRow = z.object({
-  id: z.uuid(),
+  id: z.guid(),
   name: z.string(),
   domain: z.string(),
   center_lat: z.number(),
@@ -16,8 +16,8 @@ export const SchoolRow = z.object({
 export type SchoolRow = z.infer<typeof SchoolRow>;
 
 export const ProfileRow = z.object({
-  id: z.uuid(),
-  school_id: z.uuid(),
+  id: z.guid(),
+  school_id: z.guid(),
   email: z.string(),
   display_name: z.string(),
   major: z.string().nullable(),

@@ -10,7 +10,7 @@ import { requireUser, type AuthEnv, type TokenVerifier } from "../middleware/aut
 const CoursesQuery = z.object({ q: z.string().default("") });
 const ClassesQuery = z.object({ status: z.enum(["current", "past", "planned"]).optional() });
 const UpcomingQuery = z.object({ term: z.string().trim().min(1) });
-const CreateClassReq = z.object({ course_id: z.uuid(), term: z.string().min(1), status: z.enum(["current", "past", "planned"]), grade: z.string().nullable().optional() });
+const CreateClassReq = z.object({ course_id: z.guid(), term: z.string().min(1), status: z.enum(["current", "past", "planned"]), grade: z.string().nullable().optional() });
 
 // Free text goes inside PostgREST `.or()` filter strings, where , ( ) " and \ are syntax and % * are wildcards.
 export const filterText = (value: string) => value.replace(/[,()"\\%*]/g, " ").trim();

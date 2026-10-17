@@ -2,13 +2,13 @@ import { z } from "zod";
 import { Building, ClassMeeting, Course } from "../schemas/schedule.js";
 import type { MeetingInput } from "../services/availability.js";
 
-export const CourseRow = z.object({ id: z.uuid(), school_id: z.uuid(), code: z.string(), title: z.string(), department: z.string() });
-export const BuildingRow = z.object({ id: z.uuid(), school_id: z.uuid(), name: z.string(), code: z.string(), lat: z.number(), lng: z.number() });
+export const CourseRow = z.object({ id: z.guid(), school_id: z.guid(), code: z.string(), title: z.string(), department: z.string() });
+export const BuildingRow = z.object({ id: z.guid(), school_id: z.guid(), name: z.string(), code: z.string(), lat: z.number(), lng: z.number() });
 export const OpeningHoursRow = z.object({ days: z.array(z.enum(["mon", "tue", "wed", "thu", "fri", "sat", "sun"])), open: z.string(), close: z.string() });
-export const SafeZoneRow = z.object({ id: z.uuid(), school_id: z.uuid(), name: z.string(), kind: z.enum(["police", "student_center", "library", "other"]), lat: z.number(), lng: z.number(), radius_m: z.number().int(), hours: z.array(OpeningHoursRow), hours_note: z.string().nullable() });
-export const DropOffPointRow = z.object({ id: z.uuid(), school_id: z.uuid(), name: z.string(), lat: z.number(), lng: z.number(), radius_m: z.number().int(), hours: z.array(OpeningHoursRow), instructions: z.string() });
-export const ClassRecordRow = z.object({ id: z.uuid(), school_id: z.uuid(), user_id: z.uuid(), course_id: z.uuid(), term: z.string(), status: z.enum(["current", "past", "planned"]), grade: z.string().nullable(), grade_source: z.enum(["transcript", "self_reported"]), grade_verified: z.boolean(), course: CourseRow });
-export const ClassMeetingRow = z.object({ id: z.uuid(), school_id: z.uuid(), user_id: z.uuid(), course_id: z.uuid(), section: z.string().nullable(), days: z.array(z.enum(["mon", "tue", "wed", "thu", "fri", "sat", "sun"])), start_time: z.string(), end_time: z.string(), timezone: z.string(), term: z.string(), term_start: z.string(), term_end: z.string(), building_id: z.uuid().nullable(), room: z.string().nullable(), source: z.enum(["manual", "ics", "screenshot", "google"]), course: CourseRow, building: BuildingRow.nullable() });
+export const SafeZoneRow = z.object({ id: z.guid(), school_id: z.guid(), name: z.string(), kind: z.enum(["police", "student_center", "library", "other"]), lat: z.number(), lng: z.number(), radius_m: z.number().int(), hours: z.array(OpeningHoursRow), hours_note: z.string().nullable() });
+export const DropOffPointRow = z.object({ id: z.guid(), school_id: z.guid(), name: z.string(), lat: z.number(), lng: z.number(), radius_m: z.number().int(), hours: z.array(OpeningHoursRow), instructions: z.string() });
+export const ClassRecordRow = z.object({ id: z.guid(), school_id: z.guid(), user_id: z.guid(), course_id: z.guid(), term: z.string(), status: z.enum(["current", "past", "planned"]), grade: z.string().nullable(), grade_source: z.enum(["transcript", "self_reported"]), grade_verified: z.boolean(), course: CourseRow });
+export const ClassMeetingRow = z.object({ id: z.guid(), school_id: z.guid(), user_id: z.guid(), course_id: z.guid(), section: z.string().nullable(), days: z.array(z.enum(["mon", "tue", "wed", "thu", "fri", "sat", "sun"])), start_time: z.string(), end_time: z.string(), timezone: z.string(), term: z.string(), term_start: z.string(), term_end: z.string(), building_id: z.guid().nullable(), room: z.string().nullable(), source: z.enum(["manual", "ics", "screenshot", "google"]), course: CourseRow, building: BuildingRow.nullable() });
 
 export type CourseRow = z.infer<typeof CourseRow>;
 export type BuildingRow = z.infer<typeof BuildingRow>;
