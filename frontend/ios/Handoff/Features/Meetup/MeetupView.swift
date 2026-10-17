@@ -1,20 +1,43 @@
 import SwiftUI
 
-/// Sticker map + 3 handoff spots (§7.5, §11.6). Shows meetups.json exactly.
+/// Who the meetup is with and what happens around it. One screen for Kayla (haggle demo) and Maya (Flow A).
+struct MeetupContext {
+    let fixture: String
+    let partner: String
+    let amountLabel: String
+    let waitForPartner: Bool
+    let calendarChip: String?
+    let calendarTitle: String
+    let handoff: HandoffContext
+    let isKayla: Bool
+
+    static let kayla = MeetupContext(fixture: "meetups", partner: "Kayla", amountLabel: "$65", waitForPartner: false,
+                                     calendarChip: nil, calendarTitle: "Handoff: Mini fridge with Kayla",
+                                     handoff: .kayla, isKayla: true)
+    static let maya = MeetupContext(fixture: "meetups_maya", partner: "Maya", amountLabel: "$25", waitForPartner: true,
+                                    calendarChip: Copy.calAdded, calendarTitle: "Handoff: Logitech mouse with Maya",
+                                    handoff: .maya, isKayla: false)
+}
+
+/// Sticker map + 3 handoff spots (§7.5, §11.6, features-v2 Flow A step 7).
 struct MeetupView: View {
+    var context: MeetupContext = .kayla
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
-    @State private var selected: String = "mu1"
+    @State private var meetups: [MeetupSuggestion] = []
+    @State private var selected: String = ""
     @State private var celebration: Celebration?
-    @State private var locked = false
+    @State private var locked: MeetupSuggestion?
+    @State private var waiting = false
+    @State private var confirmed = false
     @State private var showHandoff = false
 
-    private var current: MeetupSuggestion? { store.meetups.first { $0.id == selected } }
+    private var current: MeetupSuggestion? { meetups.first { $0.id == selected } }
 
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .bottom) {
-                StickerMapView(places: store.places, meetups: store.meetups, selected: selected)
+                StickerMapView(places: store.places, meetups: meetups, selected: selected)
                     .frame(height: geo.size.height * 0.5 + 40)
                     .frame(maxHeight: .infinity, alignment: .top)
                     .ignoresSafeArea(edges: .top)
@@ -37,29 +60,44 @@ struct MeetupView: View {
         }
         .background(Color.hoBg.ignoresSafeArea())
         .task {
-            if store.meetups.isEmpty { store.meetups = (try? await store.api.meetups(orderId: "o_fridge")) ?? [] }
+            if meetups.isEmpty {
+                try? await Task.sleep(for: .milliseconds(Int.random(in: 300...800)))
+                meetups = (try? await store.api.fixture(context.fixture)) ?? []
+                selected = meetups.first?.id ?? ""
+                if context.isKayla { store.meetups = meetups }
+            }
             Haptics.success()
         }
         .overlay(alignment: .top) { ToastView() }
-        .celebrationOverlay($celebration) { withAnimation { locked = true } }
-        .fullScreenCover(isPresented: $showHandoff) { HandoffView() }
+        .celebrationOverlay($celebration) {
+            if let m = locked, context.calendarChip != nil {
+                CalendarService.add(title: context.calendarTitle, placeName: store.place(m.placeId)?.name ?? "", startISO: m.startIso)
+            }
+        }
+        .fullScreenCover(isPresented: $showHandoff) {
+            HandoffView(context: context.handoff, meetup: locked)
+        }
     }
 
     private var panel: some View {
         VStack(alignment: .leading, spacing: 14) {
             Capsule().fill(Color.hoSoft.opacity(0.5)).frame(width: 40, height: 5)
                 .frame(maxWidth: .infinity)
-            SheetTitle(kicker: "Deal at \(Money.format(store.order?.amountCents ?? 6500)) 🤝", title: Copy.meetupTitle)
+            SheetTitle(kicker: "Deal at \(context.isKayla ? Money.format(store.order?.amountCents ?? 6500) : context.amountLabel) 🤝",
+                       title: Copy.meetupTitle)
+            if context.waitForPartner && locked == nil {
+                Text(Copy.pickYou).font(.system(size: 12.5, weight: .bold)).foregroundStyle(Color.hoSoft)
+            }
 
-            if store.meetups.isEmpty {
+            if meetups.isEmpty {
                 ForEach(0..<3, id: \.self) { _ in
                     RoundedRectangle(cornerRadius: 16).fill(Color.hoSunk).frame(height: 62)
                 }
             } else {
-                ForEach(Array(store.meetups.enumerated()), id: \.element.id) { i, m in
+                ForEach(Array(meetups.enumerated()), id: \.element.id) { i, m in
                     SpotRow(index: i + 1, meetup: m, place: store.place(m.placeId), selected: m.id == selected)
                         .onTapGesture {
-                            guard !locked else { return }
+                            guard locked == nil, !waiting else { return }
                             Haptics.tap()
                             withAnimation(.spring(duration: 0.3)) { selected = m.id }
                         }
@@ -67,26 +105,40 @@ struct MeetupView: View {
             }
             Spacer(minLength: 0)
 
-            if locked, let m = store.lockedMeetup {
+            if let m = locked, confirmed {
                 VStack(spacing: 10) {
-                    Text("Meet Kayla · \(store.place(m.placeId)?.name ?? "") · \(m.startLabel)")
+                    if let chip = context.calendarChip {
+                        Text(chip)
+                            .font(.system(size: 13, weight: .heavy)).foregroundStyle(Color.hoInkOnLight)
+                            .padding(.horizontal, 12).padding(.vertical, 7)
+                            .capsuleSticker(fill: .hoMint)
+                    }
+                    Text("Meet \(context.partner) · \(store.place(m.placeId)?.name ?? "") · \(m.startLabel)")
                         .font(.system(size: 14, weight: .heavy)).foregroundStyle(Color.hoInk)
                     HStack(spacing: 10) {
-                        Button("Add to calendar") { store.show(toast: "Added") }
+                        if context.calendarChip == nil {
+                            Button("Add to calendar") {
+                                CalendarService.add(title: context.calendarTitle, placeName: store.place(m.placeId)?.name ?? "", startISO: m.startIso)
+                                store.show(toast: "📅 Added")
+                            }
                             .buttonStyle(.pill(.neutral, small: true))
+                        }
                         Button("Go to handoff →") { showHandoff = true }
                             .buttonStyle(.pill(.primary, small: true, full: true))
                     }
                 }
-            } else {
-                Button(Copy.meetupLock(current?.startLabel.replacingOccurrences(of: " PM", with: "")
-                    .replacingOccurrences(of: " AM", with: "") ?? "3:30")) {
-                    guard let m = current else { return }
-                    store.lock(m)
-                    celebration = .fieldGoal(line: Copy.celebrateFGLocked(place: store.place(m.placeId)?.name ?? "", time: m.startLabel))
+            } else if waiting {
+                HStack(spacing: 10) {
+                    ProgressView().tint(Color.hoInk)
+                    Text(Copy.pickWaiting).font(.system(size: 14, weight: .heavy)).foregroundStyle(Color.hoInk)
                 }
-                .buttonStyle(.pill(.primary, full: true))
-                .disabled(current == nil)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .capsuleSticker(fill: .hoSunk)
+            } else {
+                Button(Copy.meetupLock(shortTime(current?.startLabel ?? "3:30"))) { lock() }
+                    .buttonStyle(.pill(.primary, full: true))
+                    .disabled(current == nil)
             }
         }
         .padding(.horizontal, 18)
@@ -99,6 +151,29 @@ struct MeetupView: View {
                     .stroke(Color.hoInk, lineWidth: 2))
                 .ignoresSafeArea(edges: .bottom)
         )
+    }
+
+    /// "3:30 PM" → "3:30", "Tue 12:15 PM" → "Tue 12:15".
+    private func shortTime(_ label: String) -> String {
+        label.replacingOccurrences(of: " PM", with: "").replacingOccurrences(of: " AM", with: "")
+    }
+
+    private func lock() {
+        guard let m = current else { return }
+        let line = Copy.celebrateFGLocked(place: store.place(m.placeId)?.name ?? "", time: m.startLabel)
+        if context.isKayla { store.lock(m) } else { store.mayaMeetup = m }
+        if context.waitForPartner {
+            withAnimation { waiting = true }
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(1.5))
+                store.show(toast: Copy.pickConfirmed)
+                withAnimation { waiting = false; locked = m; confirmed = true }
+                celebration = .fieldGoal(line: line)
+            }
+        } else {
+            withAnimation { locked = m; confirmed = true }
+            celebration = .fieldGoal(line: line)
+        }
     }
 }
 
@@ -115,11 +190,17 @@ struct SpotRow: View {
                 .frame(width: 26, height: 26)
                 .background(Circle().fill(Color.hoAccent))
                 .overlay(Circle().strokeBorder(Color.hoInk, lineWidth: 2))
-            Text(meetup.startLabel)
-                .font(.system(size: 14.5, weight: .heavy)).monospacedDigit()
-                .frame(width: 66, alignment: .leading)
+            if !meetup.isLocker {
+                Text(meetup.startLabel)
+                    .font(.system(size: 14.5, weight: .heavy)).monospacedDigit()
+                    .lineLimit(2).minimumScaleFactor(0.8)
+                    .frame(width: 70, alignment: .leading)
+            }
             VStack(alignment: .leading, spacing: 2) {
-                Text(place?.name ?? "").font(.system(size: 13, weight: .bold))
+                Text((meetup.isLocker ? "🔐 " : "") + (place?.name ?? "")).font(.system(size: 13, weight: .bold))
+                if meetup.isLocker {
+                    Text("Drop off by 6:00 PM · pick up anytime").font(.system(size: 11, weight: .semibold))
+                }
                 Text(meetup.reason).font(.system(size: 11)).opacity(0.75)
             }
             Spacer(minLength: 4)
@@ -191,7 +272,8 @@ struct StickerMapView: View {
     // Places only use the top ~60% of the box; spread them over the visible map area.
     private func rect(_ p: Place, _ w: CGFloat, _ h: CGFloat) -> CGRect {
         let top: CGFloat = 70, usable = h - top - 10
-        let yScale = usable / 0.62
+        let maxY = places.map { $0.map.y + $0.map.h }.max() ?? 68
+        let yScale = usable / max(0.62, (maxY - 6) / 100)
         return CGRect(x: p.map.x / 100 * w, y: top + (p.map.y - 6) / 100 * yScale,
                       width: p.map.w / 100 * w, height: max(26, p.map.h / 100 * yScale))
     }

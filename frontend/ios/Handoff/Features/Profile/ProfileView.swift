@@ -50,6 +50,8 @@ struct ProfileView: View {
                     .capsuleSticker()
                 }
 
+                historySection
+
                 VStack(spacing: 0) {
                     settingRow("envelope.fill", "Email", store.me?.email ?? "")
                     Rectangle().fill(Color.hoInk.opacity(0.15)).frame(height: 1)
@@ -66,6 +68,43 @@ struct ProfileView: View {
         }
         .background(Color.hoBg.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
+    }
+
+    @ViewBuilder private var historySection: some View {
+        if let h = store.history {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(Copy.historyTitle).font(.display(22)).foregroundStyle(Color.hoInk)
+                HStack(spacing: 10) {
+                    stat("\(h.stats.count)", "handoffs")
+                    stat(Money.format(h.stats.savedCents), "saved")
+                    stat("\(h.stats.avgWalkMin)m", "avg walk")
+                }
+                ForEach(h.items) { item in
+                    HStack(spacing: 12) {
+                        Text(item.emoji).font(.system(size: 24))
+                            .frame(width: 46, height: 46)
+                            .background(RoundedRectangle(cornerRadius: 12).fill(Color.hoPeach))
+                            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.hoInk, lineWidth: 2))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(item.title).font(.system(size: 15, weight: .heavy)).foregroundStyle(Color.hoInk).lineLimit(1)
+                            Text("\(item.role.capitalized) · \(item.partner) · \(store.place(item.placeId)?.name ?? "") · \(item.date)")
+                                .font(.system(size: 11.5, weight: .semibold)).foregroundStyle(Color.hoSoft).lineLimit(1)
+                        }
+                        Spacer(minLength: 4)
+                        VStack(alignment: .trailing, spacing: 4) {
+                            Text(Money.format(item.amountCents)).font(.display(16)).foregroundStyle(Color.hoInk)
+                            Text(item.method == "locker" ? "🔐 Locker" : "🤝 In person")
+                                .font(.system(size: 9.5, weight: .heavy)).foregroundStyle(Color.hoInkOnLight)
+                                .padding(.horizontal, 7).padding(.vertical, 2)
+                                .background(Capsule().fill(item.method == "locker" ? Color.hoButter : Color.hoMint))
+                                .overlay(Capsule().strokeBorder(Color.hoInk, lineWidth: 1.5))
+                        }
+                    }
+                    .padding(12)
+                    .sticker(radius: 16, shadow: 3)
+                }
+            }
+        }
     }
 
     private func stat(_ value: String, _ label: String) -> some View {

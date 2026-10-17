@@ -135,6 +135,8 @@ struct MeetupSuggestion: Codable, Identifiable, Hashable {
     let reason: String
     let walkMinutes: Walk
     let score: Int
+    var method: String? = nil
+    var isLocker: Bool { method == "locker" }
     struct Walk: Codable, Hashable { let me: Int; let them: Int }
 }
 
@@ -158,4 +160,71 @@ struct ScreenshotResult: Codable, Hashable {
     let authorHandle: String?
     let confidence: Double
     let missingFields: [String]
+}
+
+// MARK: - features-v2 fixtures
+
+struct PhotoResult: Codable, Hashable {
+    struct Detected: Codable, Hashable { let label: String; let confidence: Double }
+    struct Comp: Codable, Hashable { let source: String; let priceCents: Int }
+    struct PriceModel: Codable, Hashable { let fastCents: Int; let fastDays: Int; let maxCents: Int; let maxDays: Int }
+    let detected: Detected
+    let attributes: [String]
+    let category: String
+    let condition: String
+    let title: String
+    let description: String
+    let tags: [String]
+    let emoji: String
+    let tile: String
+    let comps: [Comp]
+    let priceModel: PriceModel
+    let confidence: Double
+    let modelNote: String
+}
+
+struct BuyRequest: Codable, Hashable {
+    let id: String
+    let listingId: String
+    let buyerId: String
+    let amountCents: Int
+    let message: String
+    let moneyReady: Bool
+    let createdAgo: String
+}
+
+struct Locker: Codable, Hashable {
+    let orderId: String
+    let placeId: String
+    let lockerNumber: Int
+    let dropoffCode: String
+    let pickupCode: String
+    let dropoffByLabel: String
+    let expiresInSeconds: Int
+    var status: String
+}
+
+struct Wishlist: Codable, Hashable {
+    struct Item: Codable, Hashable, Identifiable { let id: String; let label: String; let maxPriceCents: Int; let matchCount: Int }
+    struct ForYou: Codable, Hashable { let listingId: String; let wishlistId: String; let reason: String; let score: Int }
+    let items: [Item]
+    let forYou: [ForYou]
+}
+
+struct ScriptLine: Codable, Hashable, Identifiable {
+    let id: String
+    let from: String
+    let text: String
+    let delayMs: Int
+    let after: String?
+}
+
+struct History: Codable, Hashable {
+    struct Stats: Codable, Hashable { var count: Int; var savedCents: Int; let avgWalkMin: Int; let noShows: Int }
+    struct Item: Codable, Hashable, Identifiable {
+        let id: String; let emoji: String; let title: String; let partner: String; let placeId: String
+        let date: String; let method: String; let amountCents: Int; let role: String
+    }
+    var stats: Stats
+    var items: [Item]
 }

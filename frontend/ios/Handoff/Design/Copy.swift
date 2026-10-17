@@ -40,4 +40,34 @@ enum Copy {
     static let errorGeneric = "That didn't load. Check your connection and try again."
     static let jobSteps = ["Reading your post… 🔍", "Spotting the item…", "💸 Estimating a fair price…"]
     static let jobFailed = "Couldn't read that one. Fill it in yourself?"
+
+    // features-v2 §7
+    static let sellSnap = "Snap it"
+    static let sellSnapSub = "One photo. We'll do the rest."
+    static let jobPhoto = ["Looking at your photo… 👀", "That's a Logitech MX Master 3S 🖱️",
+                           "Checking what these sell for on campus… 📈", "Writing your listing… ✍️"]
+    static let sellPriceFast = "Sell fast · $25 · ~1 day"
+    static let sellPriceMax = "Max · $32 · ~5 days"
+    static let sellPost = "Post it"
+    static let sellPosted = "Live on the feed"
+    static let reqTitle = "Maya wants your mouse"
+    static let reqMoney = "Her $25 is ready to hold"
+    static let reqAccept = "✓ Accept"
+    static let reqDecline = "Decline"
+    static let reqHeld = "Maya's $25 is held 🔒"
+    static let pickYou = "You confirmed the price, so you pick the spot."
+    static let pickWaiting = "Waiting for Maya to confirm…"
+    static let pickConfirmed = "Maya said looks good ✓"
+    static let calAdded = "📅 Added to your calendar and Maya's"
+    static let calAddedZoe = "📅 Pickup window added for you and Zoe"
+    static let buyCta = "Buy · $15"
+    static let buyNote = "You're agreeing to Zoe's price."
+    static let lockerReady = "Your Owala is ready"
+    static let lockerWhere = "Locker 14 · Ridgecrest Lockers"
+    static let lockerCode = "Pickup code"
+    static let lockerDone = "I picked it up"
+    static let tdLocker = "Got it. $15 released to Zoe."
+    static let tdInPersonSeller = "Clean handoff. $25 is on its way to you."
+    static let forYouTitle = "For you"
+    static let historyTitle = "Handoff history"
 }

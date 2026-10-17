@@ -1,0 +1,9 @@
+[
+  { "id": "z1", "from": "system", "text": "You bought Owala FreeSip 24oz for $15 ✓ Price confirmed", "delay_ms": 0 },
+  { "id": "z2", "from": "system", "text": "You confirmed the price, so you pick the spot.", "delay_ms": 300 },
+  { "id": "z3", "from": "spot_picker", "text": "", "delay_ms": 600 },
+  { "id": "z4", "from": "me", "text": "Ridgecrest Lockers works for me", "delay_ms": 0, "after": "pick" },
+  { "id": "z5", "from": "them", "text": "I'm good 👍 dropping it after class", "delay_ms": 1500, "after": "pick" },
+  { "id": "z6", "from": "system", "text": "Zoe dropped it in Locker 14 at Ridgecrest Lockers", "delay_ms": 4000, "after": "confirm" },
+  { "id": "z7", "from": "locker_card", "text": "", "delay_ms": 0, "after": "dropoff" }
+]

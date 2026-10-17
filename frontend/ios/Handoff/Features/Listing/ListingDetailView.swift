@@ -5,6 +5,8 @@ struct ListingDetailView: View {
     @Environment(AppStore.self) private var store
     @State private var openThread = false
     @State private var buying = false
+    @State private var payDirect = false
+    @State private var openBuyThread = false
 
     var body: some View {
         if let listing = store.listing(listingId) {
@@ -53,6 +55,18 @@ struct ListingDetailView: View {
             .toolbarBackground(.visible, for: .navigationBar)
             .safeAreaInset(edge: .bottom) { actionBar(listing) }
             .navigationDestination(isPresented: $openThread) { HaggleThreadView(listingId: listing.id) }
+            .navigationDestination(isPresented: $openBuyThread) { BuyThreadView(listingId: listing.id) }
+            .sheet(isPresented: $payDirect) {
+                // features-v2 Flow B: Buy at the listed price → money held → straight into the chat.
+                PaySheet(amountCents: listing.priceCents) {
+                    payDirect = false
+                    store.show(toast: "\(Money.format(listing.priceCents)) held 🔒")
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(450))
+                        openBuyThread = true
+                    }
+                }
+            }
             .dealFlow(isPaying: $buying, amountCents: listing.priceCents, listing: listing)
             .task { if listing.isGhost { await store.loadBids(listing.id) } }
         } else {
@@ -126,6 +140,16 @@ struct ListingDetailView: View {
                 }
                 .buttonStyle(.pill(.butter, full: true))
                 .disabled(wanted)
+            } else if listing.id == "l_owala" {
+                VStack(spacing: 8) {
+                    Button(Copy.buyCta) { payDirect = true }
+                        .buttonStyle(.pill(.primary, full: true))
+                    Text(Copy.buyNote).font(.system(size: 12, weight: .bold)).foregroundStyle(Color.hoSoft)
+                }
+            } else if listing.sellerId == store.me?.userId {
+                Text("This is your listing · \(store.requestAccepted ? "sold to Maya" : "live on the feed")")
+                    .font(.system(size: 14, weight: .heavy)).foregroundStyle(Color.hoSoft)
+                    .frame(maxWidth: .infinity).padding(.vertical, 12)
             } else {
                 if listing.negotiable {
                     Button("Make offer") { openThread = true }

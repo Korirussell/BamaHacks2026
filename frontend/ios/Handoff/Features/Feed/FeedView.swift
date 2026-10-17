@@ -27,8 +27,14 @@ struct FeedView: View {
                 header
                 SearchPill()
                     .padding(.horizontal, 16)
-                ChipRow(chips: Copy.chips, selected: $chip)
-                content
+                segmentToggle.padding(.horizontal, 16)
+                if store.feedSegment == Copy.forYouTitle {
+                    wishlistRow
+                    forYouContent
+                } else {
+                    ChipRow(chips: Copy.chips, selected: $chip)
+                    content
+                }
             }
             .padding(.bottom, 24)
         }
@@ -75,6 +81,64 @@ struct FeedView: View {
         .padding(.top, 8)
     }
 
+    private var segmentToggle: some View {
+        @Bindable var store = store
+        return HStack(spacing: 0) {
+            ForEach([Copy.forYouTitle, "All"], id: \.self) { seg in
+                Button {
+                    Haptics.tap()
+                    withAnimation(.snappy) { store.feedSegment = seg }
+                } label: {
+                    Text(seg).font(.system(size: 14, weight: .heavy))
+                        .foregroundStyle(store.feedSegment == seg ? Color.hoBg : Color.hoInk)
+                        .frame(maxWidth: .infinity).padding(.vertical, 10)
+                        .background(Capsule().fill(store.feedSegment == seg ? Color.hoInk : Color.clear))
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(4)
+        .capsuleSticker()
+    }
+
+    /// Wishlist items as sticker chips with match counts (features-v2 §5.3).
+    private var wishlistRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(store.wishlist?.items ?? []) { w in
+                    Text("\(w.label) · \(w.matchCount)")
+                        .font(.system(size: 13, weight: .heavy)).foregroundStyle(Color.hoInkOnLight)
+                        .padding(.horizontal, 12).padding(.vertical, 7)
+                        .background(Capsule().fill(Color.hoButter))
+                        .overlay(Capsule().strokeBorder(Color.hoInk, lineWidth: 2))
+                }
+                Text("＋ Add").font(.system(size: 13, weight: .heavy)).foregroundStyle(Color.hoInk)
+                    .padding(.horizontal, 12).padding(.vertical, 7)
+                    .overlay(Capsule().strokeBorder(Color.hoInk, style: StrokeStyle(lineWidth: 2, dash: [4, 3])))
+            }
+            .padding(.horizontal, 16).padding(.vertical, 4)
+        }
+    }
+
+    @ViewBuilder private var forYouContent: some View {
+        let columns = [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)]
+        if store.feedState != .loaded {
+            LazyVGrid(columns: columns, spacing: 16) { ForEach(0..<4, id: \.self) { _ in SkeletonCard() } }
+                .padding(.horizontal, 16)
+        } else if store.forYouListings.isEmpty {
+            EmptyState(text: "Add something to your wishlist and we'll find it.")
+        } else {
+            LazyVGrid(columns: columns, spacing: 16) {
+                ForEach(store.forYouListings, id: \.0.id) { listing, reason in
+                    NavigationLink(value: listing) { ListingCard(listing: listing, reasonText: reason) }
+                        .buttonStyle(PressableStyle())
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+    }
+
     @ViewBuilder private var content: some View {
         let columns = [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)]
         switch store.feedState {
@@ -116,6 +180,7 @@ struct SearchPill: View {
 
 struct ListingCard: View {
     let listing: Listing
+    var reasonText: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -139,6 +204,13 @@ struct ListingCard: View {
                     Text("🔥 \(listing.interest?.count ?? 0) want this")
                         .font(.system(size: 10.5, weight: .heavy))
                         .foregroundStyle(Color.hoAccentText)
+                } else if let reasonText {
+                    Text(reasonText)
+                        .font(.system(size: 10.5, weight: .heavy)).foregroundStyle(Color.hoInkOnLight)
+                        .lineLimit(1).minimumScaleFactor(0.8)
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(Capsule().fill(Color.hoMint))
+                        .overlay(Capsule().strokeBorder(Color.hoInk, lineWidth: 1.5))
                 } else {
                     ReasonChip(reason: listing.reason)
                 }

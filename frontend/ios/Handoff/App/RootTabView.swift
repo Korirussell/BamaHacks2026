@@ -15,6 +15,11 @@ struct RootTabView: View {
                 case .sell: NavigationStack { FeedView() }
                 }
             }
+            .fullScreenCover(item: $store.rootCover) { cover in
+                switch cover {
+                case .flowAMeetup: MeetupView(context: .maya)
+                }
+            }
             .safeAreaInset(edge: .bottom) { if store.tabBarHiders.isEmpty { Color.clear.frame(height: 64) } }
 
             if store.tabBarHiders.isEmpty {
@@ -23,7 +28,13 @@ struct RootTabView: View {
         }
         .background(Color.hoBg.ignoresSafeArea())
         .overlay(alignment: .top) { ToastView() }
-        .sheet(isPresented: $store.showSell) { SellView() }
+        .overlay(alignment: .top) { NotificationBanner() }
+        .sheet(item: $store.rootSheet) { sheet in
+            switch sheet {
+            case .sell: SellView()
+            case .request: RequestSheet()
+            }
+        }
     }
 }
 
@@ -36,7 +47,7 @@ struct StickerTabBar: View {
             item(.explore, "magnifyingglass", "Explore")
             Button {
                 Haptics.tap()
-                store.showSell = true
+                store.rootSheet = .sell
             } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 26, weight: .heavy))
@@ -109,4 +120,36 @@ private struct HidesTabBar: ViewModifier {
 
 extension View {
     func hidesTabBar() -> some View { modifier(HidesTabBar()) }
+}
+
+/// Local-notification-style banner (features-v2 Flow A step 5 / Flow B step 5).
+struct NotificationBanner: View {
+    @Environment(AppStore.self) private var store
+    var body: some View {
+        if let b = store.banner {
+            Button {
+                withAnimation { store.banner = nil }
+                if b.opensRequest, !store.requestAccepted { store.rootSheet = .request }
+            } label: {
+                HStack(spacing: 12) {
+                    Text("🔔").font(.system(size: 22))
+                        .frame(width: 40, height: 40)
+                        .background(RoundedRectangle(cornerRadius: 10).fill(Color.hoAccent))
+                        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.hoInk, lineWidth: 2))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("HANDOFF · now").font(.system(size: 10.5, weight: .heavy)).foregroundStyle(Color.hoSoft)
+                        Text(b.title).font(.system(size: 15, weight: .heavy)).foregroundStyle(Color.hoInk)
+                        Text(b.body).font(.system(size: 13, weight: .medium)).foregroundStyle(Color.hoSoft)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(12)
+                .sticker(radius: 20, shadow: 4)
+                .padding(.horizontal, 14)
+                .padding(.top, 4)
+            }
+            .buttonStyle(PressableStyle())
+            .transition(.move(edge: .top).combined(with: .opacity))
+        }
+    }
 }

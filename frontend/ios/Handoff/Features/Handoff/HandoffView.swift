@@ -1,16 +1,36 @@
 import SwiftUI
 import CoreImage.CIFilterBuiltins
 
+struct HandoffContext {
+    let orderId: String
+    let giverLine: String
+    let receiverLine: String
+    let giverName: String
+    let defaultRole: String
+    let touchdownLine: String
+    let reviewPartner: String
+
+    static let kayla = HandoffContext(orderId: "o_fridge", giverLine: Copy.qrGiver, receiverLine: Copy.qrReceiver, giverName: "Kayla",
+                                      defaultRole: "buyer", touchdownLine: Copy.celebrateTDDone, reviewPartner: "Kayla")
+    static let maya = HandoffContext(orderId: "o_mouse", giverLine: "Show this to Maya", receiverLine: "Scan Kori's code to finish",
+                                     giverName: "Kori", defaultRole: "seller", touchdownLine: Copy.tdInPersonSeller, reviewPartner: "Maya")
+    static let zoe = HandoffContext(orderId: "o_owala", giverLine: Copy.qrGiver, receiverLine: "Scan Zoe's code to finish", giverName: "Zoe",
+                                    defaultRole: "buyer", touchdownLine: "Clean handoff. $15 released to Zoe.", reviewPartner: "Zoe")
+}
+
 /// Rotating QR handoff (§11.7, §12).
 struct HandoffView: View {
+    var context: HandoffContext = .kayla
+    var meetup: MeetupSuggestion? = nil
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
-    @State private var role = "buyer"
+    @State private var role = ""
     @State private var code = ""
     @State private var celebration: Celebration?
     @State private var reviewing = false
 
-    private var orderId: String { store.order?.id ?? "o_fridge" }
+    private var orderId: String { context.orderId }
+    private var shownMeetup: MeetupSuggestion? { meetup ?? (context.orderId == "o_fridge" ? store.lockedMeetup : nil) }
 
     var body: some View {
         NavigationStack {
@@ -35,7 +55,7 @@ struct HandoffView: View {
                     .padding(4)
                     .capsuleSticker()
 
-                    if let m = store.lockedMeetup {
+                    if let m = shownMeetup {
                         Text("\(store.place(m.placeId)?.name ?? "") · \(m.startLabel)")
                             .font(.system(size: 13, weight: .heavy)).foregroundStyle(Color.hoSoft)
                     }
@@ -61,8 +81,9 @@ struct HandoffView: View {
                 reviewing = true
             }
         }
+        .onAppear { if role.isEmpty { role = context.defaultRole } }
         .sheet(isPresented: $reviewing) {
-            ReviewSheet { reviewing = false; dismiss() }
+            ReviewSheet(partner: context.reviewPartner) { reviewing = false; dismiss() }
         }
     }
 
@@ -72,7 +93,7 @@ struct HandoffView: View {
             let remaining = 60 - Int(ctx.date.timeIntervalSince1970) % 60
             let token = HandoffToken.token(orderId: orderId, minute: minute)
             VStack(spacing: 18) {
-                Text(Copy.qrGiver).font(.display(24)).foregroundStyle(Color.hoInk)
+                Text(context.giverLine).font(.display(24)).foregroundStyle(Color.hoInk)
                 ZStack {
                     Circle().stroke(Color.hoSunk, lineWidth: 10)
                     Circle()
@@ -100,12 +121,12 @@ struct HandoffView: View {
 
     private var buyerView: some View {
         VStack(spacing: 18) {
-            Text(Copy.qrReceiver).font(.display(24)).foregroundStyle(Color.hoInk)
+            Text(context.receiverLine).font(.display(24)).foregroundStyle(Color.hoInk)
             ZStack {
                 RoundedRectangle(cornerRadius: 24).fill(Color.black.opacity(0.85))
                 CornerBrackets().stroke(Color.hoButter, style: StrokeStyle(lineWidth: 5, lineCap: .round))
                     .padding(30)
-                Text("Point at Kayla's code").font(.system(size: 13, weight: .bold)).foregroundStyle(.white.opacity(0.7))
+                Text("Point at \(context.giverName)'s code").font(.system(size: 13, weight: .bold)).foregroundStyle(.white.opacity(0.7))
             }
             .frame(height: 260)
             .overlay(RoundedRectangle(cornerRadius: 24).strokeBorder(Color.hoInk, lineWidth: 2))
@@ -133,8 +154,20 @@ struct HandoffView: View {
     }
 
     private func complete() {
-        store.completeHandoff()
-        celebration = .touchdown(line: Copy.celebrateTDDone)
+        switch context.orderId {
+        case "o_fridge":
+            store.completeHandoff()
+            store.addHistory(emoji: "🧊", title: "Mini fridge", partner: "Kayla R.", placeId: shownMeetup?.placeId ?? "p_bevill",
+                             method: "in_person", cents: store.order?.amountCents ?? 6500, role: "bought")
+        case "o_mouse":
+            store.flowADone = true
+            store.addHistory(emoji: "🖱️", title: "Logitech MX Master 3S", partner: "Maya T.", placeId: shownMeetup?.placeId ?? "p_ferguson",
+                             method: "in_person", cents: 2500, role: "sold")
+        default:
+            store.addHistory(emoji: "🥤", title: "Owala FreeSip", partner: "Zoe M.", placeId: shownMeetup?.placeId ?? "p_rodgers",
+                             method: "in_person", cents: 1500, role: "bought")
+        }
+        celebration = .touchdown(line: context.touchdownLine)
     }
 }
 
@@ -178,6 +211,7 @@ private struct CornerBrackets: Shape {
 }
 
 struct ReviewSheet: View {
+    var partner: String = "Kayla"
     var onDone: () -> Void
     @Environment(AppStore.self) private var store
     @State private var stars = 5
@@ -186,7 +220,7 @@ struct ReviewSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            SheetTitle(kicker: "Clean handoff", title: "How was Kayla?")
+            SheetTitle(kicker: "Clean handoff", title: "How was \(partner)?")
             HStack(spacing: 10) {
                 ForEach(1...5, id: \.self) { i in
                     Button {

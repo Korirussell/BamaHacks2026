@@ -32,7 +32,23 @@ final class AppStore {
     var lockedMeetup: MeetupSuggestion?
     var toast: String?
     var selectedTab: Tab = .feed
-    var showSell = false
+    var rootSheet: RootSheet?
+    var rootCover: RootCover?
+    var banner: Banner?
+
+    // features-v2
+    var wishlist: Wishlist?
+    var history: History?
+    var pendingNotifications: [String: AppNotification] = [:]
+    var buyRequest: BuyRequest?
+    var requestAccepted = false
+    var mayaMeetup: MeetupSuggestion?
+    var flowADone = false
+    var feedSegment = "For you"
+
+    enum RootSheet: String, Identifiable { case sell, request; var id: String { rawValue } }
+    enum RootCover: String, Identifiable { case flowAMeetup; var id: String { rawValue } }
+    struct Banner: Equatable { let title: String; let body: String; let opensRequest: Bool }
     var tabBarHiders: Set<String> = []
 
     enum Tab: Hashable { case feed, explore, sell, activity, profile }
@@ -48,7 +64,12 @@ final class AppStore {
         me = await m
         places = await p ?? []
         // order.json is the awaiting_payment template; a live order only exists after Pay (startOrder).
-        notifications = (try? await api.notifications()) ?? []
+        let all = (try? await api.notifications()) ?? []
+        // n4 / n5 only appear when their mock event fires (Maya's request, Zoe's drop-off).
+        for n in all where ["n4", "n5"].contains(n.id) { pendingNotifications[n.id] = n }
+        notifications = all.filter { pendingNotifications[$0.id] == nil }
+        wishlist = try? await api.fixture("wishlist")
+        history = try? await api.fixture("history")
         await loadFeed()
     }
 
@@ -115,12 +136,61 @@ final class AppStore {
     func publish(_ listing: Listing) {
         withAnimation(.spring) { listings.insert(listing, at: 0) }
         selectedTab = .feed
-        show(toast: "Live on the feed")
+        feedSegment = "All"
+        show(toast: Copy.sellPosted)
     }
 
     func place(_ id: String) -> Place? { places.first { $0.id == id } }
 
     func markNotificationsRead() {
         for i in notifications.indices { notifications[i].read = true }
+    }
+
+    // MARK: - features-v2
+
+    /// Moves a pending mock notification into the list and shows the in-app banner.
+    func fire(notification id: String, opensRequest: Bool = false) {
+        guard let n = pendingNotifications.removeValue(forKey: id) else { return }
+        notifications.insert(n, at: 0)
+        Haptics.success()
+        withAnimation(.spring(duration: 0.4)) { banner = Banner(title: n.title, body: n.body, opensRequest: opensRequest) }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(5))
+            if banner?.title == n.title { withAnimation(.easeOut) { banner = nil } }
+        }
+    }
+
+    /// Flow A step 5: ~4 s after posting the mouse, Maya asks for it.
+    func scheduleBuyRequest() {
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(4))
+            buyRequest = try? await api.fixture("buy_request")
+            fire(notification: "n4", opensRequest: true)
+        }
+    }
+
+    func acceptRequest() {
+        requestAccepted = true
+        rootSheet = nil
+        show(toast: Copy.reqHeld)
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(600))
+            rootCover = .flowAMeetup
+        }
+    }
+
+    func addHistory(emoji: String, title: String, partner: String, placeId: String, method: String, cents: Int, role: String) {
+        let item = History.Item(id: UUID().uuidString, emoji: emoji, title: title, partner: partner, placeId: placeId,
+                                date: "Today", method: method, amountCents: cents, role: role)
+        history?.items.insert(item, at: 0)
+        history?.stats.count += 1
+    }
+
+    var forYouListings: [(Listing, String)] {
+        (wishlist?.forYou ?? []).compactMap { f in listing(f.listingId).map { ($0, f.reason) } }
+    }
+
+    func forYouReason(_ listingId: String) -> String? {
+        wishlist?.forYou.first { $0.listingId == listingId }?.reason
     }
 }

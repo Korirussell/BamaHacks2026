@@ -7,7 +7,12 @@ struct SellView: View {
     @Environment(\.dismiss) private var dismiss
 
     enum Stage: Equatable { case pick, job, failed, form }
+    enum Mode { case photo, screenshot }
     @State private var stage: Stage = .pick
+    @State private var mode: Mode = .screenshot
+    @State private var showCamera = false
+    @State private var photo: PhotoResult?
+    @State private var fast = true
     @State private var pickerItem: PhotosPickerItem?
     @State private var showPicker = false
     @State private var imageData: Data?
@@ -28,7 +33,7 @@ struct SellView: View {
                     case .pick: pickView
                     case .job: jobView
                     case .failed: failedView
-                    case .form: formView
+                    case .form: if mode == .photo { photoFormView } else { formView }
                     }
                 }
                 .padding(20)
@@ -43,6 +48,15 @@ struct SellView: View {
             }
         }
         .photosPicker(isPresented: $showPicker, selection: $pickerItem, matching: .images)
+        .fullScreenCover(isPresented: $showCamera) {
+            CameraPicker { data in
+                showCamera = false
+                guard let data else { return }
+                imageData = data
+                runJob()
+            }
+            .ignoresSafeArea()
+        }
         .onChange(of: pickerItem) {
             guard let pickerItem else { return }
             imageData = nil
@@ -56,15 +70,30 @@ struct SellView: View {
     private var pickView: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("What are you selling?").font(.display(28)).displayTracking(28).foregroundStyle(Color.hoInk)
-            option("📸", "Photos", "Snap it, we'll do the rest", fill: .hoCard) { forceFail = false; showPicker = true }
-            option("🖼️", "Screenshot → listing", "Already posted it on Instagram? Drop the screenshot.", fill: .hoButter, hero: true) {
-                forceFail = false; showPicker = true
+            option("📸", Copy.sellSnap, Copy.sellSnapSub, fill: .hoButter, hero: true) {
+                forceFail = false; mode = .photo
+                if UIImagePickerController.isSourceTypeAvailable(.camera) { showCamera = true } else { showPicker = true }
+            }
+            option("🖼️", "Screenshot → listing", "Already posted it on Instagram? Drop the screenshot.", fill: .hoCard) {
+                forceFail = false; mode = .screenshot; showPicker = true
             }
             .simultaneousGesture(LongPressGesture(minimumDuration: 0.8).onEnded { _ in
                 // Hidden demo hook: long-press shows the failure state (§13).
-                forceFail = true; showPicker = true
+                forceFail = true; mode = .screenshot; showPicker = true
             })
-            option("📚", "Scan textbook", "Cover or ISBN → edition + your classes", fill: .hoCard) { forceFail = false; showPicker = true }
+            option("📚", "Scan textbook", "Cover or ISBN → edition + your classes", fill: .hoCard) {
+                forceFail = false; mode = .screenshot; showPicker = true
+            }
+            Button {
+                // Simulator / no-photo fallback for the demo.
+                forceFail = false; mode = .photo; imageData = nil; runJob()
+            } label: {
+                Text("No photo handy? Use the sample mouse 🖱️")
+                    .font(.system(size: 13, weight: .heavy)).foregroundStyle(Color.hoAccentText)
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 4)
         }
     }
 
@@ -97,7 +126,8 @@ struct SellView: View {
             if let imageData, let img = UIImage(data: imageData) {
                 Image(uiImage: img).resizable().scaledToFill()
             } else {
-                Color.hoPeach.overlay(Text("🖼️").font(.system(size: 40)))
+                Color.tile(mode == .photo ? "mint" : "peach")
+                    .overlay(Text(mode == .photo ? "🖱️" : "🖼️").font(.system(size: w * 0.4)))
             }
         }
         .frame(width: w, height: h)
@@ -108,7 +138,8 @@ struct SellView: View {
     private var jobView: some View {
         VStack(alignment: .leading, spacing: 18) {
             thumb
-            ForEach(Copy.jobSteps.indices, id: \.self) { i in
+            .overlay { if mode == .photo && step < 4 { ScanLine() } }
+            ForEach(steps.indices, id: \.self) { i in
                 HStack(spacing: 12) {
                     ZStack {
                         Circle().fill(i < step ? Color.hoMint : (i == step ? Color.hoButter : Color.hoCard))
@@ -120,7 +151,7 @@ struct SellView: View {
                         }
                     }
                     .frame(width: 28, height: 28)
-                    Text(Copy.jobSteps[i])
+                    Text(steps[i])
                         .font(.system(size: 16, weight: i == step ? .heavy : .semibold))
                         .foregroundStyle(i <= step ? Color.hoInk : Color.hoSoft)
                 }
@@ -146,13 +177,16 @@ struct SellView: View {
     private func runJob() {
         withAnimation { stage = .job; step = 0 }
         Task { @MainActor in
-            for i in 1...3 {
-                try? await Task.sleep(for: .milliseconds(800))
+            for i in 1...steps.count {
+                try? await Task.sleep(for: .milliseconds(mode == .photo ? 600 : 800))
                 withAnimation(.snappy) { step = i }
                 Haptics.soft()
             }
             if forceFail { withAnimation { stage = .failed }; return }
-            if let r = try? await store.api.screenshotJob() {
+            if mode == .photo {
+                photo = try? await store.api.fixture("photo_result")
+                fast = true
+            } else if let r = try? await store.api.screenshotJob() {
                 result = r
                 title = r.title
                 price = r.priceCents
@@ -162,6 +196,91 @@ struct SellView: View {
             Haptics.success()
             withAnimation(.spring) { stage = .form }
         }
+    }
+
+    private var steps: [String] { mode == .photo ? Copy.jobPhoto : Copy.jobSteps }
+
+    // MARK: photo form (features-v2 Flow A — everything prefilled, 3rd click is Post)
+
+    @ViewBuilder private var photoFormView: some View {
+        if let r = photo {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(alignment: .top, spacing: 14) {
+                    thumb(110, 130)
+                        .overlay(alignment: .bottom) {
+                            Text("\(r.detected.label) · \(Int(r.detected.confidence * 100))%")
+                                .font(.system(size: 9.5, weight: .heavy)).foregroundStyle(.white)
+                                .lineLimit(1).minimumScaleFactor(0.7)
+                                .padding(.horizontal, 6).padding(.vertical, 3)
+                                .background(Capsule().fill(Color.hoAccent))
+                                .padding(6)
+                        }
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("We wrote your listing ✨").font(.display(20)).foregroundStyle(Color.hoInk)
+                        confidence(r.confidence)
+                        FlowChips(items: r.attributes)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(r.title).font(.display(22)).foregroundStyle(Color.hoInk)
+                    HStack(spacing: 6) {
+                        TagPill(text: r.category.capitalized)
+                        TagPill(text: r.condition.replacingOccurrences(of: "_", with: " ").capitalized)
+                        ForEach(r.tags.prefix(2), id: \.self) { TagPill(text: "#\($0)") }
+                    }
+                    Text(r.description).font(.system(size: 14)).foregroundStyle(Color.hoInk)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .sticker(radius: 18, shadow: 3)
+
+                Text("PRICE").font(.system(size: 11, weight: .heavy)).foregroundStyle(Color.hoSoft)
+                HStack(spacing: 12) {
+                    priceOption(Copy.sellPriceFast, on: fast) { fast = true }
+                    priceOption(Copy.sellPriceMax, on: !fast) { fast = false }
+                }
+
+                Text(r.modelNote).font(.system(size: 11.5, weight: .bold)).foregroundStyle(Color.hoSoft)
+
+                Button(Copy.sellPost) { postPhoto(r) }
+                    .buttonStyle(.pill(.primary, full: true))
+            }
+        }
+    }
+
+    private func priceOption(_ label: String, on: Bool, action: @escaping () -> Void) -> some View {
+        let parts = label.components(separatedBy: " · ")
+        return Button {
+            Haptics.tap(); withAnimation(.snappy) { action() }
+        } label: {
+            VStack(spacing: 2) {
+                Text(parts.first ?? "").font(.system(size: 11, weight: .heavy)).textCase(.uppercase)
+                Text(parts.count > 1 ? parts[1] : "").font(.display(26))
+                Text(parts.count > 2 ? parts[2] : "").font(.system(size: 11.5, weight: .bold)).opacity(0.7)
+            }
+            .foregroundStyle(on ? Color.hoInkOnLight : Color.hoInk)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .sticker(radius: 18, shadow: on ? 4 : 2, fill: on ? .hoButter : .hoCard)
+        }
+        .buttonStyle(PressableStyle())
+    }
+
+    private func postPhoto(_ r: PhotoResult) {
+        let listing = Listing(
+            id: "l_mouse", title: r.title, description: r.description, category: r.category,
+            priceCents: fast ? r.priceModel.fastCents : r.priceModel.maxCents, negotiable: true,
+            condition: r.condition, emoji: r.emoji, tile: r.tile, tag: "New", locationLabel: "Bevill Building",
+            status: "active", sellerId: store.me?.userId ?? "u_kori",
+            source: .init(channel: "screenshot_local", authorHandle: nil, postCaption: nil, postUrl: nil, postedAgo: nil, claimed: true),
+            fairPrice: .init(lowCents: r.priceModel.fastCents, highCents: r.priceModel.maxCents), interest: nil, reason: "new",
+            createdAt: ISO8601DateFormatter().string(from: .now), localImageData: imageData)
+        Haptics.success()
+        dismiss()
+        store.publish(listing)
+        store.scheduleBuyRequest()
     }
 
     // MARK: form
@@ -273,5 +392,53 @@ struct SellView: View {
         Haptics.success()
         dismiss()
         store.publish(listing)
+    }
+}
+
+private struct ScanLine: View {
+    @State private var down = false
+    var body: some View {
+        GeometryReader { g in
+            Rectangle().fill(Color.hoAccent).frame(height: 3)
+                .shadow(color: .hoAccent, radius: 0, y: 2)
+                .offset(y: down ? g.size.height - 3 : 0)
+                .onAppear { withAnimation(.easeInOut(duration: 0.6).repeatForever()) { down = true } }
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+struct FlowChips: View {
+    let items: [String]
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            ForEach(items, id: \.self) { a in
+                Text(a).font(.system(size: 11, weight: .heavy)).foregroundStyle(Color.hoInkOnLight)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(Capsule().fill(Color.hoMint))
+                    .overlay(Capsule().strokeBorder(Color.hoInk, lineWidth: 1.5))
+            }
+        }
+    }
+}
+
+/// Real camera on device ("Snap it"). The Simulator has no camera, so it uses PhotosPicker.
+struct CameraPicker: UIViewControllerRepresentable {
+    var onPick: (Data?) -> Void
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let c = UIImagePickerController()
+        c.sourceType = .camera
+        c.delegate = context.coordinator
+        return c
+    }
+    func updateUIViewController(_ c: UIImagePickerController, context: Context) {}
+    func makeCoordinator() -> Coordinator { Coordinator(onPick: onPick) }
+    final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let onPick: (Data?) -> Void
+        init(onPick: @escaping (Data?) -> Void) { self.onPick = onPick }
+        func imagePickerController(_ p: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
+            onPick((info[.originalImage] as? UIImage)?.jpegData(compressionQuality: 0.8))
+        }
+        func imagePickerControllerDidCancel(_ p: UIImagePickerController) { onPick(nil) }
     }
 }

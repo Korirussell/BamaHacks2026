@@ -5,5 +5,8 @@
   { "id": "p_shelby",   "name": "Shelby Hall",            "kind": "class",          "is_safe_zone": false, "map": { "x": 66, "y": 26, "w": 22, "h": 7 } },
   { "id": "p_gorgas",   "name": "Gorgas Library",         "kind": "library",        "is_safe_zone": true,  "map": { "x": 12, "y": 40, "w": 26, "h": 7 } },
   { "id": "p_uapd",     "name": "UA Police Department",   "kind": "police",         "is_safe_zone": true,  "map": { "x": 62, "y": 44, "w": 26, "h": 7 } },
-  { "id": "p_paty",     "name": "Paty Hall",              "kind": "dorm",           "is_safe_zone": false, "map": { "x": 40, "y": 52, "w": 20, "h": 6 } }
+  { "id": "p_paty",     "name": "Paty Hall",              "kind": "dorm",           "is_safe_zone": false, "map": { "x": 40, "y": 52, "w": 20, "h": 6 } },
+{ "id": "p_locker_ridgecrest", "name": "Ridgecrest Lockers", "kind": "locker", "is_safe_zone": true, "map": { "x": 70, "y": 64, "w": 22, "h": 6 } },
+{ "id": "p_locker_ferguson", "name": "Ferguson Lockers", "kind": "locker", "is_safe_zone": true, "map": { "x": 34, "y": 36, "w": 18, "h": 5 } },
+{ "id": "p_ridgecrest", "name": "Ridgecrest South", "kind": "dorm", "is_safe_zone": false, "map": { "x": 72, "y": 74, "w": 20, "h": 6 } }
 ]

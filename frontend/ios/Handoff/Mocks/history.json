@@ -1,0 +1,12 @@
+{
+  "stats": { "count": 7, "saved_cents": 21200, "avg_walk_min": 4, "no_shows": 0 },
+  "items": [
+    { "id": "h1", "emoji": "🧊", "title": "Mini fridge", "partner": "Kayla R.", "place_id": "p_bevill", "date": "Oct 12", "method": "in_person", "amount_cents": 6500, "role": "bought" },
+    { "id": "h2", "emoji": "📗", "title": "BSC 114 textbook", "partner": "Sam W.", "place_id": "p_rodgers", "date": "Oct 8", "method": "in_person", "amount_cents": 3000, "role": "sold" },
+    { "id": "h3", "emoji": "🎧", "title": "AirPods case", "partner": "Dev P.", "place_id": "p_locker_ferguson", "date": "Oct 5", "method": "locker", "amount_cents": 1200, "role": "sold" },
+    { "id": "h4", "emoji": "🎟️", "title": "Home game ticket", "partner": "Maya T.", "place_id": "p_ferguson", "date": "Oct 2", "method": "in_person", "amount_cents": 4000, "role": "bought" },
+    { "id": "h5", "emoji": "🪑", "title": "Desk chair", "partner": "Zoe M.", "place_id": "p_locker_ridgecrest", "date": "Sep 28", "method": "locker", "amount_cents": 3500, "role": "bought" },
+    { "id": "h6", "emoji": "🧮", "title": "TI-36X", "partner": "Kayla R.", "place_id": "p_gorgas", "date": "Sep 20", "method": "in_person", "amount_cents": 1000, "role": "sold" },
+    { "id": "h7", "emoji": "🚲", "title": "Bike lock", "partner": "Sam W.", "place_id": "p_uapd", "date": "Sep 14", "method": "in_person", "amount_cents": 1500, "role": "bought" }
+  ]
+}

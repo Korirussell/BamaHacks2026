@@ -16,6 +16,8 @@ protocol APIClient {
     func meetups(orderId: String) async throws -> [MeetupSuggestion]
     func notifications() async throws -> [AppNotification]
     func screenshotJob() async throws -> ScreenshotResult
+    /// features-v2 fixtures by file name (photo_result, buy_request, meetups_maya, …).
+    func fixture<T: Decodable>(_ name: String) async throws -> T
 }
 
 enum APIError: Error { case missingMock(String), notImplemented }
@@ -49,6 +51,7 @@ struct MockAPI: APIClient {
     func meetups(orderId: String) async throws -> [MeetupSuggestion] { try await load("meetups") }
     func notifications() async throws -> [AppNotification] { try await load("notifications") }
     func screenshotJob() async throws -> ScreenshotResult { try await load("screenshot_result", delay: false) }
+    func fixture<T: Decodable>(_ name: String) async throws -> T { try await load(name, delay: false) }
 }
 
 /// URLSession stubs for the swap to the real API (§15). Not used while Config.useMocks is on.
@@ -63,4 +66,5 @@ struct LiveAPI: APIClient {
     func meetups(orderId: String) async throws -> [MeetupSuggestion] { throw APIError.notImplemented }
     func notifications() async throws -> [AppNotification] { throw APIError.notImplemented }
     func screenshotJob() async throws -> ScreenshotResult { throw APIError.notImplemented }
+    func fixture<T: Decodable>(_ name: String) async throws -> T { throw APIError.notImplemented }
 }
