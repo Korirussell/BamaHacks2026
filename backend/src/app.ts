@@ -10,17 +10,27 @@ import { authRoutes, supabaseSchoolLookup, type SchoolLookup } from "./routes/au
 import { academicsRoutes } from "./routes/academics.js";
 import { meRoutes } from "./routes/me.js";
 import { scheduleRoutes } from "./routes/schedule.js";
+import { tutoringRoutes } from "./routes/tutoring.js";
+import type { RoomBooker } from "./adapters/ports.js";
+import { manualRoomBooker } from "./adapters/stubs.js";
 
 export interface AppDeps {
   verify: TokenVerifier;
   findSchool: SchoolLookup;
+  rooms: RoomBooker;
   webOrigin: string;
   log: boolean;
 }
 
 /** Builds the app. Tests pass fakes; index.ts passes the real Supabase pieces. */
 export function createApp(deps: Partial<AppDeps> = {}) {
-  const { verify = supabaseVerifier, findSchool = supabaseSchoolLookup, webOrigin = "http://localhost:3000", log = true } = deps;
+  const {
+    verify = supabaseVerifier,
+    findSchool = supabaseSchoolLookup,
+    rooms = manualRoomBooker("https://www.lib.ua.edu/"),
+    webOrigin = "http://localhost:3000",
+    log = true,
+  } = deps;
 
   const api = new Hono()
     .get("/health", (c) => c.json({ data: { ok: true } }))
@@ -30,7 +40,8 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     .route("/", academicsRoutes(verify))
     .route("/", scheduleRoutes(verify))
     .route("/", scheduleImportRoutes(verify))
-    .route("/", jobsRoutes(verify));
+    .route("/", jobsRoutes(verify))
+    .route("/", tutoringRoutes(verify, rooms));
 
   const app = new Hono();
   if (log) app.use(logger());

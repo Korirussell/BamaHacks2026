@@ -57,7 +57,9 @@ The services are **pure functions**: they take plain data in and return decision
 - Transcript and schedule import (Claude) can wait: the demo uses seeded or hand-entered schedules.
 - **Done when:** the demo student's `GET /me/availability` shows real free blocks around their classes.
 
-### 7. 🎯 Demo 1: tutor matching + sessions
+### 7. 🎯 Demo 1: tutor matching + sessions ✅
+> Done in `routes/tutoring.ts`. Realtime goes through rows in `notifications` (type `tutoring.updated`, see `lib/notify.ts`); clients subscribe to Postgres changes on their own rows rather than a `user:{id}` broadcast. Set `ROOM_BOOKER=demo` to show a booked room on stage. Still open: `/pay` (step 10), tutor availability overrides (`PUT /me/tutor-availability`), `POST /tutoring/requests`.
+
 - `PUT /me/tutor-profile` and `GET /me/tutor-eligibility` (using `meetsThreshold`).
 - `GET /tutors`: load candidates, both schedules and the library location, call `findTutorMatches`, and join `UserPublic` and `TutorProfile`.
 - `POST /tutoring/sessions`, `/counter`, `/accept`, `/decline` use `counterSession`/`acceptSession` and `priceFor`.

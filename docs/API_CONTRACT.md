@@ -277,12 +277,15 @@ Transcript parsing is **review-then-confirm**: grades only count as `grade_verif
 ```jsonc
 {
   "GET /me/tutor-eligibility":  { "res": [{ "course": "Course", "grade": "string", "verified": "bool", "eligible": "bool", "reason": "string?" }] },
+  "GET /me/tutor-profile":      { "res": "TutorProfile | null (null until the user sets one up)" },
   "PUT /me/tutor-profile":      { "req": { "enabled": "bool", "course_ids": ["uuid"], "hourly_rate_cents": "cents", "bio": "string?", "modes": ["in_person|virtual"], "open_to_requests": "bool" }, "res": "TutorProfile" },
   "GET /me/tutor-availability/suggested": { "query": { "week_of": "ts" }, "res": ["TimeBlock"] },
   "PUT /me/tutor-availability": { "req": { "recurring": [{ "days": ["string"], "start": "HH:MM", "end": "HH:MM" }], "one_off": ["TimeBlock"] }, "res": "TutorProfile" },
   "GET /tutors":                { "query": { "course_id": "uuid", "from": "ts?", "to": "ts? (default from + 7 days)", "duration_min": "int? (default 60)", "max_rate_cents": "int?", "include_unverified": "bool? (default false)", "sort": "match|rating|price|grade" }, "res": ["TutorMatch"] },
   "POST /tutoring/requests":    { "req": { "course_id": "uuid", "windows": ["TimeBlock"], "max_rate_cents": "cents", "notes": "string?" }, "res": { "request_id": "uuid", "matched_tutor_count": "int" } },
   "POST /tutoring/sessions":    { "note": "student proposes; waiting_on=tutor", "req": { "tutor_id": "uuid", "course_id": "uuid", "start": "ts", "end": "ts", "location_pref": "library_room|safe_zone|virtual", "notes": "string?" }, "res": "TutoringSession" },
+  "GET /tutoring/sessions":     { "query": { "role": "tutor|student?", "status": "string?" }, "res": ["TutoringSession"] },
+  "GET /tutoring/sessions/{id}":{ "note": "parties only; 404 otherwise", "res": "TutoringSession" },
   "POST /tutoring/sessions/{id}/counter":  { "note": "either side proposes a different time; flips waiting_on", "req": { "start": "ts", "end": "ts", "message": "string?" }, "res": "TutoringSession" },
   "POST /tutoring/sessions/{id}/accept":   { "note": "only the party in waiting_on; library_room triggers room booking", "res": "TutoringSession" },
   "POST /tutoring/sessions/{id}/decline":  { "res": "TutoringSession" },

@@ -12,7 +12,9 @@ import { actOnOffer, openOffer } from "./offers.js";
 import { nextOrderStatus, payoutFor, splitAmount } from "./orders.js";
 import { buildLabel, verifyDropOff, verifyReceived } from "./shipping.js";
 import { localTime, zonedToUtc } from "./time.js";
-import { acceptSession, counterSession, findTutorMatches, type TutorCandidate } from "./tutoring.js";
+import {
+  acceptSession, cancelSession, completeSession, counterSession, declineSession, findTutorMatches, tutorEligibility, type TutorCandidate,
+} from "./tutoring.js";
 
 const at = (date: string, time: string) => zonedToUtc(date, time, UA.tz);
 const meeting = (courseCode: string, days: MeetingInput["days"], start: string, end: string, buildingName: string, loc: { lat: number; lng: number }): MeetingInput => ({
@@ -98,6 +100,32 @@ describe("tutoring", () => {
     const countered = counterSession(s, "tutor", "2026-10-20T17:00:00Z", "2026-10-20T18:00:00Z");
     assert.equal(countered.waitingOn, "student");
     assert.equal(acceptSession(countered, "student").status, "accepted");
+  });
+
+  it("declines on your turn only, cancels before it happens, completes once started", () => {
+    const s = { status: "requested" as const, waitingOn: "tutor" as const, start: "2026-10-20T15:00:00Z", end: "2026-10-20T16:00:00Z", hourlyRateCents: 2000 };
+    assert.throws(() => declineSession(s, "student"), ApiError);
+    assert.equal(declineSession(s, "tutor").status, "cancelled");
+    const accepted = acceptSession(s, "tutor");
+    assert.throws(() => completeSession(accepted, Date.parse("2026-10-20T14:00:00Z")), /hasn't started/);
+    assert.equal(completeSession(accepted, Date.parse("2026-10-20T15:30:00Z")).status, "completed");
+    assert.equal(cancelSession(accepted).status, "cancelled");
+    assert.throws(() => cancelSession({ ...accepted, status: "completed" }), ApiError);
+  });
+
+  it("eligibility keeps the best past grade and needs it verified", () => {
+    const e = tutorEligibility([
+      { courseId: "ch101", term: "Fall 2025", status: "past", grade: "B+", verified: true },
+      { courseId: "ch101", term: "Spring 2026", status: "past", grade: "A", verified: true },
+      { courseId: "math125", term: "Fall 2025", status: "past", grade: "A", verified: false },
+      { courseId: "en101", term: "Fall 2025", status: "past", grade: "B", verified: true },
+      { courseId: "cs100", term: "Fall 2026", status: "current", grade: null, verified: false },
+    ], "A-");
+    assert.deepEqual(e.get("ch101"), { courseId: "ch101", grade: "A", term: "Spring 2026", verified: true, eligible: true, reason: null });
+    assert.equal(e.get("math125")?.eligible, false);
+    assert.match(e.get("math125")?.reason ?? "", /transcript/);
+    assert.match(e.get("en101")?.reason ?? "", /A- or better/);
+    assert.equal(e.has("cs100"), false);
   });
 });
 

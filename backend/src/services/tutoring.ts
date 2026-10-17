@@ -116,3 +116,67 @@ export function acceptSession(s: SessionState, by: Side): SessionState {
   if (s.waitingOn !== by) throw new ApiError(409, "INVALID_STATE", "It's the other person's turn");
   return { ...s, status: "accepted", waitingOn: null };
 }
+
+export function declineSession(s: SessionState, by: Side): SessionState {
+  if (s.status !== "requested") throw new ApiError(409, "INVALID_STATE", `Can't decline a ${s.status} session`);
+  if (s.waitingOn !== by) throw new ApiError(409, "INVALID_STATE", "It's the other person's turn");
+  return { ...s, status: "cancelled", waitingOn: null };
+}
+
+/** Either side can cancel before the session happens. */
+export function cancelSession(s: SessionState): SessionState {
+  if (s.status !== "requested" && s.status !== "accepted" && s.status !== "paid") {
+    throw new ApiError(409, "INVALID_STATE", `Can't cancel a ${s.status} session`);
+  }
+  return { ...s, status: "cancelled", waitingOn: null };
+}
+
+/** Marks a session done once it has started. */
+export function completeSession(s: SessionState, now: number): SessionState {
+  if (s.status !== "accepted" && s.status !== "paid") throw new ApiError(409, "INVALID_STATE", `Can't complete a ${s.status} session`);
+  if (now < Date.parse(s.start)) throw new ApiError(409, "INVALID_STATE", "The session hasn't started yet");
+  return { ...s, status: "completed", waitingOn: null };
+}
+
+// ---- eligibility -------------------------------------------------------------------------
+
+export interface GradeRecord {
+  courseId: string;
+  term: string;
+  status: "current" | "past" | "planned";
+  grade: string | null;
+  verified: boolean;
+}
+
+export interface Eligibility {
+  courseId: string;
+  grade: string;
+  term: string;
+  verified: boolean;
+  eligible: boolean;
+  reason: string | null;
+}
+
+/**
+ * Best past grade per course and whether it unlocks tutoring (contract: Tutor eligibility rule).
+ * Verified beats unverified, then the higher grade wins.
+ */
+export function tutorEligibility(records: GradeRecord[], minGrade: string): Map<string, Eligibility> {
+  const best = new Map<string, GradeRecord & { grade: string }>();
+  for (const r of records) {
+    if (r.status !== "past" || !r.grade || gradePoints(r.grade) === null) continue;
+    const cur = best.get(r.courseId);
+    const better =
+      !cur ||
+      (r.verified && !cur.verified) ||
+      (r.verified === cur.verified && (gradePoints(r.grade) ?? 0) > (gradePoints(cur.grade) ?? 0));
+    if (better) best.set(r.courseId, { ...r, grade: r.grade });
+  }
+  const out = new Map<string, Eligibility>();
+  for (const r of best.values()) {
+    const meets = meetsThreshold(r.grade, minGrade);
+    const reason = !meets ? `Needs ${minGrade} or better` : !r.verified ? "Upload a transcript to verify this grade" : null;
+    out.set(r.courseId, { courseId: r.courseId, grade: r.grade, term: r.term, verified: r.verified, eligible: meets && r.verified, reason });
+  }
+  return out;
+}

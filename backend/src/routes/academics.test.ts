@@ -38,6 +38,18 @@ test("new authenticated routes reject missing tokens", async () => {
   assert.equal((await app.request("/api/v1/me/classes/00000000-0000-4000-a000-000000000010", { method: "DELETE" })).status, 401);
 });
 
+test("tutoring routes reject missing tokens", async () => {
+  const app = createApp({ verify: async () => null, log: false });
+  const id = "00000000-0000-4000-a000-000000000010";
+  for (const path of ["/me/tutor-eligibility", "/me/tutor-profile", `/tutors?course_id=${id}`, "/tutoring/sessions", `/tutoring/sessions/${id}`]) {
+    assert.equal((await app.request(`/api/v1${path}`)).status, 401, path);
+  }
+  for (const path of ["/tutoring/sessions", `/tutoring/sessions/${id}/accept`, `/tutoring/sessions/${id}/counter`]) {
+    assert.equal((await app.request(`/api/v1${path}`, { method: "POST" })).status, 401, path);
+  }
+  assert.equal((await app.request("/api/v1/me/tutor-profile", { method: "PUT" })).status, 401);
+});
+
 test("routers mounted at / keep unknown routes 404 instead of 401", async () => {
   const app = createApp({ verify: async () => null, log: false });
   assert.equal((await app.request("/api/v1/nope")).status, 404);

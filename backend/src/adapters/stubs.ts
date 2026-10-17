@@ -50,3 +50,17 @@ export function manualRoomBooker(bookingUrl: string): RoomBooker {
 export const placeholderLabelRenderer: LabelRenderer = {
   render: async (label) => ({ pdfUrl: `about:blank#label-${label.label_code}` }),
 };
+
+/**
+ * Demo only (ROOM_BOOKER=demo): pretends the library confirmed a room so the Demo 1 flow
+ * shows a booked state. The room name says it's a demo so nobody walks to it for real.
+ */
+export function demoRoomBooker(libraryName: string): RoomBooker {
+  return {
+    book: async ({ start }) => ({
+      status: "booked",
+      room: `${libraryName} · Group Study Room ${201 + (new Date(start).getUTCHours() % 8)} (demo)`,
+      bookingUrl: null,
+    }),
+  };
+}

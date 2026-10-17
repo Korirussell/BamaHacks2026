@@ -1,9 +1,12 @@
 import { serve } from "@hono/node-server";
+import { demoRoomBooker, manualRoomBooker } from "./adapters/stubs.js";
 import { createApp } from "./app.js";
+import { loadConfig } from "./config.js";
 
-const app = createApp({ webOrigin: process.env.WEB_ORIGIN ?? "http://localhost:3000" });
+const config = loadConfig();
+const rooms = config.ROOM_BOOKER === "demo" ? demoRoomBooker("Gorgas Library") : manualRoomBooker(config.ROOM_BOOKING_URL);
+const app = createApp({ webOrigin: config.WEB_ORIGIN, rooms });
 
-const port = Number(process.env.PORT ?? 8787);
-serve({ fetch: app.fetch, port }, (info) => {
-  console.log(`API listening on http://localhost:${info.port}/api/v1`);
+serve({ fetch: app.fetch, port: config.PORT }, (info) => {
+  console.log(`API listening on http://localhost:${info.port}/api/v1 (rooms: ${config.ROOM_BOOKER})`);
 });

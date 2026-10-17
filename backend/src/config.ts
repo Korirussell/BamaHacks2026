@@ -26,6 +26,9 @@ const Env = z.object({
   GROUPME_BOT_TOKEN: optional,
   RESEND_API_KEY: optional,
   APP_URL_SCHEME: optional,
+  // Library rooms: "manual" sends people to ROOM_BOOKING_URL; "demo" fakes a booked room for the pitch.
+  ROOM_BOOKER: z.enum(["manual", "demo"]).default("manual"),
+  ROOM_BOOKING_URL: z.url().default("https://www.lib.ua.edu/"),
 });
 
 export type Config = z.infer<typeof Env>;
