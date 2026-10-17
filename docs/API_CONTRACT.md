@@ -53,7 +53,7 @@ All traffic is **JSON REST under `/api/v1`**, authenticated with the Supabase ac
   "School":       { "id": "uuid", "name": "string", "domain": "string", "center": "LatLng", "timezone": "string (IANA)", "campus_mail_supported": "bool", "tutor_min_grade": "string (e.g. A-)" },
   "LatLng":       { "lat": "number", "lng": "number" },
   "Place":        { "label": "string", "location": "LatLng" },
-  "Media":        { "id": "uuid", "url": "string", "kind": "image|pdf", "width": "int?", "height": "int?" },
+  "Media":        { "id": "uuid", "url": "string", "kind": "image|pdf|ics", "width": "int?", "height": "int?" },
   "Reliability":  { "score": "number", "completed": "int", "no_shows": "int", "badge": "new|reliable|top" },
   "UserPublic": {
     "id": "uuid", "display_name": "string", "avatar_url": "string?", "major": "string?", "grad_year": "int?",
@@ -172,7 +172,9 @@ Sign-in: the frontend calls `/auth/check-email`, then Supabase `signInWithOtp`. 
   "GET /users/{id}":          { "res": { "user": "UserPublic", "mutual_friends": ["UserPublic"], "active_listings": ["Listing"], "tutor_profile": "TutorProfile?", "review_summary": { "avg_stars": "number", "count": "int" } } },
   "GET /users/search":        { "query": { "q": "string", "course_id": "uuid?" }, "res": ["UserPublic"] },
 
-  "POST /media/upload-url":   { "req": { "purpose": "listing|avatar|transcript|syllabus|schedule|screenshot", "content_type": "string", "bytes": "int" }, "res": { "media_id": "uuid", "upload_url": "string", "expires_at": "ts" } },
+  "POST /media/upload-url":   { "note": "201; then PUT the file to upload_url (or supabase.storage.uploadToSignedUrl with token), then /complete. Max 10 MB", "req": { "purpose": "listing|avatar|transcript|syllabus|schedule|screenshot|drop_off_proof|handoff_proof", "content_type": "image/jpeg|image/png|image/heic|image/webp|application/pdf|text/calendar", "bytes": "int" }, "res": { "media_id": "uuid", "upload_url": "string", "token": "string", "expires_at": "ts" } },
+  "POST /media/{id}/complete": { "note": "owner; 409 until the file is in Storage. Other endpoints only take completed media", "res": "Media" },
+  "GET /media/{id}":          { "note": "owner; private files get a 10-minute signed url", "res": "Media" },
   "GET /jobs/{id}":           { "res": "Job" },
 
   "POST /transcripts":        { "req": { "media_id": "uuid" }, "res": { "job_id": "uuid", "transcript_id": "uuid" } },

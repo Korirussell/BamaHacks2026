@@ -8,6 +8,7 @@ import { jobsRoutes } from "./routes/jobs.js";
 import { scheduleImportRoutes } from "./routes/schedule-import.js";
 import { authRoutes, supabaseSchoolLookup, type SchoolLookup } from "./routes/auth.js";
 import { academicsRoutes } from "./routes/academics.js";
+import { mediaRoutes } from "./routes/media.js";
 import { meRoutes } from "./routes/me.js";
 import { scheduleRoutes } from "./routes/schedule.js";
 import { tutoringRoutes } from "./routes/tutoring.js";
@@ -38,6 +39,7 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     .route("/me", meRoutes(verify))
     .route("/integrations/google", integrationsRoutes(verify))
     .route("/", academicsRoutes(verify))
+    .route("/", mediaRoutes(verify))
     .route("/", scheduleRoutes(verify))
     .route("/", scheduleImportRoutes(verify))
     .route("/", jobsRoutes(verify))
