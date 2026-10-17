@@ -271,7 +271,7 @@ Transcript parsing is **review-then-confirm**: grades only count as `grade_verif
 
 ### Campus mail at UA
 
-Campus mail is **one optional fulfillment method**, for when buyer and seller choose an async trade (`fulfillment: "campus_mail"` on the offer/order). In-person handoff at a safe zone (`in_person`) is still the default and needs none of this. Everything below only applies to `campus_mail` orders.
+Campus mail is **one of the fulfillment methods students choose between**: in person at a safe zone (`in_person`) or async by campus mail (`campus_mail`). There is no default; the seller lists which methods they accept and the buyer picks one on the offer. In-person trades need none of this. Everything below only applies to `campus_mail` orders.
 
 How UA Campus Mail works (campusmail.ua.edu and the myBama Student Mail Portal), and what the app does about it:
 

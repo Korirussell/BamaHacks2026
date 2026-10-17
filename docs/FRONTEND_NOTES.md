@@ -4,7 +4,7 @@ Short, screen-by-screen notes for things the API expects the app to do. Shapes l
 
 ## Campus mail (UA)
 
-**This is optional scaffolding.** Students pick how to trade: **in person** at a safe zone (default, handoff flow) or **async by campus mail**. Only build these screens for the async path: they apply when an offer/order has `fulfillment: "campus_mail"` (the seller lists `campus_mail` in the listing's `fulfillment`, and the buyer picks it on the offer). In-person orders never touch shipments, MSC or `mail_name`.
+**This is optional scaffolding.** Students choose how to trade, with no default: **in person** at a safe zone (handoff flow) or **async by campus mail**. Only build these screens for the async path: they apply when an offer/order has `fulfillment: "campus_mail"` (the seller lists `campus_mail` in the listing's `fulfillment`, and the buyer picks it on the offer). In-person orders never touch shipments, MSC or `mail_name`.
 
 Background: [API_CONTRACT.md → Campus mail at UA](API_CONTRACT.md#campus-mail-at-ua). In short, the seller ships the package USPS at the **Crimson Mail & Shipping** window in the Student Center, addressed to the buyer's campus address; Campus Mail puts it in the buyer's locker; the buyer types our code to release the money.
 
