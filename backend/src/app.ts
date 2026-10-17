@@ -122,7 +122,7 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     .route("/", ordersRoutes(verify, idempotency, payments))
     .route("/", stripeWebhookRoutes(stripeWebhooks))
     .route("/", handoffRoutes(verify, idempotency))
-    .route("/", shipmentRoutes(verify, idempotency))
+    .route("/", shipmentRoutes(verify, idempotency, demoAuth))
     .route("/", reviewsRoutes(verify))
     .route("/", paymentsRoutes(verify))
     .route("/", usersRoutes(verify))

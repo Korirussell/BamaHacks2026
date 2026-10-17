@@ -62,7 +62,8 @@ async function notifyBoth(order: OrderRow, shipment: ShipmentRow, actorId: strin
   });
 }
 
-export const shipmentRoutes = (verify: TokenVerifier, idempotency: IdempotencyStore) => {
+/** `demoAuth` (DEMO_AUTH=on) skips the drop-off window's opening hours, so a weekend demo can drop off. */
+export const shipmentRoutes = (verify: TokenVerifier, idempotency: IdempotencyStore, demoAuth = false) => {
   const app = new Hono<AuthEnv>()
     .use("/orders/:id/shipment", requireUser(verify))
     .use("/shipments/*", requireUser(verify));
@@ -129,7 +130,7 @@ export const shipmentRoutes = (verify: TokenVerifier, idempotency: IdempotencySt
       status: shipment.status,
       at: input.location,
       accuracyM: input.accuracy_m,
-      point: { location: { lat: shipment.drop_off.lat, lng: shipment.drop_off.lng }, radiusM: shipment.drop_off.radius_m, hours: shipment.drop_off.hours, name: shipment.drop_off.name },
+      point: { location: { lat: shipment.drop_off.lat, lng: shipment.drop_off.lng }, radiusM: shipment.drop_off.radius_m, ...(demoAuth ? {} : { hours: shipment.drop_off.hours }), name: shipment.drop_off.name },
       photoMediaId: input.photo_media_id,
       now: Date.now(),
       tz: (await loadSchool(schoolId)).timezone,

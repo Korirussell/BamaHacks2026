@@ -3,9 +3,10 @@ import { ApiError } from "../lib/errors.js";
 import { adminClient, publicMediaUrl } from "../lib/supabase.js";
 import { Listing } from "../schemas/listings.js";
 import { Offer } from "../schemas/offers.js";
-import { Order, Shipment } from "../schemas/orders.js";
-import { CourseRow, OpeningHoursRow, toCourse } from "./academics.js";
+import { Order } from "../schemas/orders.js";
+import { CourseRow, toCourse } from "./academics.js";
 import { EVENT_COLUMNS, EventRow } from "./events.js";
+import { SHIPMENT_SELECT, ShipmentRow, toShipment } from "./fulfillment.js";
 import { loadUsersPublic, type UserPublicOut } from "./users.js";
 
 const ts = z.string().transform((v) => new Date(v).toISOString());
@@ -167,27 +168,6 @@ export const OrderRow = z.object({
 });
 export type OrderRow = z.infer<typeof OrderRow>;
 
-const DropOffRow = z.object({
-  id: z.guid(), name: z.string(), lat: z.number(), lng: z.number(), radius_m: z.number().int(), hours: z.array(OpeningHoursRow), instructions: z.string(),
-});
-const ShipmentRow = z.object({
-  id: z.guid(), order_id: z.guid(), label_code: z.string(), label_media_id: z.guid().nullable(), to_name: z.string(), to_mail_stop_code: z.string(),
-  status: z.enum(["label_created", "dropped_off", "received"]), dropped_off_at: tsNull, drop_off_proof_media_id: z.guid().nullable(),
-  received_at: tsNull, auto_complete_at: tsNull, drop_off: DropOffRow,
-});
-type ShipmentRow = z.infer<typeof ShipmentRow>;
-
-const toShipment = (s: ShipmentRow) => Shipment.parse({
-  id: s.id, order_id: s.order_id, label_pdf_url: `about:blank#label-${s.label_code}`, label_code: s.label_code,
-  to: { name: s.to_name, mail_stop_code: s.to_mail_stop_code },
-  drop_off: {
-    id: s.drop_off.id, name: s.drop_off.name, location: { lat: s.drop_off.lat, lng: s.drop_off.lng },
-    radius_m: s.drop_off.radius_m, hours: s.drop_off.hours, instructions: s.drop_off.instructions,
-  },
-  status: s.status, dropped_off_at: s.dropped_off_at, drop_off_proof_media_id: s.drop_off_proof_media_id,
-  received_at: s.received_at, auto_complete_at: s.auto_complete_at,
-});
-
 export async function loadOrderRow(id: string, userId: string, schoolId: string): Promise<OrderRow> {
   const data = check(await adminClient().from("orders").select("*").eq("school_id", schoolId).eq("id", id).maybeSingle());
   const row = data ? OrderRow.parse(data) : null;
@@ -210,7 +190,7 @@ export async function ordersOut(rows: OrderRow[], schoolId: string, viewer: View
   const [listings, users, shipments] = await Promise.all([
     loadListingRows(rows.map((r) => r.listing_id), schoolId),
     loadUsersPublic(rows.flatMap((r) => [r.buyer_id, r.seller_id]), schoolId),
-    adminClient().from("shipments").select("*, drop_off:drop_off_points(*)").in("order_id", rows.map((r) => r.id)),
+    adminClient().from("shipments").select(SHIPMENT_SELECT).in("order_id", rows.map((r) => r.id)),
   ]);
   const byOrder = new Map(z.array(ShipmentRow).parse(check(shipments)).map((s) => [s.order_id, s]));
   return rows.map((r) => {
