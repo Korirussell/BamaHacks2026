@@ -5,12 +5,13 @@ import { useRouter } from 'next/navigation';
 import { motion, useMotionValue, useReducedMotion, useSpring } from 'framer-motion';
 import { ArrowLeft, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
-import { copy } from '@/lib/copy';
+import { copy, copy2 } from '@/lib/copy';
 import { money } from '@/lib/money';
 import { userById } from '@/lib/data';
 import { useDemo, useMockLoad } from '@/lib/store';
 import { BidBubbles } from '@/components/BidBubbles';
 import { InterestSheet } from '@/components/InterestSheet';
+import { PaySheet } from '@/components/PaySheet';
 import { EmptyState, ErrorState, GhostBadge, Pill, PillLink, PriceTag, ReliabilityBadge, Skeleton, Tag, tileBg } from '@/components/ui';
 
 const COND: Record<string, string> = { new: 'New', like_new: 'Like new', good: 'Good', fair: 'Fair', poor: 'Poor' };
@@ -42,7 +43,8 @@ function TiltTile({ emoji, tile, children }: { emoji: string; tile: 'peach' | 'm
 export default function ListingDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
-  const { listings, bids, celebrate } = useDemo();
+  const { listings, bids, set } = useDemo();
+  const [pay, setPay] = useState(false);
   const { status, retry } = useMockLoad([id]);
   const [want, setWant] = useState(false);
   const listing = listings.find(l => l.id === id);
@@ -137,11 +139,8 @@ export default function ListingDetail({ params }: { params: Promise<{ id: string
 
           {!ghost && (
             <div className="mt-7 flex flex-wrap gap-3">
-              <Pill
-                className="flex-1"
-                onClick={() => celebrate({ kind: 'touchdown', title: copy.celebrate.td, line: `Paid ${money(listing.price_cents)}. It's held safe until the handoff.`, onDone: () => router.push('/meetup/o_fridge') })}
-              >
-                Buy now · {money(listing.price_cents)}
+              <Pill className="flex-1" onClick={() => setPay(true)}>
+                {listing.id === 'l_owala' ? copy2.buy.cta : `Buy · ${money(listing.price_cents)}`}
               </Pill>
               {listing.id === 'l_fridge' ? (
                 <PillLink href="/offers/t_fridge" variant="neutral" className="flex-1">Make offer</PillLink>
@@ -150,11 +149,28 @@ export default function ListingDetail({ params }: { params: Promise<{ id: string
               )}
             </div>
           )}
-          {!ghost && <p className="mt-3 text-[12.5px] font-semibold text-soft">🔒 Money&apos;s held until it&apos;s in your hands.</p>}
+          {!ghost && (
+            <p className="mt-3 text-[12.5px] font-semibold text-soft">
+              {!listing.negotiable && seller ? `You're agreeing to ${seller.display_name.split(' ')[0]}'s price. ` : ''}🔒 Money&apos;s held until it&apos;s in your hands.
+            </p>
+          )}
           <p className="mt-8 text-[12px] font-semibold text-soft"><Link href="/feed" className="hover:underline">← More from University of Alabama</Link></p>
         </div>
       </div>
       <InterestSheet listing={want ? listing : null} onClose={() => setWant(false)} />
+      <PaySheet
+        open={pay}
+        amount={listing.price_cents}
+        onClose={() => setPay(false)}
+        onPaid={() => {
+          setPay(false);
+          toast(`${money(listing.price_cents)} held 🔒`);
+          if (listing.id === 'l_owala') {
+            set(s => ({ ...s, zoe: 'bought', zoeSpot: null }));
+            router.push('/orders/o_owala');
+          } else router.push('/meetup/o_fridge');
+        }}
+      />
     </div>
   );
 }

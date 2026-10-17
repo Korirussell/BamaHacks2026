@@ -3,6 +3,7 @@ import { use, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Loader2, Lock, Minus, Plus } from 'lucide-react';
+import { toast } from 'sonner';
 import { copy } from '@/lib/copy';
 import { money } from '@/lib/money';
 import { listings, order, thread, userById } from '@/lib/data';
@@ -16,7 +17,7 @@ const now = () => new Date().toLocaleTimeString('en-US', { hour: 'numeric', minu
 export default function OfferThread({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
-  const { set, celebrate } = useDemo();
+  const { set } = useDemo();
   const listing = listings.find(l => l.id === thread.listing_id)!;
   const kayla = userById(thread.seller_id)!;
   const [msgs, setMsgs] = useState<ThreadMessage[]>([]);
@@ -65,7 +66,8 @@ export default function OfferThread({ params }: { params: Promise<{ id: string }
       setPaying(false);
       setPaySheet(false);
       set(s => ({ ...s, order: { ...s.order, amount_cents: agreed ?? 6500, fee_cents: fee, total_cents: total, status: 'paid' } }));
-      celebrate({ kind: 'touchdown', title: copy.celebrate.td, line: `Paid ${money(agreed ?? 6500)}. It's held safe until the handoff.`, onDone: () => router.push(`/meetup/${order.id}`) });
+      toast(`${money(agreed ?? 6500)} held 🔒`);
+      router.push(`/meetup/${order.id}`);
     }, 1200);
   };
 

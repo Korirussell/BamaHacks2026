@@ -3,8 +3,8 @@ import { motion } from 'framer-motion';
 import { places } from '@/lib/data';
 import type { MeetupSuggestion } from '@/lib/types';
 
-// places.json positions only fill the top ~60% of the box; stretch them vertically.
-const Y = 1.45;
+// places.json positions don't fill the box; stretch them vertically to use the space.
+const Y = 96 / Math.max(...places.map(p => p.map.y + p.map.h));
 
 export function StickerMap({ spots, selected, onSelect, className = '' }: { spots: MeetupSuggestion[]; selected?: string; onSelect?: (id: string) => void; className?: string }) {
   return (
@@ -17,7 +17,7 @@ export function StickerMap({ spots, selected, onSelect, className = '' }: { spot
           style={{ left: `${p.map.x}%`, top: `${p.map.y * Y}%`, width: `${p.map.w}%`, height: `${p.map.h * Y}%` }}
         >
           <span className="truncate text-[8px] font-extrabold uppercase tracking-wide sm:text-[9.5px]">
-            {p.is_safe_zone && '🛡 '}{p.name}
+            {p.kind === 'locker' ? '🔐 ' : p.is_safe_zone ? '🛡 ' : ''}{p.name}
           </span>
         </div>
       ))}
