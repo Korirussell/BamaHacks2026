@@ -67,6 +67,7 @@ const Env = z.object({
   // Background timers: unpaid orders cancel, campus-mail orders auto-complete, offers expire.
   ORDER_TIMERS: z.enum(["on", "off"]).default("on"),
   ORDER_TIMERS_INTERVAL_MS: z.coerce.number().int().min(1000).default(60_000),
+  DEMO_LOGIN: z.enum(["on", "off"]).default("off"),
   // Name used in the claim DM we send to Instagram sellers.
   APP_NAME: z.string().min(1).default("Campus Marketplace"),
 });

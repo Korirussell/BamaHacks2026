@@ -7,7 +7,7 @@ import { integrationsRoutes } from "./routes/integrations.js";
 import { jobsRoutes } from "./routes/jobs.js";
 import { scheduleImportRoutes } from "./routes/schedule-import.js";
 import { transcriptRoutes } from "./routes/transcripts.js";
-import { authRoutes, supabaseSchoolLookup, type SchoolLookup } from "./routes/auth.js";
+import { authRoutes, devLoginRoutes, supabaseDemoLogin, supabaseSchoolLookup, type DemoLogin, type SchoolLookup } from "./routes/auth.js";
 import { academicsRoutes } from "./routes/academics.js";
 import { mediaRoutes } from "./routes/media.js";
 import { meRoutes } from "./routes/me.js";
@@ -65,6 +65,8 @@ export interface AppDeps {
   groupme: { secret: string | null; schoolId: string };
   instagramWebhookToken: string | null;
   log: boolean;
+  demoLogin: boolean;
+  mintDemoLogin: DemoLogin;
 }
 
 /** Builds the app. Tests pass fakes; index.ts passes the real Supabase pieces. */
@@ -86,6 +88,8 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     groupme = { secret: null, schoolId: "00000000-0000-4000-a000-000000000001" },
     instagramWebhookToken = null,
     log = true,
+    demoLogin = false,
+    mintDemoLogin = supabaseDemoLogin,
   } = deps;
 
   // WEB_ORIGIN may list several origins (comma-separated, e.g. localhost and the Vercel deploy); the first is the app URL in links.
@@ -129,6 +133,8 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     .route("/", syllabiRoutes(verify))
     .route("/", studyGroupsRoutes(verify))
     .route("/", notificationsRoutes(verify));
+
+  if (demoLogin) api.route("/dev", devLoginRoutes(mintDemoLogin));
 
   const app = new Hono();
   if (log) app.use(logger());

@@ -75,6 +75,7 @@ const app = createApp({
   appName: config.APP_NAME,
   groupme: { secret: config.GROUPME_WEBHOOK_SECRET || null, schoolId: config.GROUPME_SCHOOL_ID },
   instagramWebhookToken: config.INSTAGRAM_WEBHOOK_VERIFY_TOKEN || null,
+  demoLogin: config.DEMO_LOGIN === "on",
 });
 
 serve({ fetch: app.fetch, port: config.PORT }, (info) => {
