@@ -3,6 +3,8 @@ import type { ExternalPost } from "../adapters/ports.js";
 // Pure pieces of the Instagram pipeline: which tagged posts are new, what they become, and the
 // public replies we leave on them. Instagram's rules: we only read posts that tag our business
 // account, and we only answer in public (a business can't DM someone who hasn't written first).
+// Stories mode reads the seller account's own stories and DMs the seller, but only inside the
+// 24 h window the seller opened by messaging us first.
 
 /** A post that tagged our account, as the Graph API returns it. */
 export interface TaggedMedia {
@@ -17,7 +19,8 @@ export interface TaggedMedia {
 /** One step of an ingest, for the admin "live sources" feed. */
 export interface PipelineEvent {
   at: string;
-  step: "detected" | "photos_saved" | "identified" | "matched_courses" | "listed" | "notified" | "replied" | "reply_failed" | "failed";
+  step: "detected" | "photos_saved" | "identified" | "matched_courses" | "listed" | "notified" | "replied" | "reply_failed" | "failed"
+    | "dm_sent" | "dm_failed" | "dm_window_closed";
   text: string;
 }
 
@@ -47,4 +50,24 @@ export function offerReply(input: { handle: string; offerCents: number | null; c
   const offer = input.offerCents !== null ? ` offered ${dollars(input.offerCents)}` : " wants it";
   const who = input.courseCode ? `A ${input.courseCode} student` : "A UA student";
   return `@${input.handle} ${who}${offer}! Claim your listing with your UA email to accept and get paid: ${input.url}`;
+}
+
+/** The same text as a DM: no leading @handle, since it goes straight to the seller. */
+export const asDm = (reply: string) => reply.replace(/^@\S+\s+/, "");
+
+/** Meta lets a business message someone only within 24 hours of that person's last message to it. */
+export const DM_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+export interface DmWindow {
+  open: boolean;
+  last_inbound_at: string | null;
+  expires_at: string | null;
+}
+
+/** Open while the seller's last message to us is under 24 h old. Our own messages don't extend it. */
+export function dmWindow(lastInboundAt: string | null, now = Date.now()): DmWindow {
+  const at = lastInboundAt ? Date.parse(lastInboundAt) : NaN;
+  if (!Number.isFinite(at)) return { open: false, last_inbound_at: null, expires_at: null };
+  const expires = at + DM_WINDOW_MS;
+  return { open: now < expires, last_inbound_at: new Date(at).toISOString(), expires_at: new Date(expires).toISOString() };
 }

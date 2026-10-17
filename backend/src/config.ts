@@ -32,18 +32,26 @@ const Env = z.object({
   ROOM_BOOKER: z.enum(["manual", "demo", "playwright"]).default("manual"),
   LIBCAL_PROFILE_DIR: z.string().min(1).default(".libcal-profile"),
   LIBCAL_HEADLESS: z.enum(["on", "off"]).default("on"),
+  // The running booking Chrome (`pnpm libcal browser`). Set it so bookings reuse its UA session.
+  LIBCAL_CDP_URL: optional,
   ROOM_BOOKING_URL: z.url().default("https://www.lib.ua.edu/"),
   // Live free Gorgas study rooms from UA's LibCal (read-only). "off" → no rooms are suggested.
   LIBCAL: z.enum(["on", "off"]).default("on"),
   // Marketplace: "demo" marks orders paid without a card until Stripe (step 10) lands.
   PAYMENTS: z.enum(["demo", "stripe"]).default("demo"),
   // Instagram: "graph" polls the posts that tag our business account and lists them automatically.
-  INSTAGRAM: z.enum(["off", "graph"]).default("off"),
+  // "stories" polls the seller account's own stories (its token) and DMs the seller from ours.
+  INSTAGRAM: z.enum(["off", "graph", "stories"]).default("off"),
   INSTAGRAM_ACCESS_TOKEN: optional,
+  // Stories mode: the seller account's own token (it reads its own stories), and optionally its username.
+  INSTAGRAM_SELLER_TOKEN: optional,
+  INSTAGRAM_SELLER_USERNAME: optional,
+  // The seller's Instagram-scoped id as our account sees it; looked up from our DM conversations if empty.
+  INSTAGRAM_SELLER_IGSID: optional,
   INSTAGRAM_USER_ID: optional,
   INSTAGRAM_GRAPH_URL: z.url().default("https://graph.instagram.com/v23.0"),
   INSTAGRAM_POLL_SECONDS: z.coerce.number().int().min(5).default(15),
-  // Public replies on the seller's post ("listed", then the claim link on the first offer).
+  // Public replies on the seller's post ("listed", then the claim link on the first offer); DMs in stories mode.
   INSTAGRAM_AUTO_REPLY: z.enum(["on", "off"]).default("on"),
   // Which school polled posts belong to (single-school MVP: the seeded UA school).
   INSTAGRAM_SCHOOL_ID: z.guid().default("00000000-0000-4000-a000-000000000001"),

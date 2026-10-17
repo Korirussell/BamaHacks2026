@@ -13,11 +13,33 @@ import { ResolveReq } from "../schemas/orders.js";
 import { claimUrlIn } from "../services/claims.js";
 import { settleOrder } from "../services/escrow.js";
 import { nextOrderStatus } from "../services/orders.js";
+import { DmWindowClosedError } from "../services/instagram-dm.js";
 import { pipelineEvent } from "../services/instagram.js";
 import { runIngest } from "../workers/ingest.js";
-import type { InstagramPoller } from "../workers/instagram-poller.js";
+import type { InstagramPoller, StoryDms } from "../workers/instagram-poller.js";
 
 const UNIQUE_VIOLATION = "23505";
+
+// Instagram allows 1000 bytes per DM; 1000 characters is close enough for a by-hand message.
+const DmReq = z.object({ text: z.string().trim().min(1).max(1000) });
+const ResendListedReq = z.object({ ingested_post_id: z.guid() });
+
+const storyDms = (instagram: InstagramPoller | null): StoryDms => {
+  if (!instagram?.dms) throw new ApiError(409, "INVALID_STATE", "DMs need INSTAGRAM=stories");
+  return instagram.dms;
+};
+
+/** A closed DM window is a 409 with the reason; any other Instagram failure says what Instagram said. */
+async function windowGated<T>(send: () => Promise<T>): Promise<T> {
+  try {
+    return await send();
+  } catch (err) {
+    if (err instanceof ApiError) throw err;
+    if (err instanceof DmWindowClosedError) throw new ApiError(409, "INVALID_STATE", err.message);
+    console.error("instagram DM failed", err);
+    throw new ApiError(500, "INTERNAL", `Instagram didn't take the DM: ${err instanceof Error ? err.message : "unknown error"}`);
+  }
+}
 
 const InviteRow = z.object({
   id: z.guid(), channel: z.enum(["instagram", "groupme", "facebook", "snapchat"]), handle: z.string(), profile_url: z.string().nullable(),
@@ -109,12 +131,32 @@ export const adminRoutes = (verify: TokenVerifier, identifier: TextbookIdentifie
   .get("/ingestion/feed", async (c) => c.json(page(await ingestionFeed(c.var.user.schoolId))))
 
   .get("/instagram/status", (c) => c.json(one(instagram?.status() ?? {
-    mode: "off", account: null, polling_every_s: 0, last_poll_at: null, next_poll_at: null, last_error: null, polls: 0, ingested: 0,
+    mode: "off", account: null, seller_account: null, polling_every_s: 0, last_poll_at: null, next_poll_at: null, last_error: null, polls: 0, ingested: 0, dm_window: null,
   })))
 
   .post("/instagram/poll", async (c) => {
-    if (!instagram) throw new ApiError(409, "INVALID_STATE", "Instagram polling is off (set INSTAGRAM=graph)");
+    if (!instagram) throw new ApiError(409, "INVALID_STATE", "Instagram polling is off (set INSTAGRAM=graph or INSTAGRAM=stories)");
     return c.json(one({ ...(await instagram.pollNow()), status: instagram.status() }));
+  })
+
+  // Stories mode: DM the seller by hand. Refused (409) unless the seller DMed us in the last 24 h.
+  .post("/instagram/dm", async (c) => {
+    const { text } = await parseBody(c, DmReq);
+    const dms = storyDms(instagram);
+    const sent = await windowGated(() => dms.send(text));
+    return c.json(one({ sent: true, message_id: sent.message_id, dm_window: dms.window() }));
+  })
+
+  .post("/instagram/dm-window/refresh", async (c) => {
+    const dms = storyDms(instagram);
+    return c.json(one(await dms.refreshWindow()));
+  })
+
+  .post("/instagram/dm/listed", async (c) => {
+    const { ingested_post_id } = await parseBody(c, ResendListedReq);
+    const dms = storyDms(instagram);
+    const { sent, event } = await windowGated(() => dms.resendListed(ingested_post_id));
+    return c.json(one({ sent, event, dm_window: dms.window() }));
   })
 
   .post("/ingested-posts", async (c) => {
