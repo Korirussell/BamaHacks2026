@@ -13,7 +13,9 @@ export const School = z.object({
   name: z.string(),
   domain: z.string(),
   center: LatLng,
+  timezone: z.string(),
   campus_mail_supported: z.boolean(),
+  tutor_min_grade: z.string(),
 });
 
 export const PageQuery = z.object({
