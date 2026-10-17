@@ -14,6 +14,8 @@ import { scheduleRoutes } from "./routes/schedule.js";
 import { tutoringRoutes } from "./routes/tutoring.js";
 import type { RoomBooker } from "./adapters/ports.js";
 import { manualRoomBooker } from "./adapters/stubs.js";
+import { handoffRoutes } from "./routes/handoffs.js";
+import { shipmentRoutes } from "./routes/shipments.js";
 
 export interface AppDeps {
   verify: TokenVerifier;
@@ -43,6 +45,8 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     .route("/", scheduleRoutes(verify))
     .route("/", scheduleImportRoutes(verify))
     .route("/", jobsRoutes(verify))
+    .route("/", handoffRoutes(verify))
+    .route("/", shipmentRoutes(verify))
     .route("/", tutoringRoutes(verify, rooms));
 
   const app = new Hono();
