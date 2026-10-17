@@ -1,0 +1,14 @@
+{
+  "tutors": [
+    { "id": "tu1", "user_id": "u_maya", "course": "CS 201", "grade": "A", "verified": true, "rate_cents": 2000, "rating": 4.9, "sessions": 23 },
+    { "id": "tu2", "user_id": "u_sam", "course": "MATH 125", "grade": "A-", "verified": true, "rate_cents": 1500, "rating": 4.7, "sessions": 11 }
+  ],
+  "rides": [
+    { "id": "r1", "driver_id": "u_dev", "from": "Tuscaloosa", "to": "Birmingham", "when": "Fri 3:00 PM", "seats_left": 2, "seats_total": 3, "price_cents": 1200 },
+    { "id": "r2", "driver_id": "u_maya", "from": "Tuscaloosa", "to": "Atlanta", "when": "Sun 10:00 AM", "seats_left": 1, "seats_total": 3, "price_cents": 2500 }
+  ],
+  "events": [
+    { "id": "e1", "name": "Home game vs. Tennessee", "when": "Sat Oct 24", "tickets": 18 },
+    { "id": "e2", "name": "Iron Bowl (away)", "when": "Sat Nov 28", "tickets": 6 }
+  ]
+}

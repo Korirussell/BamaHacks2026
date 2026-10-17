@@ -1,0 +1,20 @@
+{
+  "items": [
+    { "id": "w1", "label": "water bottle", "max_price_cents": 2000, "match_count": 2 },
+    { "id": "w2", "label": "TI-84", "max_price_cents": 7000, "match_count": 1 },
+    { "id": "w3", "label": "desk lamp", "max_price_cents": 3000, "match_count": 1 },
+    { "id": "w4", "label": "CS 201 book", "max_price_cents": 5000, "match_count": 1 }
+  ],
+  "for_you": [
+    { "listing_id": "l_owala", "wishlist_id": "w1", "reason": "Because you want a water bottle", "score": 91,
+      "breakdown": { "semantic_match": 0.92, "budget": "$15 of your $20 max ✓", "distance": "Ridgecrest · 4 min from your 2:00 class", "schedule": "You're both free Tue 3:30–5:00", "trust": "Reliable · 12 trades" } },
+    { "listing_id": "l_cs201", "wishlist_id": "w4", "reason": "Required for your CS 201", "score": 88,
+      "breakdown": { "semantic_match": 0.97, "budget": "$45 of your $50 max ✓", "distance": "Bevill · same building as your class", "schedule": "After CS 201 on MWF", "trust": "Top · 31 trades" } },
+    { "listing_id": "l_ti84", "wishlist_id": "w2", "reason": "Because you want a TI-84", "score": 84,
+      "breakdown": { "semantic_match": 0.99, "budget": "$60 of your $70 max ✓", "distance": "Shelby · 3 min", "schedule": "Free Wed 11:00–12:00", "trust": "Reliable · 6 trades" } },
+    { "listing_id": "l_lamp", "wishlist_id": "w3", "reason": "Because you want a desk lamp", "score": 79,
+      "breakdown": { "semantic_match": 0.86, "budget": "$25 of your $30 max ✓", "distance": "Tutwiler · 9 min", "schedule": "Free Thu after 4:00", "trust": "Reliable · 6 trades" } },
+    { "listing_id": "l_hydro", "wishlist_id": "w1", "reason": "Also a water bottle", "score": 71,
+      "breakdown": { "semantic_match": 0.88, "budget": "$18 of your $20 max ✓", "distance": "Paty · 10 min", "schedule": "Free Fri 1:00–2:00", "trust": "New · 1 trade" } }
+  ]
+}

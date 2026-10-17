@@ -1,0 +1,19 @@
+{
+  "detected": { "label": "Logitech MX Master 3S", "confidence": 0.94, "box": { "x": 0.18, "y": 0.22, "w": 0.62, "h": 0.52 } },
+  "attributes": ["Graphite", "Wireless", "USB-C", "Minor wear on left button"],
+  "category": "tech", "condition": "like_new",
+  "title": "Logitech MX Master 3S wireless mouse",
+  "description": "Graphite, USB-C charging, works perfectly. Minor wear on the left button. Comes with the USB receiver.",
+  "tags": ["mouse", "logitech", "wireless", "desk setup"],
+  "emoji": "🖱️", "tile": "mint",
+  "comps": [
+    { "source": "eBay sold avg", "price_cents": 4100 },
+    { "source": "FB Marketplace", "price_cents": 3000 },
+    { "source": "Handoff campus avg (12 sales)", "price_cents": 2700 },
+    { "source": "New (retail)", "price_cents": 9900 }
+  ],
+  "demand": { "wishlisted_this_week": 4, "seasonal_note": "Back-to-finals bump +8%", "score": 72 },
+  "price_model": { "base_cents": 4100, "condition_factor": 0.80, "student_discount": 0.85, "demand_factor": 1.08, "raw_cents": 3005,
+    "fast_cents": 2500, "fast_days": 1, "max_cents": 3200, "max_days": 5 },
+  "confidence": 0.94, "missing_fields": [], "model_note": "Claude vision + campus comps · 2.1 s"
+}

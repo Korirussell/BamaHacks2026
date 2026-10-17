@@ -1,0 +1,7 @@
+[
+  { "id": "n1", "title": "Kayla countered $65", "body": "Mini fridge · tap to respond", "deep_link": "/offers/t_fridge", "ago": "2m", "read": false },
+  { "id": "n2", "title": "@jackson.rides claimed the bike!", "body": "Your $200 offer is now live", "deep_link": "/listings/l_bike", "ago": "8m", "read": false },
+  { "id": "n3", "title": "New CS 201 textbook", "body": "Matches your wishlist · $45", "deep_link": "/listings/l_cs201", "ago": "1h", "read": true },
+{ "id": "n4", "title": "Maya wants your mouse · $25", "body": "Her money's ready. Tap to accept.", "deep_link": "/requests/br1", "ago": "now", "read": false },
+{ "id": "n5", "title": "Your Owala is ready", "body": "Locker 14 · Ridgecrest Lockers · code 4821", "deep_link": "/orders/o_owala", "ago": "now", "read": false }
+]

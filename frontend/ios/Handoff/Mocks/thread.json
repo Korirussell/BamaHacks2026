@@ -1,0 +1,9 @@
+{ "id": "t_fridge", "listing_id": "l_fridge", "buyer_id": "u_kori", "seller_id": "u_kayla", "status": "open", "expires_in_hours": 47,
+  "messages": [
+    { "id": "m1", "from": "me",     "kind": "offer",    "amount_cents": 5500, "text": "Would you take $55?", "at": "3:09 PM" },
+    { "id": "m2", "from": "them",   "kind": "counter",  "amount_cents": 7000, "text": "$70, it's barely used 🙏", "at": "3:10 PM" },
+    { "id": "m3", "from": "me",     "kind": "offer",    "amount_cents": 6200, "text": "Meet me at $62?", "at": "3:10 PM" },
+    { "id": "m4", "from": "them",   "kind": "counter",  "amount_cents": 6500, "text": "$65 and it's yours", "at": "3:11 PM" },
+    { "id": "m5", "from": "system", "kind": "accepted", "amount_cents": 6500, "text": "Kayla accepted $65 ✓", "at": "3:11 PM" }
+  ],
+  "agreed_cents": 6500 }

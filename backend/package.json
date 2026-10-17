@@ -11,6 +11,7 @@
     "test": "node --import tsx --test \"src/**/*.test.ts\"",
     "seed:demo": "tsx --env-file-if-exists=.env src/scripts/seed-demo.ts",
     "live-check": "tsx --env-file-if-exists=.env scripts/live-check.ts",
+    "smoke": "tsx --env-file-if-exists=.env scripts/smoke.ts",
     "libcal": "tsx --env-file-if-exists=.env scripts/libcal.ts"
   },
   "dependencies": {

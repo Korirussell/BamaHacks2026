@@ -27,6 +27,8 @@ const Env = z.object({
   GROUPME_BOT_TOKEN: optional,
   // Shared secret in the bot's callback URL (/api/v1/webhooks/groupme?token=...). Unset → every callback is rejected.
   GROUPME_WEBHOOK_SECRET: optional,
+  // Verify token for Meta's Instagram webhook handshake (/api/v1/webhooks/instagram). Unset → verification is refused.
+  INSTAGRAM_WEBHOOK_VERIFY_TOKEN: optional,
   // Which school the bot's groups belong to (single-school MVP: the seeded UA school).
   GROUPME_SCHOOL_ID: z.guid().default("00000000-0000-4000-a000-000000000001"),
   RESEND_API_KEY: optional,

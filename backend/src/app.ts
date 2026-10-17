@@ -63,6 +63,7 @@ export interface AppDeps {
   webOrigin: string;
   /** GroupMe bot callback: shared secret (null rejects all) and the school its groups belong to. */
   groupme: { secret: string | null; schoolId: string };
+  instagramWebhookToken: string | null;
   log: boolean;
 }
 
@@ -83,10 +84,13 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     appName = "Campus Marketplace",
     webOrigin = "http://localhost:3000",
     groupme = { secret: null, schoolId: "00000000-0000-4000-a000-000000000001" },
+    instagramWebhookToken = null,
     log = true,
   } = deps;
 
-  const market: MarketConfig = { feeBps, appUrl: webOrigin, appName, ...(instagram ? { outreach: instagram.outreach } : {}) };
+  // WEB_ORIGIN may list several origins (comma-separated, e.g. localhost and the Vercel deploy); the first is the app URL in links.
+  const origins = webOrigin.split(",").map((o) => o.trim()).filter(Boolean);
+  const market: MarketConfig = { feeBps, appUrl: origins[0] ?? webOrigin, appName, ...(instagram ? { outreach: instagram.outreach } : {}) };
 
   const api = new Hono()
     .get("/health", (c) => c.json({ data: { ok: true } }))
@@ -110,7 +114,7 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     .route("/", pushRoutes(verify))
     .route("/", tutoringRequestRoutes(verify))
     .route("/", ingestedPostsRoutes(verify))
-    .route("/webhooks", webhookRoutes({ identifier, groupmeSecret: groupme.secret, groupmeSchoolId: groupme.schoolId }))
+    .route("/webhooks", webhookRoutes({ identifier, groupmeSecret: groupme.secret, groupmeSchoolId: groupme.schoolId, instagramVerifyToken: instagramWebhookToken }))
     .route("/", ordersRoutes(verify, idempotency, payments))
     .route("/", stripeWebhookRoutes(stripeWebhooks))
     .route("/", handoffRoutes(verify, idempotency))
@@ -128,7 +132,7 @@ export function createApp(deps: Partial<AppDeps> = {}) {
 
   const app = new Hono();
   if (log) app.use(logger());
-  app.use("/api/*", cors({ origin: webOrigin }));
+  app.use("/api/*", cors({ origin: origins }));
   app.route("/api/v1", api);
 
   app.notFound((c) => errorResponse(c, new ApiError(404, "NOT_FOUND", "Route not found")));

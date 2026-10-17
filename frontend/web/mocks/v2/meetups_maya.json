@@ -1,0 +1,5 @@
+[
+  { "id": "mm1", "start_label": "Tue 12:15 PM", "start_iso": "2026-10-20T17:15:00Z", "place_id": "p_ferguson", "reason": "You're both free after 12:00 classes", "walk_minutes": { "me": 3, "them": 2 }, "score": 94 },
+  { "id": "mm2", "start_label": "Tue 3:30 PM",  "start_iso": "2026-10-20T20:30:00Z", "place_id": "p_rodgers",  "reason": "Safe zone, halfway between you", "walk_minutes": { "me": 5, "them": 5 }, "score": 89 },
+  { "id": "mm3", "start_label": "Wed 10:55 AM", "start_iso": "2026-10-21T15:55:00Z", "place_id": "p_gorgas",   "reason": "You both get out of class next door", "walk_minutes": { "me": 1, "them": 4 }, "score": 82 }
+]

@@ -1,0 +1,6 @@
+[
+  { "id": "mz1", "method": "locker", "start_label": "Pick up anytime after 6:00 PM", "start_iso": "2026-10-20T23:00:00Z", "place_id": "p_locker_ridgecrest", "reason": "Zoe lives 2 min away · no meetup needed", "walk_minutes": { "me": 6, "them": 2 }, "score": 95 },
+  { "id": "mz2", "method": "locker", "start_label": "Pick up anytime after 4:00 PM", "start_iso": "2026-10-20T21:00:00Z", "place_id": "p_locker_ferguson", "reason": "On your way to dinner", "walk_minutes": { "me": 3, "them": 7 }, "score": 88 },
+  { "id": "mz3", "method": "in_person", "start_label": "Tue 3:30 PM", "start_iso": "2026-10-20T20:30:00Z", "place_id": "p_rodgers", "reason": "Safe zone, you're both free", "walk_minutes": { "me": 5, "them": 6 }, "score": 84 },
+  { "id": "mz4", "method": "in_person", "start_label": "Tue 5:15 PM", "start_iso": "2026-10-20T22:15:00Z", "place_id": "p_ferguson", "reason": "On both your walks to dinner", "walk_minutes": { "me": 4, "them": 5 }, "score": 80 }
+]

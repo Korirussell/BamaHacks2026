@@ -1,0 +1,9 @@
+[
+  { "id": "p_bevill",   "name": "Bevill Building",        "kind": "class",          "is_safe_zone": false, "map": { "x": 8,  "y": 13, "w": 25, "h": 7 } },
+  { "id": "p_rodgers",  "name": "Rodgers Library",        "kind": "library",        "is_safe_zone": true,  "map": { "x": 56, "y": 9,  "w": 28, "h": 8 } },
+  { "id": "p_ferguson", "name": "Ferguson Center",        "kind": "student_center", "is_safe_zone": true,  "map": { "x": 34, "y": 28, "w": 29, "h": 7 } },
+  { "id": "p_shelby",   "name": "Shelby Hall",            "kind": "class",          "is_safe_zone": false, "map": { "x": 66, "y": 26, "w": 22, "h": 7 } },
+  { "id": "p_gorgas",   "name": "Gorgas Library",         "kind": "library",        "is_safe_zone": true,  "map": { "x": 12, "y": 40, "w": 26, "h": 7 } },
+  { "id": "p_uapd",     "name": "UA Police Department",   "kind": "police",         "is_safe_zone": true,  "map": { "x": 62, "y": 44, "w": 26, "h": 7 } },
+  { "id": "p_paty",     "name": "Paty Hall",              "kind": "dorm",           "is_safe_zone": false, "map": { "x": 40, "y": 52, "w": 20, "h": 6 } }
+]

@@ -16,7 +16,21 @@ export interface WebhookDeps {
   groupmeSecret: string | null;
   /** The school the GroupMe bot's groups belong to (GROUPME_SCHOOL_ID). */
   groupmeSchoolId: string;
+  /** INSTAGRAM_WEBHOOK_VERIFY_TOKEN; null refuses Meta's verification handshake. */
+  instagramVerifyToken?: string | null;
 }
+
+/** Instagram messaging webhook body. Only the fields we log; the rest is ignored. */
+const InstagramEvent = z.object({
+  entry: z.array(z.object({
+    id: z.string(),
+    messaging: z.array(z.object({
+      sender: z.object({ id: z.string() }),
+      recipient: z.object({ id: z.string() }),
+      message: z.object({ text: z.string().optional(), is_echo: z.boolean().optional() }).optional(),
+    })).optional(),
+  })).default([]),
+});
 
 /** GroupMe bot callback body (https://dev.groupme.com/tutorials/bots). Unknown fields are ignored. */
 export const GroupMeMessage = z.object({
@@ -47,6 +61,28 @@ function checkSecret(given: string | undefined, secret: string | null) {
 const CalendarConnection = z.object({ user_id: z.guid(), watch_channel_token: z.string().nullable() });
 
 export const webhookRoutes = (deps: WebhookDeps) => new Hono()
+  // Meta's subscription handshake: echo hub.challenge when the verify token matches.
+  .get("/instagram", (c) => {
+    const token = deps.instagramVerifyToken ?? null;
+    if (c.req.query("hub.mode") !== "subscribe" || !token || !safeEqual(c.req.query("hub.verify_token") ?? "", token)) {
+      throw new ApiError(403, "FORBIDDEN", "Invalid verify token");
+    }
+    return c.text(c.req.query("hub.challenge") ?? "");
+  })
+
+  // DMs to a subscribed account. For now we only log the sender's IGSID: it's what the Send API
+  // needs as recipient.id (INSTAGRAM_SELLER_IGSID), and webhooks are the only place it shows up.
+  // Nothing is written, so the unsigned body is harmless; check X-Hub-Signature-256 before acting on it.
+  .post("/instagram", async (c) => {
+    const parsed = InstagramEvent.safeParse(await c.req.json().catch(() => null));
+    for (const entry of parsed.success ? parsed.data.entry : []) {
+      for (const m of entry.messaging ?? []) {
+        console.log(`instagram webhook: account ${entry.id} ${m.message?.is_echo ? "sent" : "got"} a DM, sender=${m.sender.id} recipient=${m.recipient.id} text=${JSON.stringify(m.message?.text ?? "")}`);
+      }
+    }
+    return c.text("EVENT_RECEIVED");
+  })
+
   .post("/groupme", async (c) => {
     checkSecret(c.req.query("token"), deps.groupmeSecret);
     const parsed = GroupMeMessage.safeParse(await c.req.json().catch(() => null));

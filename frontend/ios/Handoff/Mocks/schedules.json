@@ -1,0 +1,12 @@
+{
+  "u_kori": [
+    { "course": "CS 201",   "days": ["mon","wed","fri"], "start": "14:00", "end": "15:15", "place_id": "p_bevill" },
+    { "course": "MATH 237", "days": ["mon","wed","fri"], "start": "10:00", "end": "10:50", "place_id": "p_gorgas" },
+    { "course": "CS 260",   "days": ["mon","wed"],       "start": "16:30", "end": "17:45", "place_id": "p_shelby" }
+  ],
+  "u_kayla": [
+    { "course": "CS 201",   "days": ["mon","wed","fri"], "start": "14:00", "end": "15:15", "place_id": "p_bevill" },
+    { "course": "BSC 114",  "days": ["mon","wed","fri"], "start": "11:00", "end": "11:50", "place_id": "p_shelby" },
+    { "course": "CH 102 lab","days": ["mon"],            "start": "17:30", "end": "19:00", "place_id": "p_shelby" }
+  ]
+}
