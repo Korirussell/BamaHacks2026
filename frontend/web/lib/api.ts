@@ -6,7 +6,8 @@ import type { Listing, Notification, Order } from './types';
 
 export const USE_MOCKS = process.env.NEXT_PUBLIC_USE_MOCKS !== 'false';
 // API origin with no /api/v1, the same convention as lib/real.ts and .env.example.
-const BASE = `${(process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8787').replace(/\/$/, '')}/api/v1`;
+// An empty NEXT_PUBLIC_API_BASE means this origin (API_PROXY_TARGET in next.config.ts).
+const BASE = `${(process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:8787').replace(/\/$/, '')}/api/v1`;
 const SESSION_KEY = 'handoff-demo-session';
 export const delay = (ms = 300 + Math.random() * 500) => new Promise((resolve) => setTimeout(resolve, ms));
 
