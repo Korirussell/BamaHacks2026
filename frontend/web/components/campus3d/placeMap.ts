@@ -12,6 +12,20 @@ export const PLACE_MAP: Record<string, { name?: string; green?: string; fallback
   p_locker_ferguson: { name: 'university of alabama student center', fallback: [-175, -278], offset: [30, 30] },
 };
 
+// Short display name per place id — used by the embed route's focus-only label mode (map-plan.md §3).
+export const PLACE_LABEL: Record<string, string> = {
+  p_bevill: 'Bevill Building',
+  p_rodgers: 'Rodgers Library',
+  p_ferguson: 'Ferguson Center',
+  p_shelby: 'Shelby Quad',
+  p_gorgas: 'Gorgas Library',
+  p_uapd: 'UAPD',
+  p_paty: 'Paty Hall',
+  p_ridgecrest: 'Ridgecrest',
+  p_locker_ridgecrest: 'Ridgecrest Locker',
+  p_locker_ferguson: 'Ferguson Locker',
+};
+
 export const KEY_LABELS = [
   'amelia gayle gorgas library', 'university of alabama student center', 'rodgers library', 'tom bevill building', 'denny chimes',
   'paty hall', 'ridgecrest east', 'lloyd hall', 'tutwiler', 'reese phifer', 'bidgood hall', 'presidents hall',

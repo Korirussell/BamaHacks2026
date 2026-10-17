@@ -11,14 +11,14 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import { useTheme } from 'next-themes';
-import { KEY_LABELS, LABEL_ALIAS, PLACE_MAP } from './placeMap';
+import { KEY_LABELS, LABEL_ALIAS, PLACE_LABEL, PLACE_MAP } from './placeMap';
 
 type Pt = [number, number];
 type Campus = { buildings: { id: number; name: string; h: number; pts: Pt[] }[]; roads: { w: number; pts: Pt[] }[]; greens: { name: string; kind: string; pts: Pt[] }[]; water: { pts: Pt[] }[] };
 export type Pin3D = { id: string; placeId: string; label: string; count?: number; emoji?: string };
 export type Pillar3D = { id: string; placeId: string; rank: number; label: string; selected?: boolean };
 export type Campus3DProps = {
-  mode: 'history' | 'meetup' | 'hero';
+  mode: 'history' | 'meetup' | 'hero' | 'focus';
   pins?: Pin3D[];
   pillars?: Pillar3D[];
   focusPlaceId?: string | null;
@@ -26,6 +26,18 @@ export type Campus3DProps = {
   onPillarClick?: (id: string) => void;
   replay?: { fromPlaceId: string; toPlaceId: string; key: number } | null;
   onReplayEnd?: () => void;
+  /** Force light/dark instead of reading next-themes (used by the embed route, map-plan.md §3). */
+  theme?: 'light' | 'dark';
+  /** false disables OrbitControls + auto-rotate and switches the canvas to frameloop="demand". */
+  interactive?: boolean;
+  /** false hides all building sticker labels except the focused place. */
+  showLabels?: boolean;
+  /** Directional light shadow map resolution; embed route uses 1024 for mobile perf. */
+  shadowMapSize?: number;
+  /** Chromeless: no rounded corners / border / "drag to orbit" badge, for full-bleed iOS embedding. */
+  embedded?: boolean;
+  onReady?: () => void;
+  onError?: (message: string) => void;
 };
 
 const centroid = (pts: Pt[]): Pt => [pts.reduce((a, p) => a + p[0], 0) / pts.length, pts.reduce((a, p) => a + p[1], 0) / pts.length];
@@ -168,13 +180,19 @@ function Label({ text, y = 20, onClick }: { text: string; y?: number; onClick?: 
   );
 }
 
-function KeyLabels({ data }: { data: Campus }) {
+function KeyLabels({ data, showLabels, focusPlaceId }: { data: Campus; showLabels: boolean; focusPlaceId?: string | null }) {
   const items = useMemo(() => {
     const seen = new Set<string>();
     return data.buildings
       .filter(b => { const n = b.name.toLowerCase(); const k = KEY_LABELS.find(k => n.includes(k)); if (!k || seen.has(k) || k === 'denny chimes') return false; seen.add(k); return true; })
       .map(b => ({ id: b.id, p: centroid(b.pts), h: b.h, name: LABEL_ALIAS[KEY_LABELS.find(k => b.name.toLowerCase().includes(k))!] ?? b.name }));
   }, [data]);
+  if (!showLabels) {
+    // labels=0 (map-plan.md §3): hide every building label except the one the map is focused on.
+    if (!focusPlaceId) return null;
+    const pos = placePosition(data, focusPlaceId);
+    return <group position={[pos.x, 0, pos.z]}><Label text={PLACE_LABEL[focusPlaceId] ?? focusPlaceId} y={pos.y + 10} /></group>;
+  }
   return <>{items.map(i => <group key={i.id} position={[i.p[0], 0, i.p[1]]}><Label text={i.name} y={i.h + 10} /></group>)}</>;
 }
 
@@ -289,7 +307,7 @@ function CameraRig({ focus, intro, far }: { focus: THREE.Vector3 | null; intro: 
 }
 
 function Scene(props: Campus3DProps & { data: Campus; dark: boolean }) {
-  const { data, dark, pins = [], pillars = [], focusPlaceId, replay, onReplayEnd, onPinClick, onPillarClick } = props;
+  const { data, dark, pins = [], pillars = [], focusPlaceId, replay, onReplayEnd, onPinClick, onPillarClick, interactive = true, showLabels = true, shadowMapSize = 2048 } = props;
   const c = palette(dark);
   const [interacted, setInteracted] = useState(false);
   const focus = useMemo(() => (focusPlaceId ? placePosition(data, focusPlaceId).setY(0) : null), [data, focusPlaceId]);
@@ -306,23 +324,24 @@ function Scene(props: Campus3DProps & { data: Campus; dark: boolean }) {
   return (
     <>
       <hemisphereLight args={[dark ? '#6b6080' : '#ffffff', dark ? '#1F2A24' : '#B9F0D0', dark ? 0.9 : 1.1]} />
-      <directionalLight position={[-500, 800, 400]} intensity={dark ? 0.6 : 1.1} castShadow shadow-mapSize={[2048, 2048]} shadow-camera-left={-1200} shadow-camera-right={1200} shadow-camera-top={1200} shadow-camera-bottom={-1200} shadow-camera-far={3000} />
+      <directionalLight position={[-500, 800, 400]} intensity={dark ? 0.6 : 1.1} castShadow shadow-mapSize={[shadowMapSize, shadowMapSize]} shadow-camera-left={-1200} shadow-camera-right={1200} shadow-camera-top={1200} shadow-camera-bottom={-1200} shadow-camera-far={3000} />
       <Ground data={data} dark={dark} />
       <Buildings data={data} dark={dark} />
       <Landmarks data={data} dark={dark} />
-      {props.mode !== 'hero' && <KeyLabels data={data} />}
+      {props.mode !== 'hero' && <KeyLabels data={data} showLabels={showLabels} focusPlaceId={focusPlaceId} />}
       {pins.map(p => <PinMesh key={p.id} pin={p} pos={placePosition(data, p.placeId)} color={c.crimson} active={focusPlaceId === p.placeId} onClick={() => onPinClick?.(p.id)} />)}
       {pillars.map(p => <Pillar key={p.id} p={p} pos={placePosition(data, p.placeId)} color={c.crimson} onClick={() => onPillarClick?.(p.id)} />)}
       {replay && <Football key={replay.key} from={placePosition(data, replay.fromPlaceId)} to={placePosition(data, replay.toPlaceId)} onEnd={onReplayEnd} />}
       <OrbitControls
         makeDefault
+        enabled={interactive}
         enableDamping
         dampingFactor={0.08}
         minPolarAngle={(25 * Math.PI) / 180}
         maxPolarAngle={(65 * Math.PI) / 180}
         minDistance={250}
         maxDistance={2200}
-        autoRotate={!interacted && !focus && !pillarFocus}
+        autoRotate={interactive && !interacted && !focus && !pillarFocus}
         autoRotateSpeed={0.3}
         onStart={() => setInteracted(true)}
       />
@@ -340,10 +359,19 @@ export default function Campus3D(props: Campus3DProps & { fallback?: React.React
   const { resolvedTheme } = useTheme();
   const [gl, setGl] = useState<boolean | null>(null);
   useEffect(() => setGl(hasWebGL()), []);
-  const dark = resolvedTheme === 'dark';
+  const dark = props.theme ? props.theme === 'dark' : resolvedTheme === 'dark';
+  const { onReady, onError, embedded, interactive = true } = props;
+  // Guard with refs (not just effect deps) so a non-memoized onReady/onError prop from the
+  // caller can't make these re-fire on every unrelated re-render once the condition is already true.
+  const firedReady = useRef(false);
+  const firedGlError = useRef(false);
+  const firedDataError = useRef(false);
+  useEffect(() => { if (gl === false && !firedGlError.current) { firedGlError.current = true; onError?.('WebGL unavailable'); } }, [gl, onError]);
+  useEffect(() => { if (err && !firedDataError.current) { firedDataError.current = true; onError?.('Failed to load campus data'); } }, [err, onError]);
+  useEffect(() => { if (data && gl && !firedReady.current) { firedReady.current = true; onReady?.(); } }, [data, gl, onReady]);
   if (gl === false || err) return <>{props.fallback}</>;
   return (
-    <div className="stk relative h-full w-full overflow-hidden rounded-[24px]" style={{ background: dark ? '#161213' : '#E8F7EE' }}>
+    <div className={`stk relative h-full w-full overflow-hidden ${embedded ? '' : 'rounded-[24px]'}`} style={{ background: dark ? '#161213' : '#E8F7EE' }}>
       {!data && (
         <div className="absolute inset-0 z-10 flex items-center justify-center">
           <div className="stk-sm rounded-[18px] bg-card px-5 py-4 text-center">
@@ -353,14 +381,14 @@ export default function Campus3D(props: Campus3DProps & { fallback?: React.React
         </div>
       )}
       {data && gl && (
-        <Canvas flat shadows dpr={[1, 2]} camera={{ fov: 35, near: 5, far: 9000, position: [-1600, 2200, 2400] }} onCreated={({ gl }) => gl.setClearColor(dark ? '#161213' : '#E8F7EE')}>
+        <Canvas flat shadows dpr={[1, 2]} frameloop={interactive ? 'always' : 'demand'} camera={{ fov: 35, near: 5, far: 9000, position: [-1600, 2200, 2400] }} onCreated={({ gl }) => gl.setClearColor(dark ? '#161213' : '#E8F7EE')}>
           <fog attach="fog" args={[dark ? '#161213' : '#E8F7EE', 3200, 6500]} />
           <Suspense fallback={null}>
             <Scene {...props} data={data} dark={dark} />
           </Suspense>
         </Canvas>
       )}
-      <span className="pointer-events-none absolute bottom-3 left-4 rounded-full border-2 border-ink bg-card px-2.5 py-1 text-[10.5px] font-extrabold uppercase">University of Alabama · drag to orbit</span>
+      {!embedded && <span className="pointer-events-none absolute bottom-3 left-4 rounded-full border-2 border-ink bg-card px-2.5 py-1 text-[10.5px] font-extrabold uppercase">University of Alabama · drag to orbit</span>}
     </div>
   );
 }

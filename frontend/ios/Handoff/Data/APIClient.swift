@@ -3,6 +3,8 @@ import Foundation
 enum Config {
     static let useMocks = true
     static let apiBaseURL = URL(string: "http://localhost:8787/api/v1")!
+    /// web/app/embed/campus (map-plan.md §4). Simulator default; swap to a Vercel https URL for a physical-device demo.
+    static let mapBaseURL = URL(string: "http://localhost:3000")!
 }
 
 protocol APIClient {

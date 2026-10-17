@@ -35,16 +35,19 @@ struct MeetupView: View {
     private var current: MeetupSuggestion? { meetups.first { $0.id == selected } }
 
     var body: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .bottom) {
-                StickerMapView(places: store.places, meetups: meetups, selected: selected)
-                    .frame(height: geo.size.height * 0.5 + 40)
-                    .frame(maxHeight: .infinity, alignment: .top)
-                    .ignoresSafeArea(edges: .top)
-
-                panel
-                    .frame(height: geo.size.height * 0.62)
-            }
+        MapContainer(mode: .meetup, dataKey: context.fixture, interactive: true,
+                     selectedPillarId: selected.isEmpty ? nil : selected,
+                     onPillarTap: { id in
+                         guard locked == nil, !waiting else { return }
+                         Haptics.tap()
+                         withAnimation(.spring(duration: 0.3)) { selected = id }
+                     },
+                     fallback: {
+                         StickerMapView(places: store.places,
+                                        pins: meetups.map { .init(id: $0.id, placeId: $0.placeId) },
+                                        selected: selected)
+                     })
+            .ignoresSafeArea()
             .overlay(alignment: .topLeading) {
                 Button { dismiss() } label: {
                     Image(systemName: "xmark").font(.system(size: 15, weight: .heavy))
@@ -57,7 +60,14 @@ struct MeetupView: View {
                 .buttonStyle(PressableStyle())
                 .padding(.leading, 16).padding(.top, 4)
             }
-        }
+            .sheet(isPresented: .constant(true)) {
+                panel
+                    .presentationDetents([.medium, .large])
+                    .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+                    .presentationDragIndicator(.visible)
+                    .presentationCornerRadius(28)
+                    .interactiveDismissDisabled()
+            }
         .background(Color.hoBg.ignoresSafeArea())
         .task {
             if meetups.isEmpty {
@@ -81,8 +91,6 @@ struct MeetupView: View {
 
     private var panel: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Capsule().fill(Color.hoSoft.opacity(0.5)).frame(width: 40, height: 5)
-                .frame(maxWidth: .infinity)
             SheetTitle(kicker: "Deal at \(context.isKayla ? Money.format(store.order?.amountCents ?? 6500) : context.amountLabel) 🤝",
                        title: Copy.meetupTitle)
             if context.waitForPartner && locked == nil {
@@ -141,16 +149,11 @@ struct MeetupView: View {
                     .disabled(current == nil)
             }
         }
+        .frame(maxHeight: .infinity, alignment: .top)
         .padding(.horizontal, 18)
         .padding(.top, 10)
         .padding(.bottom, 12)
-        .background(
-            UnevenRoundedRectangle(topLeadingRadius: 28, topTrailingRadius: 28)
-                .fill(Color.hoBg)
-                .overlay(UnevenRoundedRectangle(topLeadingRadius: 28, topTrailingRadius: 28)
-                    .stroke(Color.hoInk, lineWidth: 2))
-                .ignoresSafeArea(edges: .bottom)
-        )
+        .background(Color.hoBg.ignoresSafeArea(edges: .bottom))
     }
 
     /// "3:30 PM" → "3:30", "Tue 12:15 PM" → "Tue 12:15".
@@ -214,15 +217,30 @@ struct SpotRow: View {
     }
 }
 
+/// Native flat map — the web-map fallback everywhere (map-plan.md §5) and the standalone
+/// map used inline in the meetup sheet before that.
 struct StickerMapView: View {
+    /// Decoupled from `MeetupSuggestion` so this same view can plot history pins, locker pins, etc.
+    struct PinRef: Identifiable { let id: String; let placeId: String }
+
     let places: [Place]
-    let meetups: [MeetupSuggestion]
-    let selected: String
+    let pins: [PinRef]
+    var selected: String = ""
+    /// When set: ignore `pins`/`selected` and render one place framed up close, camera-on-it style.
+    var focusPlaceId: String? = nil
 
     var body: some View {
+        if let focusPlaceId, let place = places.first(where: { $0.id == focusPlaceId }) {
+            focusedView(place)
+        } else {
+            campusGrid
+        }
+    }
+
+    private var campusGrid: some View {
         GeometryReader { geo in
             let w = geo.size.width, h = geo.size.height
-            let sel = meetups.first { $0.id == selected }.flatMap { m in places.first { $0.id == m.placeId } }
+            let sel = pins.first { $0.id == selected }.flatMap { m in places.first { $0.id == m.placeId } }
             ZStack(alignment: .topLeading) {
                 Color.hoMapGround
                 Canvas { ctx, size in
@@ -250,10 +268,10 @@ struct StickerMapView: View {
                         .background(RoundedRectangle(cornerRadius: 6).fill(Color.hoShadow).offset(x: 3, y: 3))
                         .offset(x: r.minX, y: r.minY)
                 }
-                ForEach(Array(meetups.enumerated()), id: \.element.id) { i, m in
+                ForEach(Array(pins.enumerated()), id: \.element.id) { i, m in
                     if let p = places.first(where: { $0.id == m.placeId }) {
                         let r = rect(p, w, h)
-                        Pin(number: i + 1)
+                        CampusPinMarker(number: i + 1)
                             .scaleEffect(m.id == selected ? 1.15 : 1, anchor: .bottom)
                             .animation(.spring(duration: 0.3), value: selected)
                             .position(x: r.midX, y: r.minY - 18)
@@ -269,6 +287,23 @@ struct StickerMapView: View {
         .clipped()
     }
 
+    private func focusedView(_ place: Place) -> some View {
+        ZStack {
+            Color.hoMapGround
+            VStack(spacing: 10) {
+                CampusPinMarker(number: nil)
+                Text(place.name.uppercased())
+                    .font(.system(size: 12, weight: .heavy))
+                    .foregroundStyle(Color.hoInk)
+                    .padding(.horizontal, 10).padding(.vertical, 6)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.hoCard))
+                    .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.hoInk, lineWidth: 2))
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.hoShadow).offset(x: 3, y: 3))
+            }
+        }
+        .clipped()
+    }
+
     // Places only use the top ~60% of the box; spread them over the visible map area.
     private func rect(_ p: Place, _ w: CGFloat, _ h: CGFloat) -> CGRect {
         let top: CGFloat = 70, usable = h - top - 10
@@ -279,8 +314,8 @@ struct StickerMapView: View {
     }
 }
 
-private struct Pin: View {
-    let number: Int
+struct CampusPinMarker: View {
+    var number: Int?
     var body: some View {
         ZStack {
             Image(systemName: "drop.fill")
@@ -296,9 +331,11 @@ private struct Pin: View {
                         .foregroundStyle(Color.hoInk)
                         .frame(width: 30, height: 38)
                 )
-            Text("\(number)")
-                .font(.system(size: 13, weight: .heavy)).foregroundStyle(.white)
-                .offset(y: -4)
+            if let number {
+                Text("\(number)")
+                    .font(.system(size: 13, weight: .heavy)).foregroundStyle(.white)
+                    .offset(y: -4)
+            }
         }
     }
 }

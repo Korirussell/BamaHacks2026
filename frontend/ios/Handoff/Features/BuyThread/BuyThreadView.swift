@@ -41,6 +41,7 @@ struct BuyThreadView: View {
     @State private var reviewing = false
     @State private var pickedUp = false
     @State private var started = false
+    @State private var showFullMap = false
 
     private var listing: Listing? { store.listing(listingId) }
     private var seller: UserPublic? { listing?.sellerId.flatMap { store.users[$0] } }
@@ -81,6 +82,22 @@ struct BuyThreadView: View {
             }
         }
         .sheet(isPresented: $reviewing) { ReviewSheet(partner: "Zoe") { reviewing = false } }
+        .fullScreenCover(isPresented: $showFullMap) {
+            MapContainer(mode: .meetup, dataKey: "meetups_zoe", interactive: true,
+                         selectedPillarId: selected.isEmpty ? nil : selected,
+                         isFullScreen: true,
+                         onClose: { showFullMap = false },
+                         onPillarTap: { id in
+                             Haptics.tap()
+                             withAnimation(.spring(duration: 0.3)) { selected = id }
+                         },
+                         fallback: {
+                             StickerMapView(places: store.places,
+                                            pins: spots.map { .init(id: $0.id, placeId: $0.placeId) },
+                                            selected: selected)
+                         })
+                .ignoresSafeArea()
+        }
     }
 
     private var header: some View {
@@ -141,6 +158,15 @@ struct BuyThreadView: View {
     private var spotPicker: some View {
         VStack(alignment: .leading, spacing: 10) {
             SheetTitle(kicker: "Pick the spot", title: "Where should Zoe hand it off?")
+            MapContainer(mode: .meetup, dataKey: "meetups_zoe", interactive: false,
+                         selectedPillarId: selected.isEmpty ? nil : selected,
+                         fallback: {
+                             StickerMapView(places: store.places,
+                                            pins: spots.map { .init(id: $0.id, placeId: $0.placeId) },
+                                            selected: selected)
+                         })
+                .frame(height: 200)
+                .onTapGesture { showFullMap = true }
             ForEach(Array(spots.enumerated()), id: \.element.id) { i, m in
                 SpotRow(index: i + 1, meetup: m, place: store.place(m.placeId), selected: m.id == selected)
                     .onTapGesture {
@@ -251,10 +277,18 @@ struct LockerCard: View {
     let placeName: String
     let done: Bool
     var onPickedUp: () -> Void
+    @Environment(AppStore.self) private var store
     @State private var openedAt = Date.now
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
+            MapContainer(mode: .focus, dataKey: nil, interactive: false,
+                         focusPlaceId: locker.placeId,
+                         fallback: {
+                             StickerMapView(places: store.places, pins: [], focusPlaceId: locker.placeId)
+                         })
+                .frame(height: 180)
+
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(Copy.lockerReady).font(.display(21)).foregroundStyle(Color.hoInk)

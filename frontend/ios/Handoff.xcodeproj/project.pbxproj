@@ -29,14 +29,18 @@
 		6AEBB8EB72E6DB55AFB80090 /* history.json in Resources */ = {isa = PBXBuildFile; fileRef = 85AA4F9A59E47988192F70DC /* history.json */; };
 		6C9597F394CCCB8DDFB33A5F /* RootTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03832C4380CCC471B0B4888D /* RootTabView.swift */; };
 		6F9E49EF06CED000C824FD60 /* screenshot_result.json in Resources */ = {isa = PBXBuildFile; fileRef = 7F407736D8A6E7C1520D8973 /* screenshot_result.json */; };
+		72281766F8C2168D0B88BEF8 /* MapWarmup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 476E00FA7AE0ED2858CFFB08 /* MapWarmup.swift */; };
 		72E5B1A8D12D16502D5D5C2B /* thread_zoe.json in Resources */ = {isa = PBXBuildFile; fileRef = 56CA3947BEBBA3F353EF9037 /* thread_zoe.json */; };
+		7BB76AB27D9E7CE6DE9C315C /* ListingCardV3.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F65C5BCD591715502844E89 /* ListingCardV3.swift */; };
 		836E051639659D45BE97BAAD /* ExploreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD43131C85D9E8762FF4D265 /* ExploreView.swift */; };
 		8CF7CC88C0E4C09D3E78F420 /* meetups_zoe.json in Resources */ = {isa = PBXBuildFile; fileRef = 27FE9A135F74F90E54ECD15A /* meetups_zoe.json */; };
 		8F9802B1FC37AE68D86135C1 /* photo_result.json in Resources */ = {isa = PBXBuildFile; fileRef = F55F5893C1499A25D820318A /* photo_result.json */; };
 		933F5B38C95014B64D26BE8F /* CalendarService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97F926BBAEF014C77F99EAB0 /* CalendarService.swift */; };
 		97AD90F6AEAAA444C9DA03C4 /* extras.json in Resources */ = {isa = PBXBuildFile; fileRef = 549A17D74651EF9186109F20 /* extras.json */; };
 		9E58D9614C5759EE5CBC9864 /* MeetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18CCD2564456CB55E5365252 /* MeetupView.swift */; };
+		9FDFD2416309C415A0FDB4D8 /* MapContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 324A71AE445C7041184B087A /* MapContainer.swift */; };
 		AAA9870F66516CDED4DF6576 /* AppStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8F0225AEEC829478ECFC7AF /* AppStore.swift */; };
+		AAC050CFB2B50CC0C3A407D7 /* CampusMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8F3F255A90747F581B3E550 /* CampusMapView.swift */; };
 		B403BF5274DE13FE8B8AFF04 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7927C3C8DEE8E6C14CA7D850 /* Theme.swift */; };
 		BB3A587D40036F386F6E5A5F /* locker.json in Resources */ = {isa = PBXBuildFile; fileRef = D02A1185A76E583367AA45B7 /* locker.json */; };
 		BCAA3FA9608DA2495D7C7A20 /* users.json in Resources */ = {isa = PBXBuildFile; fileRef = 0EF927E2CF6871E401224965 /* users.json */; };
@@ -61,15 +65,18 @@
 		03832C4380CCC471B0B4888D /* RootTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootTabView.swift; sourceTree = "<group>"; };
 		053F602B21BE9DEDC76DEF24 /* BuyThreadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BuyThreadView.swift; sourceTree = "<group>"; };
 		0EF927E2CF6871E401224965 /* users.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = users.json; sourceTree = "<group>"; };
+		0F65C5BCD591715502844E89 /* ListingCardV3.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListingCardV3.swift; sourceTree = "<group>"; };
 		0FB3212567ECFD276F3BD167 /* me.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = me.json; sourceTree = "<group>"; };
 		1448EF6F52399F5FDF7504E9 /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
 		18CCD2564456CB55E5365252 /* MeetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetupView.swift; sourceTree = "<group>"; };
 		27FE9A135F74F90E54ECD15A /* meetups_zoe.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = meetups_zoe.json; sourceTree = "<group>"; };
 		2A0DB8EA62C4E5BF3A94C59A /* RequestSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RequestSheet.swift; sourceTree = "<group>"; };
 		2AF551362DC41F7A16EEDFA2 /* places.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = places.json; sourceTree = "<group>"; };
+		324A71AE445C7041184B087A /* MapContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapContainer.swift; sourceTree = "<group>"; };
 		35561DF5E61065900DD04393 /* ActivityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityView.swift; sourceTree = "<group>"; };
 		381362DD1AF755756A1B88CA /* Copy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Copy.swift; sourceTree = "<group>"; };
 		4643D4BA981BA574AA1D3564 /* claim.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = claim.json; sourceTree = "<group>"; };
+		476E00FA7AE0ED2858CFFB08 /* MapWarmup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapWarmup.swift; sourceTree = "<group>"; };
 		502CF4A30BF68C4817B99B92 /* schedules.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = schedules.json; sourceTree = "<group>"; };
 		549A17D74651EF9186109F20 /* extras.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = extras.json; sourceTree = "<group>"; };
 		56CA3947BEBBA3F353EF9037 /* thread_zoe.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = thread_zoe.json; sourceTree = "<group>"; };
@@ -91,6 +98,7 @@
 		92FCC7DA8F8ECBBE43342F36 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		96F49CA00030FC3D934C7EA3 /* HaggleThreadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaggleThreadView.swift; sourceTree = "<group>"; };
 		97F926BBAEF014C77F99EAB0 /* CalendarService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarService.swift; sourceTree = "<group>"; };
+		A8F3F255A90747F581B3E550 /* CampusMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CampusMapView.swift; sourceTree = "<group>"; };
 		AE7BE03E536C956525984302 /* order.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = order.json; sourceTree = "<group>"; };
 		AF29F761A5FB27A720459F76 /* CelebrationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CelebrationView.swift; sourceTree = "<group>"; };
 		B995A9C372361F4007746EE6 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
@@ -165,6 +173,16 @@
 			path = Activity;
 			sourceTree = "<group>";
 		};
+		48949A23291C349F8B8DB0C6 /* Map */ = {
+			isa = PBXGroup;
+			children = (
+				A8F3F255A90747F581B3E550 /* CampusMapView.swift */,
+				324A71AE445C7041184B087A /* MapContainer.swift */,
+				476E00FA7AE0ED2858CFFB08 /* MapWarmup.swift */,
+			);
+			path = Map;
+			sourceTree = "<group>";
+		};
 		4B4B8D23F0C83A8E8B9E83F8 = {
 			isa = PBXGroup;
 			children = (
@@ -219,6 +237,7 @@
 			children = (
 				1448EF6F52399F5FDF7504E9 /* Components.swift */,
 				381362DD1AF755756A1B88CA /* Copy.swift */,
+				0F65C5BCD591715502844E89 /* ListingCardV3.swift */,
 				C265768E6429BB5B3747D39E /* Sticker.swift */,
 				7927C3C8DEE8E6C14CA7D850 /* Theme.swift */,
 			);
@@ -264,6 +283,7 @@
 				3A754EEFD24D34D3E5F020E5 /* Data */,
 				83C556EFAF3C22722BB4BFE6 /* Design */,
 				DBE6CA5C85B14499F2F271DE /* Features */,
+				48949A23291C349F8B8DB0C6 /* Map */,
 				BECEA6A3EF03F5AFF72B2BA5 /* Mocks */,
 				1B18415AA5BA505CFB46DF69 /* Models */,
 				73EDCE7F2536971B66B52B13 /* Resources */,
@@ -452,6 +472,7 @@
 				AAA9870F66516CDED4DF6576 /* AppStore.swift in Sources */,
 				51DD684F68B150BD4A67AC24 /* BuyThreadView.swift in Sources */,
 				933F5B38C95014B64D26BE8F /* CalendarService.swift in Sources */,
+				AAC050CFB2B50CC0C3A407D7 /* CampusMapView.swift in Sources */,
 				5FD6882C7253888A52D0CD12 /* CelebrationView.swift in Sources */,
 				E2EE3DCA71A43BC1D8C2E533 /* Components.swift in Sources */,
 				D0DADCA2AF25F8A612FF78B9 /* Copy.swift in Sources */,
@@ -460,7 +481,10 @@
 				1E001CC070EAF6C248D2D64D /* HaggleThreadView.swift in Sources */,
 				1338A2C6CD6F398B7D9F0FEB /* HandoffApp.swift in Sources */,
 				C2B1BB19C0A707A015B16D1A /* HandoffView.swift in Sources */,
+				7BB76AB27D9E7CE6DE9C315C /* ListingCardV3.swift in Sources */,
 				47A2A868F9BDC306A965A165 /* ListingDetailView.swift in Sources */,
+				9FDFD2416309C415A0FDB4D8 /* MapContainer.swift in Sources */,
+				72281766F8C2168D0B88BEF8 /* MapWarmup.swift in Sources */,
 				9E58D9614C5759EE5CBC9864 /* MeetupView.swift in Sources */,
 				396783794E6CB75D68749C25 /* Models.swift in Sources */,
 				BDF1900E9F3B4508A9064E24 /* NotificationsView.swift in Sources */,
@@ -483,14 +507,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = Handoff;
-				INFOPLIST_KEY_NSCalendarsWriteOnlyAccessUsageDescription = "Handoff adds your meetup time and place to your calendar.";
-				INFOPLIST_KEY_NSCameraUsageDescription = "Snap a photo of what you're selling.";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Pick a photo or screenshot to turn into a listing.";
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_FILE = "Generated-Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -631,14 +648,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = Handoff;
-				INFOPLIST_KEY_NSCalendarsWriteOnlyAccessUsageDescription = "Handoff adds your meetup time and place to your calendar.";
-				INFOPLIST_KEY_NSCameraUsageDescription = "Snap a photo of what you're selling.";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Pick a photo or screenshot to turn into a listing.";
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_FILE = "Generated-Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",

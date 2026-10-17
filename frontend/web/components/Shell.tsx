@@ -187,7 +187,8 @@ export function Shell({ children }: { children: ReactNode }) {
   const path = usePathname() || '/';
   const [menu, setMenu] = useState(false);
   // Claim page is a standalone, mobile-first page for sellers coming from an IG DM.
-  if (path.startsWith('/claim')) return <>{children}</>;
+  // Embed routes are loaded inside the iOS WKWebView and must be full-viewport chrome (map-plan.md §3).
+  if (path.startsWith('/claim') || path.startsWith('/embed')) return <>{children}</>;
   return (
     <>
       <div className="fixed left-[18px] top-5 z-40 hidden min-[900px]:block"><Logo /></div>

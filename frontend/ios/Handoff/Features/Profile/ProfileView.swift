@@ -2,6 +2,9 @@ import SwiftUI
 
 struct ProfileView: View {
     @Environment(AppStore.self) private var store
+    @State private var selectedPin = ""
+    @State private var replayTick = 0
+    @State private var celebration: Celebration?
 
     var body: some View {
         @Bindable var store = store
@@ -68,6 +71,7 @@ struct ProfileView: View {
         }
         .background(Color.hoBg.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
+        .celebrationOverlay($celebration)
     }
 
     @ViewBuilder private var historySection: some View {
@@ -79,6 +83,25 @@ struct ProfileView: View {
                     stat(Money.format(h.stats.savedCents), "saved")
                     stat("\(h.stats.avgWalkMin)m", "avg walk")
                 }
+
+                MapContainer(mode: .history, dataKey: "history", interactive: true,
+                             selectedPillarId: selectedPin.isEmpty ? nil : selectedPin,
+                             replayTick: replayTick,
+                             replayFrom: h.items.first?.placeId,
+                             replayTo: h.items.dropFirst().first?.placeId,
+                             onPinTap: { id in selectedPin = id },
+                             onReplayEnd: { _, _ in celebration = .touchdown(line: Copy.celebrateTDDone) },
+                             fallback: {
+                                 StickerMapView(places: store.places,
+                                                pins: h.items.map { .init(id: $0.id, placeId: $0.placeId) },
+                                                selected: selectedPin)
+                             })
+                    .frame(height: 220)
+                if h.items.count > 1 {
+                    Button("Replay ▶") { replayTick += 1 }
+                        .buttonStyle(.pill(.neutral, small: true))
+                }
+
                 ForEach(h.items) { item in
                     HStack(spacing: 12) {
                         Text(item.emoji).font(.system(size: 24))
@@ -102,6 +125,10 @@ struct ProfileView: View {
                     }
                     .padding(12)
                     .sticker(radius: 16, shadow: 3)
+                    .onTapGesture {
+                        Haptics.tap()
+                        withAnimation(.spring(duration: 0.3)) { selectedPin = item.id }
+                    }
                 }
             }
         }

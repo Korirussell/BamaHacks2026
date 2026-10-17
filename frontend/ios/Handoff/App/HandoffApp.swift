@@ -10,7 +10,10 @@ struct HandoffApp: App {
                 .environment(store)
                 .preferredColorScheme(store.theme.colorScheme)
                 .tint(.hoAccent)
-                .task { await store.bootstrap() }
+                .task {
+                    MapWarmup.shared.preload()
+                    await store.bootstrap()
+                }
         }
     }
 }
