@@ -3,12 +3,14 @@ import { z } from "zod";
 import type { TextbookIdentifier } from "../adapters/ports.js";
 import { ApiError } from "../lib/errors.js";
 import { one, page } from "../lib/respond.js";
-import { adminClient } from "../lib/supabase.js";
+import { adminClient, publicMediaUrl } from "../lib/supabase.js";
 import { parseBody, parseQuery } from "../lib/validate.js";
 import { requireUser, type AuthEnv, type TokenVerifier } from "../middleware/auth.js";
 import { AdminIngestPostReq, SellerInvite } from "../schemas/claims.js";
 import { claimUrlIn } from "../services/claims.js";
+import { pipelineEvent } from "../services/instagram.js";
 import { runIngest } from "../workers/ingest.js";
+import type { InstagramPoller } from "../workers/instagram-poller.js";
 
 const UNIQUE_VIOLATION = "23505";
 
@@ -31,6 +33,45 @@ const toInvite = (r: z.infer<typeof InviteRow>) => SellerInvite.parse({
   claimed_at: iso(r.claimed_at),
   expires_at: new Date(r.expires_at).toISOString(),
 });
+
+const FeedRow = z.object({
+  id: z.guid(), channel: z.string(), external_url: z.string(), author_handle: z.string(), caption: z.string(), media_ids: z.array(z.guid()),
+  posted_at: z.string(), status: z.string(), created_at: z.string(),
+  job: z.object({ status: z.string(), result: z.record(z.string(), z.unknown()).nullable(), error: z.string().nullable() }).nullable(),
+});
+const FeedResult = z.object({
+  listing_id: z.guid().optional(), status: z.string().optional(), title: z.string().optional(), price_cents: z.number().optional(),
+  isbn: z.string().nullable().optional(), course_codes: z.array(z.string()).optional(), notified: z.number().optional(),
+  identified_by: z.string().optional(), confidence: z.number().optional(),
+  events: z.array(z.object({ at: z.string(), step: z.string(), text: z.string() })).optional(),
+});
+
+/** Recent posts and every pipeline step, newest first: the admin "live sources" screen. */
+async function ingestionFeed(schoolId: string) {
+  const db = adminClient();
+  const posts = await db.from("ingested_posts").select("id, channel, external_url, author_handle, caption, media_ids, posted_at, status, created_at, job:jobs(status, result, error)")
+    .eq("school_id", schoolId).order("created_at", { ascending: false }).limit(30);
+  if (posts.error) throw posts.error;
+  const rows = z.array(FeedRow).parse(posts.data);
+  const firstPhotos = rows.flatMap((r) => r.media_ids.slice(0, 1));
+  const media = firstPhotos.length ? await db.from("media").select("id, bucket, path").in("id", firstPhotos).eq("bucket", "public-media") : { data: [], error: null };
+  if (media.error) throw media.error;
+  const photo = new Map(z.array(z.object({ id: z.guid(), bucket: z.string(), path: z.string() })).parse(media.data).map((m) => [m.id, publicMediaUrl(m.bucket, m.path)]));
+  return rows.map((r) => {
+    const result = FeedResult.safeParse(r.job?.result ?? {});
+    const res = result.success ? result.data : {};
+    return {
+      id: r.id, channel: r.channel, external_url: r.external_url, author_handle: r.author_handle, caption: r.caption,
+      posted_at: new Date(r.posted_at).toISOString(), received_at: new Date(r.created_at).toISOString(),
+      photo_url: r.media_ids[0] ? photo.get(r.media_ids[0]) ?? null : null,
+      status: r.job?.status === "running" ? "processing" : r.status,
+      listing: res.listing_id ? { id: res.listing_id, title: res.title ?? "", price_cents: res.price_cents ?? 0, status: res.status ?? "draft", isbn: res.isbn ?? null } : null,
+      course_codes: res.course_codes ?? [], notified: res.notified ?? 0,
+      identified_by: res.identified_by ?? null, confidence: res.confidence ?? null,
+      events: res.events ?? [], error: r.job?.error ?? null,
+    };
+  });
+}
 
 /** Team accounts only (profiles.is_admin, set by the seed). Mount after requireUser. */
 const requireAdmin: MiddlewareHandler<AuthEnv> = async (c, next) => {
@@ -57,8 +98,19 @@ async function existingPost(channel: string, url: string) {
   return data;
 }
 
-export const adminRoutes = (verify: TokenVerifier, identifier: TextbookIdentifier) => new Hono<AuthEnv>()
+export const adminRoutes = (verify: TokenVerifier, identifier: TextbookIdentifier, instagram: InstagramPoller | null = null) => new Hono<AuthEnv>()
   .use("/*", requireUser(verify), requireAdmin)
+
+  .get("/ingestion/feed", async (c) => c.json(page(await ingestionFeed(c.var.user.schoolId))))
+
+  .get("/instagram/status", (c) => c.json(one(instagram?.status() ?? {
+    mode: "off", account: null, polling_every_s: 0, last_poll_at: null, next_poll_at: null, last_error: null, polls: 0, ingested: 0,
+  })))
+
+  .post("/instagram/poll", async (c) => {
+    if (!instagram) throw new ApiError(409, "INVALID_STATE", "Instagram polling is off (set INSTAGRAM=graph)");
+    return c.json(one({ ...(await instagram.pollNow()), status: instagram.status() }));
+  })
 
   .post("/ingested-posts", async (c) => {
     const body = await parseBody(c, AdminIngestPostReq);
@@ -81,7 +133,8 @@ export const adminRoutes = (verify: TokenVerifier, identifier: TextbookIdentifie
     // Inline for now (a few hundred ms with the caption identifier); the job row is what clients poll.
     try {
       const result = await runIngest(postId, identifier);
-      const done = await db.from("jobs").update({ status: "succeeded", result }).eq("id", jobId);
+      const events = [pipelineEvent("detected", `Post from @${body.author_handle.replace(/^@+/, "")} sent in by the team`), ...result.events];
+      const done = await db.from("jobs").update({ status: "succeeded", result: { ...result, events } }).eq("id", jobId);
       if (done.error) throw done.error;
     } catch (err) {
       console.error("ingest_classify failed", postId, err);
