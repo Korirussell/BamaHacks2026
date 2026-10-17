@@ -33,7 +33,8 @@ test("request schemas accept contract examples and reject invalid examples", () 
 
   const offer = { kind: "cash", amount_cents: 3500, trade_listing_ids: [], fulfillment: "campus_mail" };
   assert.equal(CreateOfferReq.parse(offer).amount_cents, 3500);
-  invalid(CreateOfferReq, { ...offer, fulfillment: "digital_transfer" });
+  assert.equal(CreateOfferReq.parse({ ...offer, fulfillment: "digital_transfer" }).fulfillment, "digital_transfer"); // app-transfer tickets
+  invalid(CreateOfferReq, { ...offer, fulfillment: "teleport" });
   assert.equal(CounterOfferReq.parse({ amount_cents: 3000 }).amount_cents, 3000);
   invalid(CounterOfferReq, { amount_cents: -1 });
 
