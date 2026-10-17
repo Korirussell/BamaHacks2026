@@ -43,6 +43,8 @@ export const reviewsRoutes = (verify: TokenVerifier) => new Hono<AuthEnv>()
       school_id: schoolId, from_id: fromId, to_id: toId, context_type: "tutoring_session", context_id: session.id,
       stars: input.stars, on_time: input.on_time, as_described: input.as_described, comment: input.comment ?? null,
     }).select("id, from_id, to_id, context_type, context_id, stars, on_time, as_described, comment, created_at").single();
+    // The unique (from_id, context_type, context_id) index catches a double-submit that slips past the check above.
+    if (inserted.error?.code === "23505") throw new ApiError(409, "INVALID_STATE", "You already reviewed this session");
     if (inserted.error) throw inserted.error;
     const row = ReviewRow.parse(inserted.data);
     const users = await loadUsersPublic([fromId, toId], schoolId);
@@ -52,6 +54,9 @@ export const reviewsRoutes = (verify: TokenVerifier) => new Hono<AuthEnv>()
       id: row.id, from, to_user_id: row.to_id, context: { type: row.context_type, id: row.context_id }, stars: row.stars,
       on_time: row.on_time, as_described: row.as_described, comment: row.comment, created_at: row.created_at,
     });
-    await notify({ schoolId, userId: toId, type: "review.created", title: "New tutoring review", body: `${from.display_name} left you a ${row.stars}-star review`, deepLink: "/me/reviews", data: { review_id: row.id } });
+    await notify({
+      schoolId, userId: toId, type: "review.created", title: "New tutoring review",
+      body: `${from.display_name} left you a ${row.stars}-star review`, deepLink: `/users/${toId}/reviews`, data: { review_id: row.id },
+    });
     return c.json(one(review), 201);
   });

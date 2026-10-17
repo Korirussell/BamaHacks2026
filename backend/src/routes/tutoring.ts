@@ -66,20 +66,23 @@ export function applyTutorAvailability(free: FreeBlock[], availability: z.output
   return intersect(free, availabilityWindows(availability, from, to, tz)).map(({ start, end, a }) => ({ ...a, start, end }));
 }
 
-/** Each person's free time in [from, to): class schedule, Google Calendar busy time and sessions already on the books. */
-async function freeTimeFor(userIds: string[], schoolId: string, tz: string, from: number, to: number, applyAvailability = true) {
+/**
+ * Each person's free time in [from, to): class schedule, Google Calendar busy time and sessions already on the books.
+ * For ids in `tutorIds`, free time is also limited to the windows they declared in PUT /me/tutor-availability (if any).
+ */
+async function freeTimeFor(userIds: string[], schoolId: string, tz: string, from: number, to: number, tutorIds: string[] = []) {
   const [meetings, sessions, calendars, tutorProfiles] = await Promise.all([
     loadMeetingInputs(userIds, schoolId),
     loadSessionBusy(userIds, from, to),
     Promise.all(userIds.map((id) => freeBusy(id, from, to))),
-    loadTutorProfiles(userIds),
+    loadTutorProfiles(tutorIds),
   ]);
   return new Map(userIds.map((id, i) => {
     const google: BusyInterval[] = (calendars[i] ?? []).map((b) => ({ ...b, kind: "busy" }));
     const busy: BusyInterval[] = [...expandMeetings(meetings.get(id) ?? [], from, to), ...(sessions.get(id) ?? []), ...google];
     const free = freeBlocks(busy, from, to, tz);
-    const profile = tutorProfiles.profiles.get(id);
-    return [id, applyAvailability && profile ? applyTutorAvailability(free, profile.availability, from, to, tz) : free];
+    const profile = tutorIds.includes(id) ? tutorProfiles.profiles.get(id) : undefined;
+    return [id, profile ? applyTutorAvailability(free, profile.availability, from, to, tz) : free];
   }));
 }
 
@@ -166,7 +169,7 @@ export const tutoringRoutes = (verify: TokenVerifier, rooms: RoomBooker) => {
     const { week_of } = parseQuery(c, z.object({ week_of: z.iso.datetime() }));
     const from = Date.parse(week_of);
     const school = await loadSchool(c.var.user.schoolId);
-    const free = await freeTimeFor([c.var.user.id], c.var.user.schoolId, school.timezone, from, from + 7 * DAY, false);
+    const free = await freeTimeFor([c.var.user.id], c.var.user.schoolId, school.timezone, from, from + 7 * DAY);
     return c.json(one((free.get(c.var.user.id) ?? []).map((block) => ({ start: iso(block.start), end: iso(block.end), kind: "free" as const }))));
   });
 
@@ -229,7 +232,7 @@ export const tutoringRoutes = (verify: TokenVerifier, rooms: RoomBooker) => {
     const [tp, records, free, users] = await Promise.all([
       loadTutorProfiles(tutorIds),
       loadClassRecords(tutorIds, schoolId),
-      freeTimeFor([studentId, ...tutorIds], schoolId, school.timezone, from, to),
+      freeTimeFor([studentId, ...tutorIds], schoolId, school.timezone, from, to, tutorIds),
       loadUsersPublic(tutorIds, schoolId),
     ]);
     const fallback = { lat: school.center_lat, lng: school.center_lng };
