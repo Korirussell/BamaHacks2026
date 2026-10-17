@@ -154,6 +154,17 @@ const personas: Record<string, Persona> = {
 const db = adminClient();
 const ids = Object.values(personas).map((p) => p.id);
 
+const completedTutoringSessions = [
+  ["00000000-0000-4000-8000-000000000101", "00000000-0000-4000-9000-000000000002", "00000000-0000-4000-9000-000000000001", "2026-09-01T15:00:00.000Z", 5],
+  ["00000000-0000-4000-8000-000000000102", "00000000-0000-4000-9000-000000000002", "00000000-0000-4000-9000-000000000005", "2026-09-03T15:00:00.000Z", 5],
+  ["00000000-0000-4000-8000-000000000103", "00000000-0000-4000-9000-000000000002", "00000000-0000-4000-9000-000000000006", "2026-09-05T15:00:00.000Z", 5],
+  ["00000000-0000-4000-8000-000000000104", "00000000-0000-4000-9000-000000000002", "00000000-0000-4000-9000-000000000004", "2026-09-08T15:00:00.000Z", 5],
+  ["00000000-0000-4000-8000-000000000105", "00000000-0000-4000-9000-000000000002", "00000000-0000-4000-9000-000000000003", "2026-09-10T15:00:00.000Z", 5],
+  ["00000000-0000-4000-8000-000000000106", "00000000-0000-4000-9000-000000000002", "00000000-0000-4000-9000-000000000007", "2026-09-12T15:00:00.000Z", 4],
+  ["00000000-0000-4000-8000-000000000107", "00000000-0000-4000-9000-000000000003", "00000000-0000-4000-9000-000000000001", "2026-09-15T15:00:00.000Z", 5],
+  ["00000000-0000-4000-8000-000000000108", "00000000-0000-4000-9000-000000000003", "00000000-0000-4000-9000-000000000005", "2026-09-17T15:00:00.000Z", 4],
+] as const;
+
 async function run(label: string, query: PromiseLike<{ error: { message: string } | null }>) {
   const { error } = await query;
   if (error) throw new Error(`${label}: ${error.message}`);
@@ -228,6 +239,24 @@ async function seedPersona(p: Persona) {
   }
 }
 
+/** Fixed historical sessions give the tutoring demo stable, visible reputation. */
+async function seedTutoringReputation() {
+  const sessions = completedTutoringSessions.map(([id, tutor_id, student_id, start_at]) => {
+    const end_at = new Date(Date.parse(start_at) + 60 * 60 * 1000).toISOString();
+    return {
+      id, school_id: SCHOOL, tutor_id, student_id, course_id: course.CH101, start_at, end_at, price_cents: tutor_id === "00000000-0000-4000-9000-000000000002" ? 2500 : 1800,
+      location_kind: "virtual", location_name: null, safe_zone_id: null, meeting_url: "https://example.test/tutoring", room_booking_status: "not_needed",
+      status: "completed", waiting_on: null, history: [], notes: null,
+    };
+  });
+  await run("completed tutoring sessions", db.from("tutoring_sessions").insert(sessions));
+  const reviews = completedTutoringSessions.map(([context_id, to_id, from_id, , stars]) => ({
+    school_id: SCHOOL, from_id, to_id, context_type: "tutoring_session", context_id, stars,
+    on_time: true, as_described: true, comment: "Helpful tutoring session.",
+  }));
+  await run("tutoring reviews", db.from("reviews").insert(reviews));
+}
+
 async function printOtp(name: string) {
   const p = personas[name];
   if (!p) throw new Error(`Unknown persona "${name}". Pick one of: ${Object.keys(personas).join(", ")}`);
@@ -242,6 +271,7 @@ if (command === "otp") {
 } else {
   await resetDemoState();
   for (const p of Object.values(personas)) await seedPersona(p);
+  await seedTutoringReputation();
   console.log("Demo personas ready:");
   for (const [name, p] of Object.entries(personas)) console.log(`  ${name.padEnd(13)} ${p.email}  (${p.display_name})`);
   console.log(`\nSign in as one: pnpm seed:demo otp <name>`);

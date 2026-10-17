@@ -23,6 +23,7 @@ import type { MarketConfig } from "./db/market-actions.js";
 import { supabaseIdempotencyStore, type IdempotencyStore } from "./middleware/idempotency.js";
 import { handoffRoutes } from "./routes/handoffs.js";
 import { shipmentRoutes } from "./routes/shipments.js";
+import { reviewsRoutes } from "./routes/reviews.js";
 
 export interface AppDeps {
   verify: TokenVerifier;
@@ -71,7 +72,8 @@ export function createApp(deps: Partial<AppDeps> = {}) {
     .route("/", offersRoutes(verify, market))
     .route("/", ordersRoutes(verify, idempotency, payments))
     .route("/", handoffRoutes(verify, idempotency))
-    .route("/", shipmentRoutes(verify, idempotency));
+    .route("/", shipmentRoutes(verify, idempotency))
+    .route("/", reviewsRoutes(verify));
 
   const app = new Hono();
   if (log) app.use(logger());

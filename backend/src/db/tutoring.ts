@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { adminClient } from "../lib/supabase.js";
 import { ApiError } from "../lib/errors.js";
-import { TutoringSession } from "../schemas/tutoring.js";
+import { TutorAvailability, TutoringSession } from "../schemas/tutoring.js";
 import type { BusyInterval, MeetingInput } from "../services/availability.js";
 import type { Eligibility, GradeRecord } from "../services/tutoring.js";
 import { ClassMeetingRow, ClassRecordRow, CourseRow, toCourse, toMeetingInput } from "./academics.js";
@@ -14,7 +14,7 @@ const ts = z.string().transform((v) => new Date(v).toISOString());
 
 export const TutorProfileRow = z.object({
   user_id: z.guid(), school_id: z.guid(), enabled: z.boolean(), hourly_rate_cents: z.number().int(),
-  bio: z.string().nullable(), modes: z.array(Mode), open_to_requests: z.boolean(),
+  bio: z.string().nullable(), modes: z.array(Mode), open_to_requests: z.boolean(), availability: TutorAvailability,
 });
 export const TutorStatsRow = z.object({ user_id: z.guid(), rating: z.number(), review_count: z.number().int(), sessions_completed: z.number().int() });
 export const HistoryEntry = z.object({ by: Side, action: z.enum(["propose", "counter", "accept", "decline"]), start: z.string(), end: z.string(), at: z.string() });
@@ -98,7 +98,7 @@ export async function loadTutorProfiles(userIds: string[]) {
   if (!userIds.length) return empty;
   const db = adminClient();
   const [profiles, courses, stats] = await Promise.all([
-    db.from("tutor_profiles").select("user_id, school_id, enabled, hourly_rate_cents, bio, modes, open_to_requests").in("user_id", userIds),
+    db.from("tutor_profiles").select("user_id, school_id, enabled, hourly_rate_cents, bio, modes, open_to_requests, availability").in("user_id", userIds),
     db.from("tutor_courses").select("user_id, course:courses(*)").in("user_id", userIds),
     db.from("tutor_stats").select("*").in("user_id", userIds),
   ]);

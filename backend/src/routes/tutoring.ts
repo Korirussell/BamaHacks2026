@@ -13,10 +13,10 @@ import { one } from "../lib/respond.js";
 import { adminClient } from "../lib/supabase.js";
 import { parseBody, parseQuery } from "../lib/validate.js";
 import { requireUser, type AuthEnv, type TokenVerifier } from "../middleware/auth.js";
-import { CounterSessionReq, CreateSessionReq, PutTutorProfileReq, TutorsQuery } from "../schemas/tutoring.js";
-import { expandMeetings, freeBlocks, type BusyInterval } from "../services/availability.js";
+import { CounterSessionReq, CreateSessionReq, PutTutorProfileReq, TutorAvailability, TutorsQuery } from "../schemas/tutoring.js";
+import { expandMeetings, freeBlocks, intersect, type BusyInterval, type FreeBlock, type Interval } from "../services/availability.js";
 import { freeBusy } from "../services/google.js";
-import { DAY, MINUTE, iso } from "../services/time.js";
+import { DAY, MINUTE, iso, localDatesBetween, weekdayOf, zonedToUtc } from "../services/time.js";
 import {
   acceptSession, cancelSession, completeSession, counterSession, declineSession, findTutorMatches, priceFor,
   tutorEligibility, type Side, type SessionState, type TutorCandidate,
@@ -44,17 +44,42 @@ async function myTutorProfile(userId: string, schoolId: string) {
   return row ? toTutorProfile(row, tp.courses.get(userId) ?? [], eligibility, tp.stats.get(userId)) : null;
 }
 
+/** Expands a tutor's recurring and one-off availability into concrete allowed intervals. */
+export function availabilityWindows(availability: z.output<typeof TutorAvailability>, from: number, to: number, tz: string): Interval[] {
+  const recurring: Interval[] = [];
+  for (const date of localDatesBetween(from, to, tz)) {
+    for (const window of availability.recurring) {
+      if (!window.days.includes(weekdayOf(date))) continue;
+      const start = zonedToUtc(date, window.start, tz);
+      const end = zonedToUtc(date, window.end, tz);
+      if (end > from && start < to) recurring.push({ start: Math.max(start, from), end: Math.min(end, to) });
+    }
+  }
+  const oneOff = availability.one_off.map((block) => ({ start: Math.max(Date.parse(block.start), from), end: Math.min(Date.parse(block.end), to) }))
+    .filter((block) => block.end > block.start);
+  return [...recurring, ...oneOff].sort((a, b) => a.start - b.start);
+}
+
+/** Limits free blocks to the tutor's declared availability when they have declared any. */
+export function applyTutorAvailability(free: FreeBlock[], availability: z.output<typeof TutorAvailability>, from: number, to: number, tz: string): FreeBlock[] {
+  if (!availability.recurring.length && !availability.one_off.length) return free;
+  return intersect(free, availabilityWindows(availability, from, to, tz)).map(({ start, end, a }) => ({ ...a, start, end }));
+}
+
 /** Each person's free time in [from, to): class schedule, Google Calendar busy time and sessions already on the books. */
-async function freeTimeFor(userIds: string[], schoolId: string, tz: string, from: number, to: number) {
-  const [meetings, sessions, calendars] = await Promise.all([
+async function freeTimeFor(userIds: string[], schoolId: string, tz: string, from: number, to: number, applyAvailability = true) {
+  const [meetings, sessions, calendars, tutorProfiles] = await Promise.all([
     loadMeetingInputs(userIds, schoolId),
     loadSessionBusy(userIds, from, to),
     Promise.all(userIds.map((id) => freeBusy(id, from, to))),
+    loadTutorProfiles(userIds),
   ]);
   return new Map(userIds.map((id, i) => {
     const google: BusyInterval[] = (calendars[i] ?? []).map((b) => ({ ...b, kind: "busy" }));
     const busy: BusyInterval[] = [...expandMeetings(meetings.get(id) ?? [], from, to), ...(sessions.get(id) ?? []), ...google];
-    return [id, freeBlocks(busy, from, to, tz)];
+    const free = freeBlocks(busy, from, to, tz);
+    const profile = tutorProfiles.profiles.get(id);
+    return [id, applyAvailability && profile ? applyTutorAvailability(free, profile.availability, from, to, tz) : free];
   }));
 }
 
@@ -120,6 +145,7 @@ export const tutoringRoutes = (verify: TokenVerifier, rooms: RoomBooker) => {
   const app = new Hono<AuthEnv>()
     .use("/me/tutor-eligibility/*", requireUser(verify))
     .use("/me/tutor-profile/*", requireUser(verify))
+    .use("/me/tutor-availability/*", requireUser(verify))
     .use("/tutors/*", requireUser(verify))
     .use("/tutoring/*", requireUser(verify));
 
@@ -135,6 +161,26 @@ export const tutoringRoutes = (verify: TokenVerifier, rooms: RoomBooker) => {
   });
 
   app.get("/me/tutor-profile", async (c) => c.json(one(await myTutorProfile(c.var.user.id, c.var.user.schoolId))));
+
+  app.get("/me/tutor-availability/suggested", async (c) => {
+    const { week_of } = parseQuery(c, z.object({ week_of: z.iso.datetime() }));
+    const from = Date.parse(week_of);
+    const school = await loadSchool(c.var.user.schoolId);
+    const free = await freeTimeFor([c.var.user.id], c.var.user.schoolId, school.timezone, from, from + 7 * DAY, false);
+    return c.json(one((free.get(c.var.user.id) ?? []).map((block) => ({ start: iso(block.start), end: iso(block.end), kind: "free" as const }))));
+  });
+
+  app.put("/me/tutor-availability", async (c) => {
+    const availability = await parseBody(c, TutorAvailability);
+    const { id, schoolId } = c.var.user;
+    const db = adminClient();
+    const profile = await db.from("tutor_profiles").select("user_id").eq("user_id", id).eq("school_id", schoolId).maybeSingle();
+    if (profile.error) throw profile.error;
+    if (!profile.data) throw new ApiError(400, "VALIDATION", "Invalid request", { tutor_profile: "Set up your tutor profile first" });
+    const saved = await db.from("tutor_profiles").update({ availability }).eq("user_id", id).eq("school_id", schoolId);
+    if (saved.error) throw saved.error;
+    return c.json(one(await myTutorProfile(id, schoolId)));
+  });
 
   app.put("/me/tutor-profile", async (c) => {
     const input = await parseBody(c, PutTutorProfileReq);
