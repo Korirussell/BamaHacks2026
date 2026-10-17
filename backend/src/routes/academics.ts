@@ -9,6 +9,7 @@ import { requireUser, type AuthEnv, type TokenVerifier } from "../middleware/aut
 
 const CoursesQuery = z.object({ q: z.string().default("") });
 const ClassesQuery = z.object({ status: z.enum(["current", "past", "planned"]).optional() });
+const UpcomingQuery = z.object({ term: z.string().trim().min(1) });
 const CreateClassReq = z.object({ course_id: z.uuid(), term: z.string().min(1), status: z.enum(["current", "past", "planned"]), grade: z.string().nullable().optional() });
 
 // Free text goes inside PostgREST `.or()` filter strings, where , ( ) " and \ are syntax and % * are wildcards.
@@ -29,6 +30,7 @@ export const academicsRoutes = (verify: TokenVerifier) => new Hono<AuthEnv>()
   .use("/safe-zones/*", requireUser(verify))
   .use("/mail/*", requireUser(verify))
   .use("/me/classes/*", requireUser(verify))
+  .use("/me/upcoming-materials/*", requireUser(verify))
   .get("/courses", async (c) => {
     const { q } = parseQuery(c, CoursesQuery);
     const pattern = `%${filterText(q)}%`;
@@ -80,6 +82,20 @@ export const academicsRoutes = (verify: TokenVerifier) => new Hono<AuthEnv>()
     const inserted = await db.from("class_records").insert({ school_id: c.var.user.schoolId, user_id: c.var.user.id, course_id: input.course_id, term: input.term, status: input.status, grade: input.grade ?? null, grade_source: "self_reported", grade_verified: false }).select("*, course:courses(*)").single();
     if (inserted.error) throw inserted.error;
     return c.json(one(toClassRecord(ClassRecordRow.parse(inserted.data))));
+  })
+  // Textbooks for the classes you're taking (or planning) in `term`, so you know what to buy.
+  // on_wishlist / best_listing stay false / null until the wishlist and listings modules land.
+  .get("/me/upcoming-materials", async (c) => {
+    const { term } = parseQuery(c, UpcomingQuery);
+    const records = (await listClassRecords(c.var.user.id, c.var.user.schoolId)).filter((r) => r.status !== "past" && r.term.toLowerCase() === term.toLowerCase());
+    if (!records.length) return c.json(one([]));
+    const materials = await adminClient().from("course_materials").select("course_id, isbn, title, term").eq("school_id", c.var.user.schoolId).in("course_id", records.map((r) => r.course.id)).or(`term.is.null,term.eq."${filterText(term)}"`);
+    if (materials.error) throw materials.error;
+    const byCourse = new Map(records.map((r) => [r.course.id, r.course]));
+    return c.json(one(materials.data.flatMap((m) => {
+      const course = byCourse.get(m.course_id);
+      return course ? [{ course, isbn: m.isbn, title: m.title, on_wishlist: false, best_listing: null }] : [];
+    })));
   })
   .delete("/me/classes/:id", async (c) => {
     const result = await adminClient().from("class_records").delete().eq("id", c.req.param("id")).eq("user_id", c.var.user.id).eq("school_id", c.var.user.schoolId);
