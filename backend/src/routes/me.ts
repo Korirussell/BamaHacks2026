@@ -6,6 +6,7 @@ import { ApiError } from "../lib/errors.js";
 import { one } from "../lib/respond.js";
 import { adminClient } from "../lib/supabase.js";
 import { parseBody } from "../lib/validate.js";
+import { normalizeMsc } from "../services/shipping.js";
 import { requireUser, type AuthEnv, type TokenVerifier } from "../middleware/auth.js";
 
 const MeRow = ProfileRow.extend({ school: SchoolRow, avatar: MediaRef.nullable() });
@@ -29,6 +30,7 @@ async function loadMe(userId: string) {
     phone: p.phone,
     budget_cents: p.budget_cents,
     mail_stop_code: p.mail_stop_code,
+    mail_name: p.mail_name ?? null,
     tutor_opt_in: p.tutor_opt_in,
     location_sharing: p.location_sharing,
     notification_prefs: p.notification_prefs,
@@ -51,7 +53,15 @@ const PatchMeReq = z.object({
   grad_year: z.number().int().min(1990).max(2100).nullable(),
   phone: z.string().max(32).nullable(),
   budget_cents: z.number().int().min(0).nullable(),
-  mail_stop_code: z.string().trim().max(32).nullable(),
+  // UA mailstop code: 6 digits (myBama → Campus Mail Student Portal). "MSC 123456" is accepted.
+  mail_stop_code: z.string().max(32).nullable().transform((v, ctx) => {
+    if (v === null || v.trim() === "") return null;
+    const msc = normalizeMsc(v);
+    if (!msc) ctx.addIssue({ code: "custom", message: "Your MSC is 6 digits; find it in myBama → Campus Mail Student Portal" });
+    return msc;
+  }),
+  // First and last name as on the UA record; Campus Mail matches packages by name + MSC.
+  mail_name: z.string().trim().max(80).nullable().refine((v) => v === null || /\S+\s+\S+/.test(v), "Use your first and last name as on your UA record"),
   tutor_opt_in: z.boolean(),
   location_sharing: z.enum(["off", "during_handoffs"]),
 }).partial().strict();

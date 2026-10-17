@@ -15,7 +15,7 @@ import { nextOrderStatus, payoutFor } from "../services/orders.js";
 import { buildLabel, verifyDropOff, verifyReceived } from "../services/shipping.js";
 
 const UNIQUE_VIOLATION = "23505";
-const PartyName = z.object({ id: z.guid(), display_name: z.string(), mail_stop_code: z.string().nullable(), payouts_enabled: z.boolean() });
+const PartyName = z.object({ id: z.guid(), display_name: z.string(), mail_stop_code: z.string().nullable(), mail_name: z.string().nullish(), payouts_enabled: z.boolean() });
 
 const parseId = (raw: string, what: string) => {
   const id = z.guid().safeParse(raw);
@@ -39,7 +39,7 @@ async function loadShipment(id: string, userId: string, schoolId: string) {
 }
 
 async function loadParties(order: OrderRow) {
-  const { data, error } = await adminClient().from("profiles").select("id, display_name, mail_stop_code, payouts_enabled")
+  const { data, error } = await adminClient().from("profiles").select("id, display_name, mail_stop_code, mail_name, payouts_enabled")
     .eq("school_id", order.school_id).in("id", [order.buyer_id, order.seller_id]);
   if (error) throw error;
   const rows = new Map(z.array(PartyName).parse(data).map((p) => [p.id, p]));
@@ -94,7 +94,7 @@ export const shipmentRoutes = (verify: TokenVerifier, idempotency: IdempotencySt
     const [{ buyer, seller }, listing] = await Promise.all([loadParties(order), loadListingRow(order.listing_id, schoolId)]);
     const label = buildLabel({
       orderId: order.id,
-      buyer: { name: buyer.display_name, mailStopCode: buyer.mail_stop_code },
+      buyer: { name: buyer.mail_name ?? "", mailStopCode: buyer.mail_stop_code },
       sellerName: seller.display_name,
       itemTitle: listing.textbook_title ?? listing.title,
       dropOff: { name: point.name, instructions: point.instructions },
@@ -128,9 +128,10 @@ export const shipmentRoutes = (verify: TokenVerifier, idempotency: IdempotencySt
       status: shipment.status,
       at: input.location,
       accuracyM: input.accuracy_m,
-      point: { location: { lat: shipment.drop_off.lat, lng: shipment.drop_off.lng }, radiusM: shipment.drop_off.radius_m },
+      point: { location: { lat: shipment.drop_off.lat, lng: shipment.drop_off.lng }, radiusM: shipment.drop_off.radius_m, hours: shipment.drop_off.hours, name: shipment.drop_off.name },
       photoMediaId: input.photo_media_id,
       now: Date.now(),
+      tz: (await loadSchool(schoolId)).timezone,
     });
     const updated = await adminClient().from("shipments").update({
       ...patch, drop_off_proof_media_id: input.photo_media_id, drop_off_lat: input.location.lat, drop_off_lng: input.location.lng,

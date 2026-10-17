@@ -68,9 +68,9 @@ on conflict (id) do update set name = excluded.name, kind = excluded.kind, lat =
 
 insert into public.drop_off_points (id, school_id, name, lat, lng, radius_m, hours, instructions) values
   ('00000000-0000-4000-d000-000000000001', '00000000-0000-4000-a000-000000000001',
-   'Campus Mail drop, Ferguson Center', 33.2141, -87.5470, 40,
-   '[{"days":["mon","tue","wed","thu","fri"],"open":"08:00","close":"17:00"}]',
-   'Placeholder: confirm the real UA campus-mail drop location and process. Tape the printed label on top, hand the package to the counter (or use the outgoing campus-mail bin), then take a photo of it in the app.')
+   'Crimson Mail & Shipping window, Student Center', 33.2141, -87.5470, 40,
+   '[{"days":["mon","tue","wed","thu","fri"],"open":"08:00","close":"16:30"}]',
+   'Student Center, 1st floor, behind Starbucks. Ship it USPS at the Crimson Mail & Shipping window to the buyer''s campus address (name + MSC); Campus Mail puts it in their locker. Handed in after 3:00 pm = next business day. Closed on University holidays.')
 on conflict (id) do update set name = excluded.name, lat = excluded.lat, lng = excluded.lng,
   radius_m = excluded.radius_m, hours = excluded.hours, instructions = excluded.instructions;
 

@@ -40,7 +40,7 @@ All traffic is **JSON REST under `/api/v1`**, authenticated with the Supabase ac
 - **Lists:** `?cursor=&limit=` (default 20, max 50) → `{ "data": [T], "next_cursor": "string?" }`.
 - **Single objects:** `{ "data": T }`.
 - **Errors:** HTTP status + `{ "error": { "code": "string", "message": "string", "field_errors": { "<field>": "string" }? } }`.
-- **Error codes:** `UNAUTHENTICATED`, `NOT_EDU_EMAIL`, `SCHOOL_NOT_SUPPORTED`, `FORBIDDEN`, `NOT_FOUND`, `VALIDATION`, `INVALID_STATE` (illegal status change), `STRIPE_ONBOARDING_REQUIRED`, `PAYMENT_FAILED`, `NOT_NEARBY`, `MAIL_INFO_REQUIRED` (buyer has no mail stop on file), `CLAIM_INVALID` (claim link expired, used or unknown), `RATE_LIMITED`, `INTERNAL` (500, unexpected server error).
+- **Error codes:** `UNAUTHENTICATED`, `NOT_EDU_EMAIL`, `SCHOOL_NOT_SUPPORTED`, `FORBIDDEN`, `NOT_FOUND`, `VALIDATION`, `INVALID_STATE` (illegal status change), `STRIPE_ONBOARDING_REQUIRED`, `PAYMENT_FAILED`, `NOT_NEARBY`, `MAIL_INFO_REQUIRED` (buyer has no 6-digit MSC or no first + last `mail_name` on file), `CLAIM_INVALID` (claim link expired, used or unknown), `RATE_LIMITED`, `INTERNAL` (500, unexpected server error).
 - **Idempotency:** any call that moves money or advances an order or handoff takes an `Idempotency-Key` header.
 - **AI jobs:** return `202 { "job_id" }`; the frontend listens on its user channel or polls `GET /jobs/{id}`.
 
@@ -62,7 +62,7 @@ All traffic is **JSON REST under `/api/v1`**, authenticated with the Supabase ac
   },
   "Me": {
     "user": "UserPublic", "email": "string", "phone": "string?",
-    "budget_cents": "cents?", "mail_stop_code": "string?", "tutor_opt_in": "bool",
+    "budget_cents": "cents?", "mail_stop_code": "string? (6 digits)", "mail_name": "string? (first + last, as on UA record)", "tutor_opt_in": "bool",
     "location_sharing": "off|during_handoffs",
     "notification_prefs": { "push": "bool", "email": "bool", "wishlist_alerts": "bool", "tutor_requests": "bool" },
     "connections": { "google_calendar": "bool", "stripe": "none|pending|ready" },
@@ -145,7 +145,8 @@ All traffic is **JSON REST under `/api/v1`**, authenticated with the Supabase ac
   },
   "Shipment": {
     "id": "uuid", "order_id": "uuid", "label_pdf_url": "string", "label_code": "string (printed on label as QR + text)",
-    "to": { "name": "string", "mail_stop_code": "string" },
+    "to": { "name": "string", "mail_stop_code": "string", "address_lines": ["string (4 lines: NAME, 1831 UNIVERSITY STATION, MSC ######, TUSCALOOSA, AL 35487-0002)"] },
+    "steps": ["string (seller's drop-off steps, in order; show next to the address)"],
     "drop_off": "DropOffPoint", "status": "label_created|dropped_off|received",
     "dropped_off_at": "ts?", "drop_off_proof_media_id": "uuid?", "received_at": "ts?", "auto_complete_at": "ts?"
   },
@@ -170,7 +171,7 @@ Sign-in: the frontend calls `/auth/check-email`, then Supabase `signInWithOtp`. 
   "POST /auth/check-email":   { "req": { "email": "string" }, "res": { "allowed": "bool", "school": "School?", "reason": "NOT_EDU_EMAIL|SCHOOL_NOT_SUPPORTED?" } },
 
   "GET /me":                  { "res": "Me" },
-  "PATCH /me":                { "req": { "display_name": "string?", "major": "string?", "grad_year": "int?", "avatar_media_id": "uuid?", "phone": "string?", "budget_cents": "cents?", "mail_stop_code": "string?", "tutor_opt_in": "bool?", "location_sharing": "off|during_handoffs?", "notification_prefs": "object?" }, "res": "Me" },
+  "PATCH /me":                { "req": { "display_name": "string?", "major": "string?", "grad_year": "int?", "avatar_media_id": "uuid?", "phone": "string?", "budget_cents": "cents?", "mail_stop_code": "string? (6 digits; \"MSC 123456\" accepted)", "mail_name": "string?", "tutor_opt_in": "bool?", "location_sharing": "off|during_handoffs?", "notification_prefs": "object?" }, "res": "Me" },
   "GET /users/{id}":          { "res": { "user": "UserPublic", "mutual_friends": ["UserPublic"], "active_listings": ["Listing"], "tutor_profile": "TutorProfile?", "review_summary": { "avg_stars": "number", "count": "int" } } },
   "GET /users/search":        { "query": { "q": "string", "course_id": "uuid?" }, "res": ["UserPublic"] },
 
@@ -256,8 +257,8 @@ Transcript parsing is **review-then-confirm**: grades only count as `grade_verif
   "POST /handoffs/{id}/no-show": { "res": "Handoff" },
 
   "GET /mail/drop-off-points":      { "res": ["DropOffPoint"] },
-  "POST /orders/{id}/shipment":      { "note": "seller; needs buyer mail stop else MAIL_INFO_REQUIRED", "req": { "drop_off_point_id": "uuid?" }, "res": "Shipment" },
-  "POST /shipments/{id}/dropped-off":{ "note": "seller; must be inside the drop-off point radius", "headers": ["Idempotency-Key"], "req": { "location": "LatLng", "accuracy_m": "int", "photo_media_id": "uuid" }, "res": "Shipment" },
+  "POST /orders/{id}/shipment":      { "note": "seller; needs buyer MSC + mail_name else MAIL_INFO_REQUIRED", "req": { "drop_off_point_id": "uuid?" }, "res": "Shipment" },
+  "POST /shipments/{id}/dropped-off":{ "note": "seller; must be inside the drop-off point radius while it is open (else NOT_NEARBY / INVALID_STATE)", "headers": ["Idempotency-Key"], "req": { "location": "LatLng", "accuracy_m": "int", "photo_media_id": "uuid" }, "res": "Shipment" },
   "POST /shipments/{id}/received":   { "note": "buyer; scan or type the label code", "headers": ["Idempotency-Key"], "req": { "label_code": "string", "item_ok": "bool" }, "res": { "shipment": "Shipment", "order": "Order" } },
 
   "GET /claims/{token}":             { "note": "NO auth; landing page for the link we DM to an external seller", "res": { "external_seller": "ExternalSeller", "listings": ["Listing"], "pending_offers": ["Offer"], "expires_at": "ts" } },
@@ -267,6 +268,18 @@ Transcript parsing is **review-then-confirm**: grades only count as `grade_verif
   "SuggestedTrade": { "their_listing": "Listing", "my_listings": ["Listing"], "cash_delta_cents": "cents", "score": "number" }
 }
 ```
+
+### Campus mail at UA
+
+Campus mail is **one of the fulfillment methods students choose between**: in person at a safe zone (`in_person`) or async by campus mail (`campus_mail`). There is no default; the seller lists which methods they accept and the buyer picks one on the offer. In-person trades need none of this. Everything below only applies to `campus_mail` orders.
+
+How UA Campus Mail works (campusmail.ua.edu and the myBama Student Mail Portal), and what the app does about it:
+
+- **Address:** every student has a permanent 6-digit **MSC** (mailstop code), on or off campus. Packages are matched by **name + MSC**, so the label uses `mail_name` (first + last, as on the UA record), not `display_name`. A wrong name or MSC lands the package in Campus Mail's "mystery pile" with no notice.
+- **Shipping:** Campus Mail only accepts student packages that arrive through USPS or another carrier; intra-campus mail is for University departments only. So the seller ships it **USPS at the Crimson Mail & Shipping window** (Student Center, 1st floor, behind Starbucks, Mon–Fri 8:00–4:30; after 3:00 pm it goes out the next business day). Campus Mail then puts it in the buyer's locker and emails/texts them a pickup code.
+- **Pickup:** lockers are Bryce Lawn, Student Center (Student Mail Center) and Magnolia Parking Deck; students pick a primary one in the portal. A package waits 3–5 days in the locker, then 10 more at the Service Center, then goes back to the sender.
+- **Fees:** off-campus students (not in residence halls, Greek housing or UA-leased apartments) pay Campus Mail **$2.50 per package**, capped at $25 per billing period (Jan–May, Jun–Dec), billed to their student account. Show this to off-campus buyers before they pick campus mail.
+- **Auto-complete:** `auto_complete_at` = 7 days after the package enters the mail stream, at 3:00 pm local.
 
 > **Sync confirm rule (anti-scam):** the giver shows a QR (or 6-digit code) that rotates every 60 s; the receiver scans it and sends their location. The server completes the handoff only if the token is valid **and** the receiver is inside the agreed safe zone's radius. That completion is what releases money to the seller.
 
@@ -546,7 +559,7 @@ The first four change what gets built for the demo; the rest can be answered as 
 - [ ] **Rides:** scheduled carpools (like Joyride), or on-demand with live driver tracking? Carpools are far simpler and lower liability.
 - [ ] **Tickets:** how are UA student tickets transferred today (in-app transfer vs. physical/ID)?
 - [ ] **Course materials:** is there a source for required textbooks per course (bookstore list), or crowdsource from listings?
-- [ ] **Campus mail:** what's the UA mail stop format, and how many days after drop-off should a mail order auto-complete?
+- [x] **Campus mail:** MSC is a permanent 6-digit code (myBama → Campus Mail Student Portal); orders auto-complete 7 days after the package enters the mail stream. See [Campus mail at UA](#campus-mail-at-ua).
 - [ ] **Library booking:** UA uses LibCal (availability is public; booking needs a UA sign-in). Is automated booking allowed?
 - [ ] **GroupMe:** can we get the Joyride group admins to add our bot?
 - [x] **Instagram:** no scraping, no cold DMs. Sellers tag our business account (photo tag **and** an @mention in the caption). With `INSTAGRAM=graph` the API polls `GET /{ig-id}/tags`, copies the photos, runs Claude vision (`IDENTIFIER=auto` + `ANTHROPIC_API_KEY`), lists the book, notifies students, and replies publicly on the post (`POST /{ig-id}/mentions`, caption mentions only). The first offer replies again with the claim link and marks the invite sent. `/admin/ingested-posts` stays as the by-hand fallback; `INSTAGRAM=off` turns all of it off.
